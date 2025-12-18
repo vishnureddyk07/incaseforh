@@ -44,15 +44,29 @@ export default function EmergencyQRCode() {
     try {
       const formData = new FormData();
 
-      Object.entries(emergencyInfo).forEach(([key, value]) => {
-        if (value !== null) {
-          if (value instanceof File) {
-            formData.append(key, value);
-          } else {
-            formData.append(key, value.toString());
-          }
-        }
-      });
+      // Object.entries(emergencyInfo).forEach(([key, value]) => {
+      //   if (value !== null) {
+      //     if (value instanceof File) {
+      //       formData.append(key, value);
+      //     } else {
+      //       formData.append(key, value.toString());
+      //     }
+      //   }
+      // });
+
+      // Temporarily send only text data
+      const qrData = generateQRData();
+      formData.append('fullName', emergencyInfo.fullName);
+      formData.append('email', emergencyInfo.email);
+      formData.append('bloodType', emergencyInfo.bloodType || '');
+      formData.append('emergencyContact', emergencyInfo.emergencyContact || '');
+      formData.append('allergies', emergencyInfo.allergies || '');
+      formData.append('medications', emergencyInfo.medications || '');
+      formData.append('medicalConditions', emergencyInfo.medicalConditions || '');
+      formData.append('dateOfBirth', emergencyInfo.dateOfBirth || '');
+      formData.append('address', emergencyInfo.address || '');
+      formData.append('phoneNumber', emergencyInfo.phoneNumber || '');
+      formData.append('qrCode', qrData);
 
       // ✅ Log the actual contents of FormData
       console.log("FormData contents:");
@@ -61,7 +75,7 @@ export default function EmergencyQRCode() {
       }
 
       const res = await fetch(
-        "https://ridegaurd-backend.onrender.com/api/emergencyinfo",
+        "http://localhost:5000/api/emergency",
         {
           method: "POST",
           body: formData,

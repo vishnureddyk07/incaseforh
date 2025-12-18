@@ -24,7 +24,7 @@ export default function EmergencyInfoDisplay() {
   useEffect(() => {
     if (!email) return;
 
-    fetch(`https://ridegaurd-backend.onrender.com/api/emergencyinfo/${email}`)
+    fetch(`http://localhost:5000/api/emergency/${email}`)
       .then((res) => res.json())
       .then((data) => {
         setInfo(data);

@@ -1,8 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import { useAuth } from './context/AuthContext';
-import AuthModal from './components/auth/AuthModal';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import WhyPrepare from './components/WhyPrepare';
@@ -11,6 +9,7 @@ import EmergencyContacts from './components/EmergencyContacts';
 import EmergencyQRCode from './components/emergency/EmergencyQRCode';
 import QRScanDisplay from './components/emergency/QRScanDisplay';
 import EmergencyInfoDisplay from './PagesForWorld/EmergencyInfoDisplay';
+import QRList from './components/QRList';
 
 function MainContent() {
   return (
@@ -24,7 +23,7 @@ function MainContent() {
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold text-gray-900">Emergency Information QR Code</h2>
             <p className="mt-4 text-lg text-gray-600">
-              Create your emergency QR code containing vital information for first responders and family members (here here).
+              Create your emergency QR code containing vital information for first responders and family members.
             </p>
           </div>
           <EmergencyQRCode />
@@ -42,35 +41,29 @@ function MainContent() {
 }
 
 function AppContent() {
-  const { isAuthenticated } = useAuth();
-
-  // Check if we're displaying a scanned QR code
   const urlParams = new URLSearchParams(window.location.search);
   const qrData = urlParams.get('qr');
-  
+
   if (qrData) {
     try {
       const emergencyData = JSON.parse(decodeURIComponent(qrData));
       return <QRScanDisplay emergencyData={emergencyData} />;
     } catch (error) {
-      console.error('Invalid QR data');
+      console.error('Invalid QR data', error);
     }
-  }
-
-  if (!isAuthenticated) {
-    return <AuthModal />;
   }
 
   return (
     <Routes>
       <Route path="/" element={<MainContent />} />
       <Route path="/emergencyinfo/:email" element={<EmergencyInfoDisplay />} />
+      <Route path="/qrs" element={<QRList />} />
       <Route path="/emer" element={<div>hi</div>} />
     </Routes>
   );
 }
 
-function App() {
+export default function App() {
   return (
     <Router>
       <AuthProvider>
@@ -79,5 +72,3 @@ function App() {
     </Router>
   );
 }
-
-export default App;

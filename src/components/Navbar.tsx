@@ -12,7 +12,7 @@ export default function Navbar() {
           <div className="flex items-center">
             <Shield className="h-8 w-8 text-orange-500" />
             <span className="ml-2 text-xl font-bold text-gray-800">
-              RideGuard
+              INcase
             </span>
           </div>
           <div className="hidden md:flex items-center space-x-8">
@@ -27,6 +27,9 @@ export default function Navbar() {
             </a>
             <a href="#emergency-contacts" className="text-gray-700 hover:text-orange-500">
               Emergency Contacts
+            </a>
+            <a href="/qrs" className="text-gray-700 hover:text-orange-500">
+              View QR Codes
             </a>
             <a
               href="#emergency-info"
