@@ -15,7 +15,7 @@ export default function QRList() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/emergency')
+    fetch('https://incaseforh.onrender.com/api/emergency')
       .then(res => res.json())
       .then(data => {
         setQrs(data);

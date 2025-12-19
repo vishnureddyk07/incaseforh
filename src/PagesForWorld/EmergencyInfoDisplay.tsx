@@ -24,7 +24,7 @@ export default function EmergencyInfoDisplay() {
   useEffect(() => {
     if (!email) return;
 
-    fetch(`http://localhost:5000/api/emergency/${email}`)
+    fetch(`https://incaseforh.onrender.com/api/emergency/${email}`)
       .then((res) => res.json())
       .then((data) => {
         setInfo(data);

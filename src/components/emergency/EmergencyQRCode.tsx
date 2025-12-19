@@ -75,7 +75,7 @@ export default function EmergencyQRCode() {
       }
 
       const res = await fetch(
-        "http://localhost:5000/api/emergency",
+        "https://incaseforh.onrender.com/api/emergency",
         {
           method: "POST",
           body: formData,
