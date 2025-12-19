@@ -32,9 +32,13 @@ app.use(express.json());
 const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-.then(() => console.log('MongoDB connected'))
-.catch(err => console.error('MongoDB connection error:', err));
+console.log('MongoDB URI:', process.env.MONGODB_URI ? 'Set' : 'NOT SET');
+mongoose.connect(process.env.MONGODB_URI, { 
+  serverSelectionTimeoutMS: 30000,
+  connectTimeoutMS: 30000,
+})
+.then(() => console.log('MongoDB connected successfully'))
+.catch(err => console.error('MongoDB connection error:', err.message));
 
 // Basic route
 app.get('/', (req, res) => {
