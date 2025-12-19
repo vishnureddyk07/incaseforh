@@ -40,8 +40,11 @@ app.use(express.urlencoded({ extended: true })); // FOR FormData PARSING
 const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
 // Connect to MongoDB
-console.log('MongoDB URI:', process.env.MONGODB_URI ? 'Set' : 'NOT SET');
-mongoose.connect(process.env.MONGODB_URI, { 
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://vishnureddyau07_db_user:59uPRJVWJ978fRUp@cluster0.tahxcai.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+console.log('MongoDB URI:', process.env.MONGODB_URI ? 'From ENV' : 'Using HARDCODED FALLBACK');
+console.log('Connection string starts with:', MONGODB_URI.substring(0, 30) + '...');
+
+mongoose.connect(MONGODB_URI, { 
   serverSelectionTimeoutMS: 30000,
   connectTimeoutMS: 30000,
 })
