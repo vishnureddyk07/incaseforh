@@ -129,9 +129,15 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
 
     // STEP 4: SAVE TO DATABASE
     console.log('STEP 4: Saving to MongoDB...');
-    const savedDoc = await newEmergency.save();
     
-    console.log('✅ SAVED SUCCESSFULLY:', savedDoc._id);
+    // Use findOneAndUpdate with upsert to update existing or create new
+    const savedDoc = await EmergencyInfo.findOneAndUpdate(
+      { email: emergencyData.email },
+      emergencyData,
+      { upsert: true, new: true, runValidators: true }
+    );
+    
+    console.log('✅ SAVED/UPDATED SUCCESSFULLY:', savedDoc._id);
     res.status(201).json({ 
       message: 'Emergency info saved successfully', 
       id: savedDoc._id,
