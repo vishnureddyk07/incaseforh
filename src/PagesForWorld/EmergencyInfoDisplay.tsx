@@ -39,7 +39,18 @@ export default function EmergencyInfoDisplay() {
         return res.json();
       })
       .then((data) => {
-        console.log("✅ Data received:", data);
+        console.log("✅ Data received: Object");
+        console.log("   fullName:", data.fullName);
+        console.log("   email:", data.email);
+        console.log("   bloodType:", data.bloodType);
+        console.log("   emergencyContact:", data.emergencyContact);
+        console.log("   phoneNumber:", data.phoneNumber);
+        console.log("   address:", data.address);
+        console.log("   dateOfBirth:", data.dateOfBirth);
+        console.log("   allergies:", data.allergies);
+        console.log("   medications:", data.medications);
+        console.log("   medicalConditions:", data.medicalConditions);
+        console.log("   photo:", data.photo);
         setInfo(data);
         setLoading(false);
       })
