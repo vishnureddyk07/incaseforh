@@ -185,6 +185,12 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Environment check endpoint (does not leak secrets)
+app.get('/env-check', (req, res) => {
+  const envSet = Boolean(process.env.MONGODB_URI);
+  res.json({ mongodbUriSet: envSet });
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
