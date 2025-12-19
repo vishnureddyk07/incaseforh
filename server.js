@@ -56,10 +56,11 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
     console.log('Created model');
     await newEmergency.save();
     console.log('Saved successfully');
-    res.status(201).json({ message: 'Emergency info saved successfully' });
+    res.status(201).json({ message: 'Emergency info saved successfully', id: newEmergency._id });
   } catch (error) {
     console.error('Error saving emergency info:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error details:', error.message, error.name, error.errors);
+    res.status(500).json({ error: error.message, details: error.errors });
   }
 });
 
