@@ -49,62 +49,92 @@ app.get('/', (req, res) => {
 // API Routes
 app.post('/api/emergency', upload.single('photo'), async (req, res) => {
   try {
-    console.log('=== POST /api/emergency ===');
-    console.log('Received body:', req.body);
+    console.log('=== POST /api/emergency START ===');
+    console.log('Received body:', JSON.stringify(req.body, null, 2));
     console.log('Received file:', req.file);
 
-    // VALIDATION: Check required fields
+    // STEP 1: VALIDATION - Check required fields
+    console.log('STEP 1: Validating required fields...');
     const { fullName, email } = req.body;
-    if (!fullName || fullName.trim() === '') {
-      console.warn('VALIDATION FAILED: fullName is missing');
-      return res.status(400).json({ error: 'fullName is required' });
+    
+    if (!fullName) {
+      console.error('❌ VALIDATION FAILED: fullName is undefined/null');
+      return res.status(400).json({ error: 'fullName is required', received: { fullName } });
     }
-    if (!email || email.trim() === '') {
-      console.warn('VALIDATION FAILED: email is missing');
-      return res.status(400).json({ error: 'email is required' });
+    if (typeof fullName !== 'string' || fullName.trim() === '') {
+      console.error('❌ VALIDATION FAILED: fullName is empty or not string:', typeof fullName);
+      return res.status(400).json({ error: 'fullName must be non-empty string', received: { fullName } });
     }
 
-    // Build emergency data - convert empty strings to null for optional fields
-    const emergencyData = {
-      fullName: fullName.trim(),
-      email: email.trim(),
-      bloodType: req.body.bloodType?.trim() || null,
-      emergencyContact: req.body.emergencyContact?.trim() || null,
-      allergies: req.body.allergies?.trim() || null,
-      medications: req.body.medications?.trim() || null,
-      medicalConditions: req.body.medicalConditions?.trim() || null,
-      photo: req.file ? req.file.path : null,
-      dateOfBirth: req.body.dateOfBirth?.trim() || null,
-      address: req.body.address?.trim() || null,
-      phoneNumber: req.body.phoneNumber?.trim() || null,
-      qrCode: req.body.qrCode?.trim() || null,
+    if (!email) {
+      console.error('❌ VALIDATION FAILED: email is undefined/null');
+      return res.status(400).json({ error: 'email is required', received: { email } });
+    }
+    if (typeof email !== 'string' || email.trim() === '') {
+      console.error('❌ VALIDATION FAILED: email is empty or not string:', typeof email);
+      return res.status(400).json({ error: 'email must be non-empty string', received: { email } });
+    }
+
+    console.log('✅ Required fields valid');
+
+    // STEP 2: SAFE FIELD CONVERSION
+    console.log('STEP 2: Converting fields safely...');
+    const safeString = (val) => {
+      if (!val) return null;
+      if (typeof val !== 'string') return String(val);
+      const trimmed = val.trim();
+      return trimmed === '' ? null : trimmed;
     };
 
-    console.log('Processed data:', emergencyData);
+    const emergencyData = {
+      fullName: safeString(fullName),
+      email: safeString(email),
+      bloodType: safeString(req.body.bloodType),
+      emergencyContact: safeString(req.body.emergencyContact),
+      allergies: safeString(req.body.allergies),
+      medications: safeString(req.body.medications),
+      medicalConditions: safeString(req.body.medicalConditions),
+      photo: req.file ? req.file.path : null,
+      dateOfBirth: safeString(req.body.dateOfBirth),
+      address: safeString(req.body.address),
+      phoneNumber: safeString(req.body.phoneNumber),
+      qrCode: safeString(req.body.qrCode),
+    };
 
-    // Create and save document
+    console.log('✅ Fields converted:', JSON.stringify(emergencyData, null, 2));
+
+    // STEP 3: CREATE MODEL
+    console.log('STEP 3: Creating Mongoose document...');
     const newEmergency = new EmergencyInfo(emergencyData);
-    console.log('Document created, now saving...');
+    console.log('✅ Document created, schema validation passed');
+
+    // STEP 4: SAVE TO DATABASE
+    console.log('STEP 4: Saving to MongoDB...');
+    const savedDoc = await newEmergency.save();
     
-    await newEmergency.save();
-    
-    console.log('✅ Saved successfully:', newEmergency._id);
+    console.log('✅ SAVED SUCCESSFULLY:', savedDoc._id);
     res.status(201).json({ 
       message: 'Emergency info saved successfully', 
-      id: newEmergency._id,
-      email: newEmergency.email 
+      id: savedDoc._id,
+      email: savedDoc.email,
+      timestamp: new Date()
     });
+    
   } catch (error) {
-    console.error('❌ ERROR SAVING EMERGENCY INFO:', error);
+    console.error('');
+    console.error('❌❌❌ ERROR IN POST /api/emergency ❌❌❌');
+    console.error('Error type:', error.constructor.name);
     console.error('Error message:', error.message);
-    console.error('Error name:', error.name);
+    console.error('Error stack:', error.stack);
     if (error.errors) {
-      console.error('Validation errors:', error.errors);
+      console.error('Mongoose validation errors:', error.errors);
     }
+    console.error('');
+    
     res.status(500).json({ 
       error: error.message,
       type: error.name,
-      details: error.errors || 'See server logs for details'
+      validation: error.errors || 'No validation details'
     });
   }
 });
