@@ -43,49 +43,78 @@ export default function EmergencyInfoDisplay() {
   console.log("info", info);
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
-      {info.photo && (
-        <div className="mb-6 flex justify-center">
-          <img
-            src={info.photo}
-            alt="Emergency Profile"
-            className="w-64 h-64 rounded-lg object-cover border-4 border-orange-300"
-          />
-        </div>
-      )}
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+      <div className="max-w-2xl mx-auto bg-white rounded-lg shadow p-6">
+        {/* Photo */}
+        {info.photo && (
+          <div className="mb-6 flex justify-center">
+            <img
+              src={info.photo}
+              alt="Emergency Profile"
+              className="w-48 h-48 rounded-lg object-cover border-4 border-orange-300"
+            />
+          </div>
+        )}
 
-      <h1 className="text-2xl font-bold mb-4">
-        Emergency Info for {info.fullName}
-      </h1>
-      <ul className="space-y-2 text-gray-700">
-        <li>
-          <strong>Email:</strong> {info.email}
-        </li>
-        <li>
-          <strong>Blood Type:</strong> {info.bloodType}
-        </li>
-        <li>
-          <strong>Emergency Contact:</strong> {info.emergencyContact}
-        </li>
-        <li>
-          <strong>Allergies:</strong> {info.allergies}
-        </li>
-        <li>
-          <strong>Medications:</strong> {info.medications}
-        </li>
-        <li>
-          <strong>Medical Conditions:</strong> {info.medicalConditions}
-        </li>
-        <li>
-          <strong>DOB:</strong> {info.dateOfBirth}
-        </li>
-        <li>
-          <strong>Phone:</strong> {info.phoneNumber}
-        </li>
-        <li>
-          <strong>Address:</strong> {info.address}
-        </li>
-      </ul>
+        {/* Title */}
+        <h1 className="text-3xl font-bold mb-6 text-gray-900">
+          {info.fullName || 'Emergency Information'}
+        </h1>
+
+        {/* All Fields - Guaranteed to Display */}
+        <div className="space-y-4 text-gray-800">
+          <div className="border-b pb-3">
+            <p className="text-sm text-gray-600">Email</p>
+            <p className="text-lg font-medium">{info.email || '—'}</p>
+          </div>
+
+          <div className="border-b pb-3">
+            <p className="text-sm text-gray-600">Blood Type</p>
+            <p className="text-lg font-medium">{info.bloodType || '—'}</p>
+          </div>
+
+          <div className="border-b pb-3">
+            <p className="text-sm text-gray-600">Emergency Contact</p>
+            <p className="text-lg font-medium">{info.emergencyContact || '—'}</p>
+          </div>
+
+          <div className="border-b pb-3">
+            <p className="text-sm text-gray-600">Phone Number</p>
+            <p className="text-lg font-medium">{info.phoneNumber || '—'}</p>
+          </div>
+
+          <div className="border-b pb-3">
+            <p className="text-sm text-gray-600">Date of Birth</p>
+            <p className="text-lg font-medium">{info.dateOfBirth || '—'}</p>
+          </div>
+
+          <div className="border-b pb-3">
+            <p className="text-sm text-gray-600">Address</p>
+            <p className="text-lg font-medium">{info.address || '—'}</p>
+          </div>
+
+          <div className="border-b pb-3">
+            <p className="text-sm text-gray-600">Allergies</p>
+            <p className="text-lg font-medium">{info.allergies || '—'}</p>
+          </div>
+
+          <div className="border-b pb-3">
+            <p className="text-sm text-gray-600">Medications</p>
+            <p className="text-lg font-medium">{info.medications || '—'}</p>
+          </div>
+
+          <div className="pb-3">
+            <p className="text-sm text-gray-600">Medical Conditions</p>
+            <p className="text-lg font-medium">{info.medicalConditions || '—'}</p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-8 pt-6 border-t text-center text-sm text-gray-500">
+          <p>Emergency Info • Scanned on {new Date().toLocaleDateString()}</p>
+          <p>Call 108 for medical emergencies</p>
+        </div>
+      </div>
     </div>
   );
 }
