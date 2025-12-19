@@ -45,6 +45,16 @@ app.get('/', (req, res) => {
   res.send('Server is running and connected to MongoDB');
 });
 
+// Health check endpoint
+app.get('/health', async (req, res) => {
+  try {
+    await mongoose.connection.db.admin().ping();
+    res.json({ status: 'healthy', mongodb: 'connected' });
+  } catch (error) {
+    res.status(500).json({ status: 'unhealthy', mongodb: 'disconnected', error: error.message });
+  }
+});
+
 // API Routes
 app.post('/api/emergency', upload.single('photo'), async (req, res) => {
   try {
