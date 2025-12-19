@@ -1,11 +1,18 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import dotenv from 'dotenv';
 import multer from 'multer';
 import cors from 'cors';
 import EmergencyInfo from './models/EmergencyInfo.js';
 
-dotenv.config();
+// Only load .env locally, not in production (Render uses dashboard env vars)
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    const dotenv = await import('dotenv');
+    dotenv.config();
+  } catch (e) {
+    // dotenv not available, skip
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
