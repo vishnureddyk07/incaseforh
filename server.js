@@ -160,13 +160,19 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
 
 app.get('/api/emergency/:email', async (req, res) => {
   try {
-    const { email } = req.params;
-    const emergency = await EmergencyInfo.findOne({ email });
+    const raw = req.params.email || '';
+    const decoded = (() => { try { return decodeURIComponent(raw); } catch { return raw; } })();
+    const needle = decoded.trim();
+    const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`^${escapeRegExp(needle)}$`, 'i');
+    console.log('Lookup email param:', { raw, decoded, needle });
+    const emergency = await EmergencyInfo.findOne({ email: regex });
     if (!emergency) {
       return res.status(404).json({ error: 'Emergency info not found' });
     }
     res.json(emergency);
   } catch (error) {
+    console.error('Error in GET /api/emergency/:email', error);
     res.status(500).json({ error: error.message });
   }
 });
