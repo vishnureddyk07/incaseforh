@@ -44,17 +44,6 @@ export default function EmergencyQRCode() {
     try {
       const formData = new FormData();
 
-      // Object.entries(emergencyInfo).forEach(([key, value]) => {
-      //   if (value !== null) {
-      //     if (value instanceof File) {
-      //       formData.append(key, value);
-      //     } else {
-      //       formData.append(key, value.toString());
-      //     }
-      //   }
-      // });
-
-      // Temporarily send only text data
       const qrData = generateQRData();
       formData.append('fullName', emergencyInfo.fullName);
       formData.append('email', emergencyInfo.email);
@@ -67,6 +56,9 @@ export default function EmergencyQRCode() {
       formData.append('address', emergencyInfo.address || '');
       formData.append('phoneNumber', emergencyInfo.phoneNumber || '');
       formData.append('qrCode', qrData);
+      if (emergencyInfo.photo instanceof File) {
+        formData.append('photo', emergencyInfo.photo);
+      }
 
       // ✅ Log the actual contents of FormData
       console.log("FormData contents:");

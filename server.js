@@ -15,6 +15,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
 
 // Middleware
@@ -36,6 +37,9 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // FOR FormData PARSING
+
+// Serve uploaded files statically
+app.use('/uploads', express.static('uploads'));
 
 const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
@@ -96,6 +100,11 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
       return trimmed === '' ? null : trimmed;
     };
 
+    const protocolHeader = req.headers['x-forwarded-proto'];
+    const protocol = Array.isArray(protocolHeader) ? protocolHeader[0] : (protocolHeader || req.protocol);
+    const host = req.get('host');
+    const baseUrl = `${protocol}://${host}`;
+
     const emergencyData = {
       fullName: safeString(fullName),
       email: safeString(email),
@@ -104,7 +113,7 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
       allergies: safeString(req.body.allergies),
       medications: safeString(req.body.medications),
       medicalConditions: safeString(req.body.medicalConditions),
-      photo: req.file ? req.file.path : null,
+      photo: req.file ? `${baseUrl}/uploads/${req.file.filename}` : null,
       dateOfBirth: safeString(req.body.dateOfBirth),
       address: safeString(req.body.address),
       phoneNumber: safeString(req.body.phoneNumber),
