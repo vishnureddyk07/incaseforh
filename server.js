@@ -45,36 +45,66 @@ app.get('/', (req, res) => {
   res.send('Server is running and connected to MongoDB');
 });
 
-// Health check endpoint
-app.get('/health', async (req, res) => {
-  try {
-    await mongoose.connection.db.admin().ping();
-    res.json({ status: 'healthy', mongodb: 'connected' });
-  } catch (error) {
-    res.status(500).json({ status: 'unhealthy', mongodb: 'disconnected', error: error.message });
-  }
-});
-
 // API Routes
 app.post('/api/emergency', upload.single('photo'), async (req, res) => {
   try {
-    console.log('Received data:', req.body);
+    console.log('=== POST /api/emergency ===');
+    console.log('Received body:', req.body);
     console.log('Received file:', req.file);
+
+    // VALIDATION: Check required fields
+    const { fullName, email } = req.body;
+    if (!fullName || fullName.trim() === '') {
+      console.warn('VALIDATION FAILED: fullName is missing');
+      return res.status(400).json({ error: 'fullName is required' });
+    }
+    if (!email || email.trim() === '') {
+      console.warn('VALIDATION FAILED: email is missing');
+      return res.status(400).json({ error: 'email is required' });
+    }
+
+    // Build emergency data - convert empty strings to null for optional fields
     const emergencyData = {
-      ...req.body,
+      fullName: fullName.trim(),
+      email: email.trim(),
+      bloodType: req.body.bloodType?.trim() || null,
+      emergencyContact: req.body.emergencyContact?.trim() || null,
+      allergies: req.body.allergies?.trim() || null,
+      medications: req.body.medications?.trim() || null,
+      medicalConditions: req.body.medicalConditions?.trim() || null,
       photo: req.file ? req.file.path : null,
-      dateOfBirth: req.body.dateOfBirth || null,
+      dateOfBirth: req.body.dateOfBirth?.trim() || null,
+      address: req.body.address?.trim() || null,
+      phoneNumber: req.body.phoneNumber?.trim() || null,
+      qrCode: req.body.qrCode?.trim() || null,
     };
-    console.log('Saving data:', emergencyData);
+
+    console.log('Processed data:', emergencyData);
+
+    // Create and save document
     const newEmergency = new EmergencyInfo(emergencyData);
-    console.log('Created model');
+    console.log('Document created, now saving...');
+    
     await newEmergency.save();
-    console.log('Saved successfully');
-    res.status(201).json({ message: 'Emergency info saved successfully', id: newEmergency._id });
+    
+    console.log('✅ Saved successfully:', newEmergency._id);
+    res.status(201).json({ 
+      message: 'Emergency info saved successfully', 
+      id: newEmergency._id,
+      email: newEmergency.email 
+    });
   } catch (error) {
-    console.error('Error saving emergency info:', error);
-    console.error('Error details:', error.message, error.name, error.errors);
-    res.status(500).json({ error: error.message, details: error.errors });
+    console.error('❌ ERROR SAVING EMERGENCY INFO:', error);
+    console.error('Error message:', error.message);
+    console.error('Error name:', error.name);
+    if (error.errors) {
+      console.error('Validation errors:', error.errors);
+    }
+    res.status(500).json({ 
+      error: error.message,
+      type: error.name,
+      details: error.errors || 'See server logs for details'
+    });
   }
 });
 
@@ -88,6 +118,29 @@ app.get('/api/emergency/:email', async (req, res) => {
     res.json(emergency);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// GET all emergency records (for QR List)
+app.get('/api/emergency', async (req, res) => {
+  try {
+    console.log('Fetching all emergency records...');
+    const allEmergencies = await EmergencyInfo.find({}).select('fullName email qrCode createdAt');
+    console.log(`Found ${allEmergencies.length} records`);
+    res.json(allEmergencies);
+  } catch (error) {
+    console.error('Error fetching emergency records:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Health check endpoint
+app.get('/health', async (req, res) => {
+  try {
+    await mongoose.connection.db.admin().ping();
+    res.json({ status: 'healthy', mongodb: 'connected', timestamp: new Date() });
+  } catch (error) {
+    res.status(500).json({ status: 'unhealthy', mongodb: 'disconnected', error: error.message });
   }
 });
 
