@@ -28,6 +28,7 @@ app.use((req, res, next) => {
   }
 });
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // FOR FormData PARSING
 
 const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
