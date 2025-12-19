@@ -29,7 +29,7 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 
-const upload = multer({ dest: 'uploads/', limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
+const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)

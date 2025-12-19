@@ -60,7 +60,7 @@ export default function EmergencyForm({
           onChange={handlePhotoUpload}
           className="hidden"
         />
-        <p className="mt-2 text-sm text-gray-600">Upload your photo</p>
+        <p className="mt-2 text-sm text-gray-600">Upload your photo (Max 50MB)</p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
