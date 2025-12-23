@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { AuthState, User } from '../types/auth';
 
 interface AuthContextType extends AuthState {
-  login: (user: User) => void;
+  login: (user: User, token?: string) => void;
   logout: () => void;
 }
 
@@ -12,27 +12,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     isAuthenticated: false,
+    token: null,
   });
 
   useEffect(() => {
     // Check for stored auth state
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setAuthState({
-        user: JSON.parse(storedUser),
-        isAuthenticated: true,
-      });
+    const stored = localStorage.getItem('auth');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as AuthState;
+        if (parsed.user && parsed.token) {
+          setAuthState({ user: parsed.user, token: parsed.token, isAuthenticated: true });
+        }
+      } catch (e) {
+        localStorage.removeItem('auth');
+      }
     }
   }, []);
 
-  const login = (user: User) => {
-    localStorage.setItem('user', JSON.stringify(user));
-    setAuthState({ user, isAuthenticated: true });
+  const login = (user: User, token?: string) => {
+    const payload = { user, token: token || null, isAuthenticated: true } as AuthState;
+    localStorage.setItem('auth', JSON.stringify(payload));
+    setAuthState(payload);
   };
 
   const logout = () => {
-    localStorage.removeItem('user');
-    setAuthState({ user: null, isAuthenticated: false });
+    localStorage.removeItem('auth');
+    setAuthState({ user: null, isAuthenticated: false, token: null });
   };
 
   return (

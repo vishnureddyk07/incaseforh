@@ -3,6 +3,9 @@ import mongoose from 'mongoose';
 import multer from 'multer';
 import cors from 'cors';
 import EmergencyInfo from './models/EmergencyInfo.js';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import User from './models/User.js';
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -17,6 +20,8 @@ if (process.env.NODE_ENV !== 'production') {
 const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod';
+const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || null;
 
 // Middleware
 app.use((req, res, next) => {
@@ -43,6 +48,38 @@ app.use('/uploads', express.static('uploads'));
 
 const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
+// Helper: sanitize user payload for responses
+const sanitizeUser = (user) => ({
+  id: user._id.toString(),
+  email: user.email,
+  role: user.role,
+});
+
+// Middleware: require valid JWT
+const requireAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.user = payload;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+// Middleware: require admin role
+const requireAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+};
+
 // Connect to MongoDB
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://vishnureddyau07_db_user:59uPRJVWJ978fRUp@cluster0.tahxcai.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 console.log('MongoDB URI:', process.env.MONGODB_URI ? 'From ENV' : 'Using HARDCODED FALLBACK');
@@ -58,6 +95,138 @@ mongoose.connect(MONGODB_URI, {
 // Basic route
 app.get('/', (req, res) => {
   res.send('Server is running and connected to MongoDB');
+});
+
+// Auth: register first admin (protected by setup key or single-use if no key set)
+app.post('/api/auth/register-admin', async (req, res) => {
+  try {
+    const { email, password, setupKey } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    // If a setup key is configured, require it
+    if (ADMIN_SETUP_KEY && setupKey !== ADMIN_SETUP_KEY) {
+      return res.status(403).json({ error: 'Invalid setup key' });
+    }
+
+    // If no setup key, only allow creating the first admin
+    if (!ADMIN_SETUP_KEY) {
+      const adminExists = await User.exists({ role: 'admin' });
+      if (adminExists) {
+        return res.status(403).json({ error: 'Admin already initialized' });
+      }
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({ email: normalizedEmail, passwordHash, role: 'admin' });
+
+    res.status(201).json({ user: sanitizeUser(user) });
+  } catch (error) {
+    console.error('Error in register-admin:', error);
+    res.status(500).json({ error: 'Failed to register admin' });
+  }
+});
+
+// Auth: login for admin/manager
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign(
+      { sub: user._id.toString(), email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '1d' }
+    );
+
+    res.json({ token, user: sanitizeUser(user) });
+  } catch (error) {
+    console.error('Error in login:', error);
+    res.status(500).json({ error: 'Failed to login' });
+  }
+});
+
+// Auth: change password (requires authentication)
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new passwords are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+
+    const user = await User.findById(req.user.sub);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Error changing password:', error);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
+// Admin: create manager credentials
+app.post('/api/admin/users/manager', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({ email: normalizedEmail, passwordHash, role: 'manager' });
+    res.status(201).json({ user: sanitizeUser(user) });
+  } catch (error) {
+    console.error('Error creating manager:', error);
+    res.status(500).json({ error: 'Failed to create manager' });
+  }
 });
 
 // API Routes
@@ -183,8 +352,8 @@ app.get('/api/emergency/:email', async (req, res) => {
   }
 });
 
-// GET all emergency records (for QR List)
-app.get('/api/emergency', async (req, res) => {
+// GET all emergency records (admin-only)
+app.get('/api/emergency', requireAuth, requireAdmin, async (req, res) => {
   try {
     console.log('Fetching all emergency records...');
     const allEmergencies = await EmergencyInfo.find({}).select('fullName email qrCode createdAt');
