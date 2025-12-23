@@ -48,9 +48,9 @@ export default function AdminLogin() {
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Admin Login</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Email</label>
+            <label className="block text-sm font-medium text-gray-700">Admin ID or Email</label>
             <input
-              type="email"
+              type="text"
               className="mt-1 block w-full rounded-md border px-3 py-2"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
