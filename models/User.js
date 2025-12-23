@@ -23,6 +23,6 @@ const UserSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-UserSchema.index({ email: 1 }, { unique: true });
+// Unique index is already ensured by the field definition above
 
 export default mongoose.model('User', UserSchema);
