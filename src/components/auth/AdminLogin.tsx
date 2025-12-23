@@ -33,7 +33,7 @@ export default function AdminLogin() {
       }
 
       login(data.user, data.token);
-      navigate('/qrs');
+      navigate('/admin/dashboard');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Login failed';
       setError(msg);

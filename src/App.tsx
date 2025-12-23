@@ -11,6 +11,7 @@ import QRScanDisplay from './components/emergency/QRScanDisplay';
 import EmergencyInfoDisplay from './PagesForWorld/EmergencyInfoDisplay';
 import QRList from './components/QRList';
 import AdminLogin from './components/auth/AdminLogin';
+import AdminDashboard from './components/admin/AdminDashboard';
 import ChangePassword from './components/auth/ChangePassword';
 
 function MainContent() {
@@ -61,6 +62,7 @@ function AppContent() {
       <Route path="/emergencyinfo/:email" element={<EmergencyInfoDisplay />} />
       <Route path="/qrs" element={<QRList />} />
       <Route path="/admin" element={<AdminLogin />} />
+      <Route path="/admin/dashboard" element={<AdminDashboard />} />
       <Route path="/change-password" element={<ChangePassword />} />
       <Route path="/emer" element={<div>hi</div>} />
     </Routes>

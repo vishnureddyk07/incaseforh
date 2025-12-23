@@ -385,3 +385,37 @@ app.get('/env-check', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+// Admin: list users (optionally filter by role)
+app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { role } = req.query;
+    const query = {};
+    if (role) query.role = role;
+    const users = await User.find(query).select('_id email role createdAt');
+    res.json(users.map(u => ({ id: u._id.toString(), email: u.email, role: u.role, createdAt: u.createdAt })));
+  } catch (error) {
+    console.error('Error listing users:', error);
+    res.status(500).json({ error: 'Failed to list users' });
+  }
+});
+
+// Admin: delete a user (cannot delete admins or self)
+app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (req.user.sub === id) {
+      return res.status(400).json({ error: 'Cannot delete own account' });
+    }
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role === 'admin') {
+      return res.status(403).json({ error: 'Cannot delete admin accounts' });
+    }
+    await User.deleteOne({ _id: id });
+    res.json({ message: 'User deleted' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
