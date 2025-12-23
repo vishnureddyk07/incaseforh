@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import QRCodeDisplay from "./emergency/QRCodeDisplay"; // Assuming this can display QR
-import { downloadQRCode } from "../utils/qrcode";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 interface EmergencyInfo {
@@ -9,6 +7,7 @@ interface EmergencyInfo {
   fullName: string;
   email: string;
   qrCode: string;
+  photo?: string;
   // other fields if needed
 }
 
@@ -17,6 +16,7 @@ export default function QRList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { isAuthenticated, token, user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!isAuthenticated || !token || user?.role !== 'admin') {
@@ -44,8 +44,8 @@ export default function QRList() {
       });
   }, [isAuthenticated, token, user]);
 
-  const handleDownload = (qrValue: string, filename: string) => {
-    downloadQRCode(qrValue, filename);
+  const handleOpen = (email: string) => {
+    navigate(`/emergencyinfo/${encodeURIComponent(email)}`);
   };
 
   if (!isAuthenticated || !token || user?.role !== 'admin') {
@@ -61,9 +61,9 @@ export default function QRList() {
   if (error) return <div className="max-w-2xl mx-auto p-6 text-red-600">{error}</div>;
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-6xl mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Saved QR Codes</h2>
+        <h2 className="text-2xl font-bold">Emergency Records</h2>
         <Link 
           to="/change-password" 
           className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
@@ -73,11 +73,21 @@ export default function QRList() {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {qrs.map(qr => (
-          <div key={qr._id} className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-lg font-semibold">{qr.fullName}</h3>
-            <p>{qr.email}</p>
-            <QRCodeDisplay qrValue={qr.qrCode} onDownload={() => handleDownload(qr.qrCode, `qr-${qr.email}`)} />
-          </div>
+          <button
+            key={qr._id}
+            onClick={() => handleOpen(qr.email)}
+            className="text-left bg-white p-4 rounded-lg shadow hover:shadow-md transition flex gap-4"
+          >
+            {qr.photo ? (
+              <img src={qr.photo} alt={qr.fullName} className="w-20 h-20 rounded object-cover border" />
+            ) : (
+              <div className="w-20 h-20 rounded bg-gray-100 grid place-items-center text-gray-500">No Photo</div>
+            )}
+            <div>
+              <h3 className="text-lg font-semibold">{qr.fullName}</h3>
+              <p className="text-sm text-gray-600">{qr.email}</p>
+            </div>
+          </button>
         ))}
       </div>
     </div>

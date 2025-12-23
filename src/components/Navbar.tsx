@@ -19,18 +19,14 @@ export default function Navbar() {
             <a href="#home" className="text-gray-700 hover:text-orange-500">
               Home
             </a>
-            <a href="#why-prepare" className="text-gray-700 hover:text-orange-500">
-              Why Prepare
-            </a>
+            {/* Removed Why Prepare from navbar for streamlined UX */}
             <a href="#safety-tips" className="text-gray-700 hover:text-orange-500">
               Safety Tips
             </a>
             <a href="#emergency-contacts" className="text-gray-700 hover:text-orange-500">
               Emergency Contacts
             </a>
-            <a href="/qrs" className="text-gray-700 hover:text-orange-500">
-              View QR Codes
-            </a>
+            {/* Removed View QR Codes from navbar; accessible via Admin Dashboard */}
             <a
               href="/admin"
               className="text-gray-700 hover:text-orange-500 border px-3 py-1 rounded-full text-sm"

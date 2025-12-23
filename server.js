@@ -356,7 +356,7 @@ app.get('/api/emergency/:email', async (req, res) => {
 app.get('/api/emergency', requireAuth, requireAdmin, async (req, res) => {
   try {
     console.log('Fetching all emergency records...');
-    const allEmergencies = await EmergencyInfo.find({}).select('fullName email qrCode createdAt');
+    const allEmergencies = await EmergencyInfo.find({}).select('fullName email qrCode photo createdAt');
     console.log(`Found ${allEmergencies.length} records`);
     res.json(allEmergencies);
   } catch (error) {

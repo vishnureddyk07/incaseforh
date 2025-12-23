@@ -1,10 +1,13 @@
 // Basic display version (charts removed; reverted UI)
 import { useEffect, useState } from "react";
+import QRCodeDisplay from "../components/emergency/QRCodeDisplay";
+import { downloadQRCode } from "../utils/qrcode";
 import { useParams } from "react-router-dom";
 
 type EmergencyInfo = {
   fullName: string;
   email: string;
+  qrCode: string;
   bloodType: string;
   emergencyContact: string;
   allergies: string;
@@ -119,6 +122,16 @@ export default function EmergencyInfoDisplay() {
         <h1 className="text-3xl font-bold mb-6 text-gray-900">
           {info.fullName || "Emergency Information"}
         </h1>
+
+        {/* QR Code */}
+        {info.qrCode ? (
+          <div className="mb-6 flex justify-center">
+            <QRCodeDisplay
+              qrValue={info.qrCode}
+              onDownload={() => downloadQRCode(info.qrCode, `qr-${info.email}`)}
+            />
+          </div>
+        ) : null}
 
         {/* All Fields - Guaranteed to Display */}
         <div className="space-y-4 text-gray-800">
