@@ -16,6 +16,7 @@ interface EmergencyInfo {
   dateOfBirth?: string;
   phoneNumber?: string;
   address?: string;
+  createdAt?: string;
 }
 
 export default function QRList() {
@@ -74,9 +75,17 @@ export default function QRList() {
 
     // Apply sort
     if (sortBy === 'newest') {
-      filtered.sort((a, b) => new Date(b._id).getTime() - new Date(a._id).getTime());
+      filtered.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
     } else if (sortBy === 'oldest') {
-      filtered.sort((a, b) => new Date(a._id).getTime() - new Date(b._id).getTime());
+      filtered.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateA - dateB;
+      });
     } else if (sortBy === 'name') {
       filtered.sort((a, b) => a.fullName.localeCompare(b.fullName));
     }
@@ -176,7 +185,7 @@ export default function QRList() {
                 <h3 className="text-lg font-semibold">{qr.fullName}</h3>
                 <p className="text-sm text-gray-600">{qr.email}</p>
                 <p className="text-xs text-gray-400 mt-1">
-                  {new Date(qr._id).toLocaleDateString()} {new Date(qr._id).toLocaleTimeString()}
+                  {qr.createdAt ? new Date(qr.createdAt).toLocaleDateString() : 'N/A'} {qr.createdAt ? new Date(qr.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
                 </p>
               </div>
             </div>
