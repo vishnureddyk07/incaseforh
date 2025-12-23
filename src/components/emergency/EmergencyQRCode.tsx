@@ -1,9 +1,7 @@
 import React, { useState } from "react";
-import { Shield } from "lucide-react";
+import { Shield, CheckCircle } from "lucide-react";
 import type { EmergencyInfo } from "../../types/emergency";
 import EmergencyForm from "./EmergencyForm";
-import QRCodeDisplay from "./QRCodeDisplay";
-import { downloadQRCode } from "../../utils/qrcode";
 
 export default function EmergencyQRCode() {
   const [emergencyInfo, setEmergencyInfo] = useState<EmergencyInfo>({
@@ -19,6 +17,8 @@ export default function EmergencyQRCode() {
     address: "",
     phoneNumber: "",
   });
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -33,14 +33,13 @@ export default function EmergencyQRCode() {
     setEmergencyInfo((prev) => ({ ...prev, photo: photoFile }));
   };
 
-  const handleDownload = async () => {
+  const handleSubmit = async () => {
     if (!emergencyInfo.fullName || !emergencyInfo.email) {
-      alert(
-        "Please enter your full name and email before downloading the QR code."
-      );
+      alert("Please enter your full name and email before submitting.");
       return;
     }
 
+    setSubmitting(true);
     try {
       const formData = new FormData();
 
@@ -60,12 +59,6 @@ export default function EmergencyQRCode() {
         formData.append('photo', emergencyInfo.photo);
       }
 
-      // ✅ Log the actual contents of FormData
-      console.log("FormData contents:");
-      for (let [key, value] of formData.entries()) {
-        console.log(`${key}:`, value);
-      }
-
       const res = await fetch(
         "https://incaseforh.onrender.com/api/emergency",
         {
@@ -76,13 +69,29 @@ export default function EmergencyQRCode() {
 
       if (!res.ok) throw new Error("Failed to save to backend");
 
-      const filename = `emergency-info-${emergencyInfo.fullName
-        .toLowerCase()
-        .replace(/\s+/g, "-")}`;
-      downloadQRCode(generateQRData(), filename);
+      setShowSuccess(true);
+      // Reset form
+      setEmergencyInfo({
+        fullName: "",
+        email: "",
+        bloodType: "",
+        emergencyContact: "",
+        allergies: "",
+        medications: "",
+        medicalConditions: "",
+        photo: null,
+        dateOfBirth: "",
+        address: "",
+        phoneNumber: "",
+      });
+
+      // Hide success message after 5 seconds
+      setTimeout(() => setShowSuccess(false), 5000);
     } catch (err) {
       console.error(err);
       alert("Something went wrong while saving data.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -94,47 +103,58 @@ export default function EmergencyQRCode() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
+    <div className="max-w-4xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-lg p-8">
         <div className="flex items-center mb-8">
           <Shield className="h-8 w-8 text-orange-500 mr-3" />
           <h3 className="text-2xl font-bold text-gray-900">
-            Emergency Information QR Code
+            Emergency Information Registration
           </h3>
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-8">
-          <div>
-            <h4 className="text-lg font-semibold text-gray-900 mb-4">
-              Personal Information
-            </h4>
-            <EmergencyForm
-              emergencyInfo={emergencyInfo}
-              onChange={handleChange}
-              onPhotoChange={handlePhotoChange}
-            />
-          </div>
-          <div className="lg:border-l lg:pl-8">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4">
-              Your Emergency QR Code
-            </h4>
-            <QRCodeDisplay
-              qrValue={generateQRData()}
-              onDownload={handleDownload}
-            />
-          </div>
-          <div>
+        <div>
+          <h4 className="text-lg font-semibold text-gray-900 mb-4">
+            Personal Information
+          </h4>
+          <EmergencyForm
+            emergencyInfo={emergencyInfo}
+            onChange={handleChange}
+            onPhotoChange={handlePhotoChange}
+          />
+          
+          <div className="mt-6">
             <button
-              className="bg-blue-300 p-3 rounded-lg"
-              onClick={() => {
-                window.location.href = "/emergencyinfo/test";
-              }}
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="w-full bg-orange-500 text-white px-8 py-3 rounded-full hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg font-semibold"
             >
-              Click me i say
+              {submitting ? "Submitting..." : "Submit Information"}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Success Popup */}
+      {showSuccess && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full text-center shadow-2xl">
+            <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
+            <h3 className="text-2xl font-bold text-gray-900 mb-3">Success!</h3>
+            <p className="text-gray-700 mb-2">
+              Your emergency information has been saved successfully.
+            </p>
+            <p className="text-gray-600 text-sm">
+              Your QR code sticker will be handed over to you shortly.
+            </p>
+            <button
+              onClick={() => setShowSuccess(false)}
+              className="mt-6 bg-orange-500 text-white px-6 py-2 rounded-full hover:bg-orange-600 transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

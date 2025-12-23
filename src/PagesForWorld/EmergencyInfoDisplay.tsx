@@ -1,7 +1,5 @@
 // Basic display version (charts removed; reverted UI)
 import { useEffect, useState } from "react";
-import QRCodeDisplay from "../components/emergency/QRCodeDisplay";
-import { downloadQRCode } from "../utils/qrcode";
 import { useParams } from "react-router-dom";
 
 type EmergencyInfo = {
@@ -123,16 +121,6 @@ export default function EmergencyInfoDisplay() {
           {info.fullName || "Emergency Information"}
         </h1>
 
-        {/* QR Code */}
-        {info.qrCode ? (
-          <div className="mb-6 flex justify-center">
-            <QRCodeDisplay
-              qrValue={info.qrCode}
-              onDownload={() => downloadQRCode(info.qrCode, `qr-${info.email}`)}
-            />
-          </div>
-        ) : null}
-
         {/* All Fields - Guaranteed to Display */}
         <div className="space-y-4 text-gray-800">
           <div className="border-b pb-3">
@@ -178,6 +166,37 @@ export default function EmergencyInfoDisplay() {
           <div className="pb-3">
             <p className="text-sm text-gray-600">Medical Conditions</p>
             <p className="text-lg font-medium">{info.medicalConditions || "—"}</p>
+          </div>
+        </div>
+
+        {/* Emergency Contact Numbers */}
+        <div className="mt-8 pt-6 border-t">
+          <h2 className="text-xl font-bold text-red-600 mb-4 text-center">Emergency Contact Numbers</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
+            <div className="bg-red-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Ambulance</p>
+              <a href="tel:108" className="text-2xl font-bold text-red-600">108</a>
+            </div>
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Police</p>
+              <a href="tel:100" className="text-2xl font-bold text-blue-600">100</a>
+            </div>
+            <div className="bg-orange-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Fire</p>
+              <a href="tel:101" className="text-2xl font-bold text-orange-600">101</a>
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Women Helpline</p>
+              <a href="tel:1091" className="text-2xl font-bold text-green-600">1091</a>
+            </div>
+            <div className="bg-purple-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Child Helpline</p>
+              <a href="tel:1098" className="text-2xl font-bold text-purple-600">1098</a>
+            </div>
+            <div className="bg-indigo-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Disaster Mgmt</p>
+              <a href="tel:108" className="text-2xl font-bold text-indigo-600">1078</a>
+            </div>
           </div>
         </div>
 
