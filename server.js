@@ -356,6 +356,38 @@ app.get('/api/emergency/:email', async (req, res) => {
   }
 });
 
+// PUT: Update emergency info (admin-only, QR code preserved)
+app.put('/api/emergency/:email', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const raw = req.params.email || '';
+    const decoded = (() => { try { return decodeURIComponent(raw); } catch { return raw; } })();
+    const needle = decoded.trim();
+    const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`^${escapeRegExp(needle)}$`, 'i');
+    
+    const existing = await EmergencyInfo.findOne({ email: regex });
+    if (!existing) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+
+    // Update fields but preserve email and qrCode
+    const allowedFields = ['fullName', 'bloodType', 'emergencyContact', 'allergies', 
+                           'medications', 'medicalConditions', 'dateOfBirth', 'phoneNumber', 'address'];
+    
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        existing[field] = req.body[field];
+      }
+    });
+
+    await existing.save();
+    res.json({ message: 'Record updated', record: existing });
+  } catch (error) {
+    console.error('Error updating record:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET all emergency records (admin-only)
 app.get('/api/emergency', requireAuth, requireAdmin, async (req, res) => {
   try {
