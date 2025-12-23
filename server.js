@@ -43,8 +43,12 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // FOR FormData PARSING
 
-// Serve uploaded files statically
-app.use('/uploads', express.static('uploads'));
+// Serve uploaded files statically with CORS
+app.use('/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  next();
+}, express.static('uploads'));
 
 const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
@@ -358,6 +362,7 @@ app.get('/api/emergency', requireAuth, requireAdmin, async (req, res) => {
     console.log('Fetching all emergency records...');
     const allEmergencies = await EmergencyInfo.find({}).select('fullName email qrCode photo createdAt');
     console.log(`Found ${allEmergencies.length} records`);
+    console.log('Sample photo URLs:', allEmergencies.slice(0, 2).map(e => ({ name: e.fullName, photo: e.photo })));
     res.json(allEmergencies);
   } catch (error) {
     console.error('Error fetching emergency records:', error);
