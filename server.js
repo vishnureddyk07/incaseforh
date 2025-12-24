@@ -88,8 +88,11 @@ const requireAdmin = (req, res, next) => {
 // Helper function to extract medical information from OCR text
 function extractMedicalInfo(text) {
   console.log('=== STARTING MEDICAL INFO EXTRACTION ===');
-  console.log('Input text sample:', text.substring(0, 500));
-  
+  console.log('Input text sample:', (text || '').substring(0, 500));
+
+  const raw = text || '';
+  const flat = raw.replace(/\s+/g, ' ').replace(/[^\x20-\x7E]/g, ' ').trim();
+
   const data = {
     bloodType: null,
     allergies: null,
@@ -101,101 +104,65 @@ function extractMedicalInfo(text) {
     dateOfBirth: null
   };
 
-  // Extract blood type (A+, O-, AB+, B+, etc.) - more flexible patterns
-  const bloodMatch = text.match(/blood\s*[:\-]?\s*(?:type|group)?[:\-]?\s*([ABO]+[+-]?)/i) ||
-                     text.match(/\b([ABO]+[+-])\b/i);
-  if (bloodMatch) {
-    data.bloodType = bloodMatch[1].trim().toUpperCase();
-    console.log('Found blood type:', data.bloodType);
-  }
-
-  // Extract allergies - more flexible
-  const allergiesMatch = text.match(/allergi(?:es|c)?[:\-]?\s*([^\n.]+)/i) ||
-                         text.match(/allergic\s+to[:\-]?\s*([^\n.]+)/i);
-  if (allergiesMatch) {
-    data.allergies = allergiesMatch[1].trim();
-    console.log('Found allergies:', data.allergies);
-  }
-
-  // Extract medications - broader pattern
-  const medicationsMatch = text.match(/medication[s]?[:\-]?\s*([\s\S]{5,200}?)(?:\n\n|diagnosis|condition|$)/i) ||
-                          text.match(/medicine[s]?[:\-]?\s*([\s\S]{5,200}?)(?:\n\n|diagnosis|condition|$)/i) ||
-                          text.match(/drug[s]?[:\-]?\s*([\s\S]{5,200}?)(?:\n\n|diagnosis|condition|$)/i);
-  if (medicationsMatch) {
-    data.medications = medicationsMatch[1].trim().substring(0, 200);
-    console.log('Found medications:', data.medications);
-  }
-
-  // Extract medical conditions/diagnoses - more variations
-  const conditionsMatch = text.match(/diagnosis[:\-]?\s*([\s\S]{5,200}?)(?:\n\n|medication|$)/i) ||
-                         text.match(/condition[s]?[:\-]?\s*([\s\S]{5,200}?)(?:\n\n|medication|$)/i) ||
-                         text.match(/disease[s]?[:\-]?\s*([\s\S]{5,200}?)(?:\n\n|medication|$)/i) ||
-                         text.match(/medical\s+history[:\-]?\s*([\s\S]{5,200}?)(?:\n\n|medication|$)/i);
-  if (conditionsMatch) {
-    data.medicalConditions = conditionsMatch[1].trim().substring(0, 200);
-    console.log('Found conditions:', data.medicalConditions);
-  }
-
-  // Extract date (various formats)
-  const dateMatch = text.match(/(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/);
-  if (dateMatch) {
-    try {
-      const parts = dateMatch[1].split(/[-\/\.]/);
-      let year, month, day;
-      if (parts[0].length === 4) {
-        [year, month, day] = parts;
-      } else if (parts[2].length === 4) {
-        [day, month, year] = parts;
-      } else {
-        [month, day, year] = parts;
-        if (year.length === 2) year = '20' + year;
-      }
-      data.dateOfReport = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      console.log('Found report date:', data.dateOfReport);
-    } catch (e) {
-      console.log('Date parsing failed');
+  const parseDate = (val) => {
+    if (!val) return null;
+    const v = val.trim();
+    const monthMap = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12 };
+    // formats: 20/12/2025 or Dec 20,2025
+    let m;
+    m = v.match(/(\d{1,2})[\/-\.\s](\d{1,2})[\/-\.\s](\d{2,4})/);
+    if (m) {
+      let [ , d1, d2, y ] = m;
+      let day, month, year = y.length === 2 ? (parseInt(y,10) > 30 ? '19'+y : '20'+y) : y;
+      if (d1.length === 4) { year = d1; month = d2; day = m[3]; }
+      else if (y.length === 4 && parseInt(d1,10) > 12) { day = d1; month = d2; }
+      else { day = d2; month = d1; }
+      return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     }
-  }
-
-  // Extract emergency contact (phone number) - more patterns
-  const phoneMatch = text.match(/(?:emergency|contact|phone|mobile|tel)[:\-]?\s*(\+?[\d\s\-()]{10,})/i) ||
-                     text.match(/(\+?\d{10,})/);
-  if (phoneMatch) {
-    data.emergencyContact = phoneMatch[1].replace(/[^\d+]/g, '').substring(0, 15);
-    console.log('Found emergency contact:', data.emergencyContact);
-  }
-
-  // Extract patient name - more variations
-  const nameMatch = text.match(/(?:patient|name)[:\-]?\s*([A-Za-z\s]{3,50})/i) ||
-                   text.match(/^([A-Z][a-z]+\s+[A-Z][a-z]+)/m);
-  if (nameMatch) {
-    data.fullName = nameMatch[1].trim();
-    console.log('Found name:', data.fullName);
-  }
-
-  // Extract date of birth
-  const dobMatch = text.match(/(?:date\s+of\s+)?birth[:\-]?\s*(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i) ||
-                   text.match(/(?:dob|d\.o\.b\.?)[:\-]?\s*(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/i);
-  if (dobMatch) {
-    try {
-      const parts = dobMatch[1].split(/[-\/\.]/);
-      let year, month, day;
-      if (parts[0].length === 4) {
-        [year, month, day] = parts;
-      } else if (parts[2].length === 4) {
-        [day, month, year] = parts;
-      } else {
-        [month, day, year] = parts;
-        if (year.length === 2) {
-          year = parseInt(year) > 30 ? '19' + year : '20' + year;
-        }
-      }
-      data.dateOfBirth = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      console.log('Found DOB:', data.dateOfBirth);
-    } catch (e) {
-      console.log('DOB parsing failed');
+    m = v.match(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s*(\d{2,4})/);
+    if (m) {
+      const mm = monthMap[m[1].toLowerCase().slice(0,3)];
+      const day = m[2];
+      let year = m[3];
+      if (year.length === 2) year = parseInt(year,10) > 30 ? '19'+year : '20'+year;
+      if (mm) return `${year}-${String(mm).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     }
-  }
+    return null;
+  };
+
+  // Blood type
+  const bloodMatch = flat.match(/blood\s*[:\-]?\s*(?:type|group)?[:\-]?\s*([ABO]{1,2}[+-]?)/i);
+  if (bloodMatch) data.bloodType = bloodMatch[1].toUpperCase();
+
+  // Allergies
+  const allergiesMatch = flat.match(/allergi(?:es|c)?[:\-]?\s*([^\.]+?)(?:\.|$)/i) || flat.match(/allergic\s+to[:\-]?\s*([^\.]+?)(?:\.|$)/i);
+  if (allergiesMatch) data.allergies = allergiesMatch[1].trim();
+
+  // Medications
+  const medicationsMatch = flat.match(/(?:medication|medicine|drug)s?[:\-]?\s*([^|]{5,200})/i);
+  if (medicationsMatch) data.medications = medicationsMatch[1].trim().substring(0,200);
+
+  // Conditions
+  const conditionsMatch = flat.match(/(?:diagnosis|condition|disease|history)[:\-]?\s*([^|]{5,200})/i);
+  if (conditionsMatch) data.medicalConditions = conditionsMatch[1].trim().substring(0,200);
+
+  // Report date
+  const reportDateMatch = flat.match(/report\s*date[:\-]?\s*([^\s]{3,20})/i) || flat.match(/date[:\-]?\s*([A-Za-z]{3,9}\s+\d{1,2},?\s*\d{2,4})/i) || flat.match(/(\d{1,2}[\/-\.\s]\d{1,2}[\/-\.\s]\d{2,4})/);
+  const parsedReportDate = parseDate(reportDateMatch ? reportDateMatch[1] : null);
+  if (parsedReportDate) data.dateOfReport = parsedReportDate;
+
+  // Phone
+  const phoneMatch = flat.match(/(?:emergency|contact|phone|mobile|tel)[:\-]?\s*(\+?[\d\s\-()]{10,})/i) || flat.match(/(\+?\d{10,})/);
+  if (phoneMatch) data.emergencyContact = phoneMatch[1].replace(/[^\d+]/g,'').substring(0,15);
+
+  // Name (handle OCR variants: patient/patent/patert/name)
+  const nameMatch = flat.match(/(?:patient|patent|patert|name)[:\-]?\s*([A-Za-z][A-Za-z\s\.]{2,60})/i) || flat.match(/^([A-Z][a-z]+\s+[A-Z][a-z]+)/);
+  if (nameMatch) data.fullName = nameMatch[1].trim();
+
+  // DOB
+  const dobMatch = flat.match(/(?:date\s+of\s+)?birth[:\-]?\s*([^\s]{3,20})/i) || flat.match(/(?:dob|d\.o\.b\.?)[:\-]?\s*([^\s]{3,20})/i);
+  const parsedDob = parseDate(dobMatch ? dobMatch[1] : null);
+  if (parsedDob) data.dateOfBirth = parsedDob;
 
   console.log('=== EXTRACTION COMPLETE ===');
   console.log('Extracted data:', JSON.stringify(data, null, 2));
