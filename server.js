@@ -147,7 +147,9 @@ function extractMedicalInfo(text) {
   if (conditionsMatch) data.medicalConditions = conditionsMatch[1].trim().substring(0,200);
 
   // Report date
-  const reportDateMatch = flat.match(/report\s*date[:\-]?\s*([^\s]{3,20})/i) || flat.match(/date[:\-]?\s*([A-Za-z]{3,9}\s+\d{1,2},?\s*\d{2,4})/i) || flat.match(/(\d{1,2}[\/-\.\s]\d{1,2}[\/-\.\s]\d{2,4})/);
+  const reportDateMatch = flat.match(/report\s*date[:\-]?\s*([^\s]{3,20})/i)
+    || flat.match(/date[:\-]?\s*([A-Za-z]{3,9}\s+\d{1,2},?\s*\d{2,4})/i)
+    || flat.match(/(\d{1,2}[\.\/-\s]\d{1,2}[\.\/-\s]\d{2,4})/);
   const parsedReportDate = parseDate(reportDateMatch ? reportDateMatch[1] : null);
   if (parsedReportDate) data.dateOfReport = parsedReportDate;
 
