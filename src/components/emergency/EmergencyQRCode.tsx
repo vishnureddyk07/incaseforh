@@ -179,7 +179,7 @@ export default function EmergencyQRCode() {
             <label className="block">
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,.pdf"
                 onChange={handleMedicalDocUpload}
                 disabled={extracting}
                 className="hidden"
