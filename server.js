@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 import Tesseract from 'tesseract.js';
+import pdfParse from 'pdf-parse';
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -314,21 +315,23 @@ app.post('/api/extract-medical-info', upload.single('document'), async (req, res
       return res.status(400).json({ error: 'No document uploaded' });
     }
 
-    // Tesseract works on images. PDFs are not supported in this setup.
-    if ((req.file.mimetype || '').toLowerCase().includes('pdf')) {
-      return res.status(415).json({ error: 'PDF not supported. Please upload an image (JPG/PNG).' });
-    }
+    const isPdf = (req.file.mimetype || '').toLowerCase().includes('pdf');
 
-    // Use Tesseract.js for local OCR (completely free, no API key needed)
     const fs = await import('fs');
-    console.log('Starting OCR with Tesseract.js for:', req.file.path);
-    
-    const result = await Tesseract.recognize(req.file.path, 'eng', {
-      logger: m => console.log('Tesseract progress:', m.status, m.progress)
-    });
-
-    const extractedText = result.data.text;
-    console.log('Extracted text:', extractedText);
+    let extractedText = '';
+    if (isPdf) {
+      console.log('Starting PDF text extraction for:', req.file.path);
+      const pdfBuffer = fs.readFileSync(req.file.path);
+      const pdfData = await pdfParse(pdfBuffer);
+      extractedText = pdfData.text || '';
+    } else {
+      console.log('Starting OCR with Tesseract.js for:', req.file.path);
+      const result = await Tesseract.recognize(req.file.path, 'eng', {
+        logger: m => console.log('Tesseract progress:', m.status, m.progress)
+      });
+      extractedText = result.data.text || '';
+    }
+    console.log('Extracted text length:', extractedText.length);
 
     // Parse extracted text for medical fields
     const extractedData = extractMedicalInfo(extractedText);
