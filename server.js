@@ -10,6 +10,7 @@ import Tesseract from 'tesseract.js';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -324,8 +325,6 @@ app.post('/api/extract-medical-info', upload.single('document'), async (req, res
     if (isPdf) {
       console.log('Starting PDF text extraction for:', req.file.path);
       const pdfBuffer = fs.readFileSync(req.file.path);
-      // Use require for CommonJS module
-      const pdfParse = require('pdf-parse');
       const pdfData = await pdfParse(pdfBuffer);
       extractedText = pdfData.text || '';
     } else {
