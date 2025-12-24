@@ -110,7 +110,7 @@ function extractMedicalInfo(text) {
     const monthMap = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12 };
     // formats: 20/12/2025 or Dec 20,2025
     let m;
-    m = v.match(/(\d{1,2})[\/-\.\s](\d{1,2})[\/-\.\s](\d{2,4})/);
+        m = v.match(/(\d{1,2})[\.\/\-\s](\d{1,2})[\.\/\-\s](\d{2,4})/);
     if (m) {
       let [ , d1, d2, y ] = m;
       let day, month, year = y.length === 2 ? (parseInt(y,10) > 30 ? '19'+y : '20'+y) : y;
