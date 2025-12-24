@@ -6,6 +6,7 @@ import EmergencyInfo from './models/EmergencyInfo.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
+import OpenAI from 'openai';
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -22,6 +23,10 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod';
 const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || null;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
+
+// Initialize OpenAI
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
 // Middleware
 app.use((req, res, next) => {
@@ -230,6 +235,85 @@ app.post('/api/admin/users/manager', requireAuth, requireAdmin, async (req, res)
   } catch (error) {
     console.error('Error creating manager:', error);
     res.status(500).json({ error: 'Failed to create manager' });
+  }
+});
+
+// AI: Extract medical info from document (public endpoint)
+app.post('/api/extract-medical-info', upload.single('document'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No document uploaded' });
+    }
+
+    if (!openai) {
+      return res.status(503).json({ error: 'AI service not configured' });
+    }
+
+    // Read the uploaded file and convert to base64
+    const fs = await import('fs');
+    const imageBuffer = fs.readFileSync(req.file.path);
+    const base64Image = imageBuffer.toString('base64');
+    const mimeType = req.file.mimetype;
+
+    // Use OpenAI Vision to extract medical information
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Extract the following information from this medical report/prescription and return ONLY a valid JSON object with these exact fields (use null if not found):
+{
+  "bloodType": "blood type (e.g., A+, O-, AB+)",
+  "allergies": "list of allergies",
+  "medications": "current medications and dosages",
+  "medicalConditions": "diagnosed conditions or diseases",
+  "dateOfReport": "date of report in YYYY-MM-DD format",
+  "emergencyContact": "emergency contact number if mentioned",
+  "fullName": "patient name if clearly visible",
+  "dateOfBirth": "date of birth if mentioned"
+}
+Do not include any markdown formatting or additional text. Return only the JSON object.`
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`
+              }
+            }
+          ]
+        }
+      ],
+      max_tokens: 1000
+    });
+
+    const extractedText = response.choices[0].message.content.trim();
+    
+    // Parse JSON response
+    let extractedData;
+    try {
+      // Remove markdown code blocks if present
+      const jsonText = extractedText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+      extractedData = JSON.parse(jsonText);
+    } catch (parseError) {
+      console.error('Failed to parse AI response:', extractedText);
+      return res.status(500).json({ error: 'Failed to parse medical information', rawResponse: extractedText });
+    }
+
+    // Clean up uploaded file
+    fs.unlinkSync(req.file.path);
+
+    res.json({
+      success: true,
+      data: extractedData,
+      message: 'Medical information extracted successfully'
+    });
+
+  } catch (error) {
+    console.error('Error extracting medical info:', error);
+    res.status(500).json({ error: 'Failed to extract medical information', details: error.message });
   }
 });
 

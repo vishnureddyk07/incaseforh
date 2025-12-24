@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Shield, CheckCircle } from "lucide-react";
+import { Shield, CheckCircle, Upload, Loader } from "lucide-react";
 import type { EmergencyInfo } from "../../types/emergency";
 import EmergencyForm from "./EmergencyForm";
 
@@ -19,6 +19,8 @@ export default function EmergencyQRCode() {
   });
   const [showSuccess, setShowSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [reportDate, setReportDate] = useState("");
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -31,6 +33,54 @@ export default function EmergencyQRCode() {
 
   const handlePhotoChange = (photoFile: File) => {
     setEmergencyInfo((prev) => ({ ...prev, photo: photoFile }));
+  };
+
+  const handleMedicalDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setExtracting(true);
+    try {
+      const formData = new FormData();
+      formData.append('document', file);
+
+      const res = await fetch('https://incaseforh.onrender.com/api/extract-medical-info', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to extract information');
+      }
+
+      const result = await res.json();
+      const data = result.data;
+
+      // Auto-fill form with extracted data
+      setEmergencyInfo((prev) => ({
+        ...prev,
+        fullName: data.fullName || prev.fullName,
+        bloodType: data.bloodType || prev.bloodType,
+        allergies: data.allergies || prev.allergies,
+        medications: data.medications || prev.medications,
+        medicalConditions: data.medicalConditions || prev.medicalConditions,
+        emergencyContact: data.emergencyContact || prev.emergencyContact,
+        dateOfBirth: data.dateOfBirth || prev.dateOfBirth,
+      }));
+
+      if (data.dateOfReport) {
+        setReportDate(data.dateOfReport);
+      }
+
+      alert('Medical information extracted successfully! Please review and update if needed.');
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Failed to extract medical information');
+    } finally {
+      setExtracting(false);
+      e.target.value = ''; // Reset file input
+    }
   };
 
   const handleSubmit = async () => {
@@ -116,6 +166,40 @@ export default function EmergencyQRCode() {
           <h4 className="text-lg font-semibold text-gray-900 mb-4">
             Personal Information
           </h4>
+          
+          {/* AI Document Upload */}
+          <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h5 className="font-semibold text-blue-900">Quick Fill with AI</h5>
+                <p className="text-sm text-blue-700">Upload medical report or prescription</p>
+              </div>
+              {extracting && <Loader className="h-5 w-5 animate-spin text-blue-600" />}
+            </div>
+            <label className="block">
+              <input
+                type="file"
+                accept="image/*,.pdf"
+                onChange={handleMedicalDocUpload}
+                disabled={extracting}
+                className="hidden"
+                id="medical-doc-upload"
+              />
+              <label
+                htmlFor="medical-doc-upload"
+                className="cursor-pointer inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                <Upload className="h-4 w-4" />
+                {extracting ? 'Analyzing...' : 'Upload Medical Document'}
+              </label>
+            </label>
+            {reportDate && (
+              <p className="mt-2 text-sm text-blue-800">
+                📅 Report Date: {new Date(reportDate).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+
           <EmergencyForm
             emergencyInfo={emergencyInfo}
             onChange={handleChange}
