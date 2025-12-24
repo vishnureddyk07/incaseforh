@@ -322,7 +322,8 @@ app.post('/api/extract-medical-info', upload.single('document'), async (req, res
       console.log('Starting PDF text extraction for:', req.file.path);
       const pdfBuffer = fs.readFileSync(req.file.path);
       // Dynamic import for pdf-parse (CommonJS module)
-      const pdfParse = (await import('pdf-parse')).default;
+      const pdfParseModule = await import('pdf-parse');
+      const pdfParse = pdfParseModule.default || pdfParseModule;
       const pdfData = await pdfParse(pdfBuffer);
       extractedText = pdfData.text || '';
     } else {
