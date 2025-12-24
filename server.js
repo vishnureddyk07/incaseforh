@@ -7,10 +7,6 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 import Tesseract from 'tesseract.js';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -322,11 +318,24 @@ app.post('/api/extract-medical-info', upload.single('document'), async (req, res
 
     const fs = await import('fs');
     let extractedText = '';
+    
     if (isPdf) {
-      console.log('Starting PDF text extraction for:', req.file.path);
-      const pdfBuffer = fs.readFileSync(req.file.path);
-      const pdfData = await pdfParse(pdfBuffer);
-      extractedText = pdfData.text || '';
+      // For PDFs, we'll use a simple approach - just tell user to use images for best results
+      console.log('PDF uploaded, attempting basic text extraction');
+      try {
+        // Try to read PDF as text (works for text-based PDFs only)
+        const pdfBuffer = fs.readFileSync(req.file.path);
+        extractedText = pdfBuffer.toString('utf-8');
+        // Filter out binary junk
+        extractedText = extractedText.replace(/[^\x20-\x7E\n\r\t]/g, ' ');
+      } catch (e) {
+        console.log('PDF text extraction failed, suggesting image upload');
+        fs.unlinkSync(req.file.path);
+        return res.status(422).json({ 
+          error: 'For best results, please convert your PDF to an image (JPG/PNG) and upload again. Screenshot or take a photo of your medical document works best!',
+          suggestion: 'Use image format for accurate text recognition'
+        });
+      }
     } else {
       console.log('Starting OCR with Tesseract.js for:', req.file.path);
       const result = await Tesseract.recognize(req.file.path, 'eng', {
