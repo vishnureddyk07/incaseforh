@@ -6,7 +6,7 @@ import EmergencyInfo from './models/EmergencyInfo.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
-import OpenAI from 'openai';
+import Tesseract from 'tesseract.js';
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -23,10 +23,6 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod';
 const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || null;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
-
-// Initialize OpenAI
-const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
 // Middleware
 app.use((req, res, next) => {
@@ -88,6 +84,79 @@ const requireAdmin = (req, res, next) => {
   }
   next();
 };
+
+// Helper function to extract medical information from OCR text
+function extractMedicalInfo(text) {
+  const data = {
+    bloodType: null,
+    allergies: null,
+    medications: null,
+    medicalConditions: null,
+    dateOfReport: null,
+    emergencyContact: null,
+    fullName: null,
+    dateOfBirth: null
+  };
+
+  // Extract blood type (A+, O-, AB+, B+, etc.)
+  const bloodMatch = text.match(/blood\s+type[:\s]+([A-B]?O?[+-]?|AB[+-]?)/i);
+  if (bloodMatch) data.bloodType = bloodMatch[1].trim().toUpperCase();
+
+  // Extract allergies
+  const allergiesMatch = text.match(/allergies?[:\s]+([^.\n]+)/i);
+  if (allergiesMatch) data.allergies = allergiesMatch[1].trim();
+
+  // Extract medications
+  const medicationsMatch = text.match(/medications?[:\s]+([^.\n]+(?:\n[^.\n]+)*)/i);
+  if (medicationsMatch) data.medications = medicationsMatch[1].trim();
+
+  // Extract medical conditions/diagnoses
+  const conditionsMatch = text.match(/(?:diagnosis|conditions?|disease)[:\s]+([^.\n]+(?:\n[^.\n]+)*)/i);
+  if (conditionsMatch) data.medicalConditions = conditionsMatch[1].trim();
+
+  // Extract date (various formats)
+  const dateMatch = text.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}|\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/);
+  if (dateMatch) {
+    const parts = dateMatch[1].split(/[-\/]/);
+    let year, month, day;
+    if (parts[0].length === 4) {
+      [year, month, day] = parts;
+    } else if (parts[2].length === 4) {
+      [day, month, year] = parts;
+    } else {
+      [month, day, year] = parts;
+      if (year.length === 2) year = '20' + year;
+    }
+    data.dateOfReport = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  // Extract emergency contact (phone number)
+  const phoneMatch = text.match(/(?:emergency|contact)[:\s]*\+?[\d\s\-()]{10,}/i);
+  if (phoneMatch) data.emergencyContact = phoneMatch[0].replace(/[^\d+\-()]/g, '').substring(0, 15);
+
+  // Extract patient name (usually at top or after "Patient Name")
+  const nameMatch = text.match(/(?:patient\s+)?name[:\s]+([A-Za-z\s]+)/i);
+  if (nameMatch) data.fullName = nameMatch[1].trim();
+
+  // Extract date of birth
+  const dobMatch = text.match(/(?:date\s+of\s+)?birth[:\s]+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
+  if (dobMatch) {
+    const parts = dobMatch[1].split(/[-\/]/);
+    let year, month, day;
+    if (parts[0].length === 4) {
+      [year, month, day] = parts;
+    } else if (parts[2].length === 4) {
+      [day, month, year] = parts;
+    } else {
+      [month, day, year] = parts;
+      if (year.length === 2) year = '20' + year;
+    }
+    data.dateOfBirth = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  return data;
+}
+
 
 // Connect to MongoDB
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://vishnureddyau07_db_user:59uPRJVWJ978fRUp@cluster0.tahxcai.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
@@ -245,62 +314,24 @@ app.post('/api/extract-medical-info', upload.single('document'), async (req, res
       return res.status(400).json({ error: 'No document uploaded' });
     }
 
-    if (!openai) {
-      return res.status(503).json({ error: 'AI service not configured' });
+    // Tesseract works on images. PDFs are not supported in this setup.
+    if ((req.file.mimetype || '').toLowerCase().includes('pdf')) {
+      return res.status(415).json({ error: 'PDF not supported. Please upload an image (JPG/PNG).' });
     }
 
-    // Read the uploaded file and convert to base64
+    // Use Tesseract.js for local OCR (completely free, no API key needed)
     const fs = await import('fs');
-    const imageBuffer = fs.readFileSync(req.file.path);
-    const base64Image = imageBuffer.toString('base64');
-    const mimeType = req.file.mimetype;
-
-    // Use OpenAI Vision to extract medical information
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Extract the following information from this medical report/prescription and return ONLY a valid JSON object with these exact fields (use null if not found):
-{
-  "bloodType": "blood type (e.g., A+, O-, AB+)",
-  "allergies": "list of allergies",
-  "medications": "current medications and dosages",
-  "medicalConditions": "diagnosed conditions or diseases",
-  "dateOfReport": "date of report in YYYY-MM-DD format",
-  "emergencyContact": "emergency contact number if mentioned",
-  "fullName": "patient name if clearly visible",
-  "dateOfBirth": "date of birth if mentioned"
-}
-Do not include any markdown formatting or additional text. Return only the JSON object.`
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`
-              }
-            }
-          ]
-        }
-      ],
-      max_tokens: 1000
+    console.log('Starting OCR with Tesseract.js for:', req.file.path);
+    
+    const result = await Tesseract.recognize(req.file.path, 'eng', {
+      logger: m => console.log('Tesseract progress:', m.status, m.progress)
     });
 
-    const extractedText = response.choices[0].message.content.trim();
-    
-    // Parse JSON response
-    let extractedData;
-    try {
-      // Remove markdown code blocks if present
-      const jsonText = extractedText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-      extractedData = JSON.parse(jsonText);
-    } catch (parseError) {
-      console.error('Failed to parse AI response:', extractedText);
-      return res.status(500).json({ error: 'Failed to parse medical information', rawResponse: extractedText });
-    }
+    const extractedText = result.data.text;
+    console.log('Extracted text:', extractedText);
+
+    // Parse extracted text for medical fields
+    const extractedData = extractMedicalInfo(extractedText);
 
     // Clean up uploaded file
     fs.unlinkSync(req.file.path);
