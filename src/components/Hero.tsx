@@ -48,8 +48,8 @@ export default function Hero() {
           </div>
           <div className="relative">
             <img
-              src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80"
-              alt="Motorcycle Safety"
+              src="https://images.unsplash.com/photo-1633356088312-f5de4cedf0e8?auto=format&fit=crop&w=800&q=80"
+              alt="Emergency QR Code - Emergency Information"
               className="rounded-lg shadow-xl"
             />
             <div className="absolute -bottom-6 -left-6 bg-white p-4 rounded-lg shadow-lg">
