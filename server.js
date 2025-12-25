@@ -147,15 +147,26 @@ function extractMedicalInfo(text) {
   let conditionText = '';
   
   // Try to find glucose/fasting test with value
-  const glucoseMatch = flat.match(/(?:Giueose|Glucose)\s+(Easting|Fasting)\s+([^\s]+(?:\s+[^\s]+)?)?/i);
+  const glucoseMatch = flat.match(/(?:Giueose|Glucose)\s+(Easting|Fasting)/i);
   if (glucoseMatch) {
     let testName = 'Glucose Fasting';
-    let testValue = glucoseMatch[2] || '';
-    // Look for numeric value nearby if not captured
-    if (!testValue || testValue.length < 2) {
-      const valueMatch = flat.substring(flat.indexOf(glucoseMatch[0])).match(/(?:Easting|Fasting)\s+([0-9\.]+\s*(?:mg\/dL|mmol\/L|[A-Za-z\/]+)?)/i);
-      if (valueMatch) testValue = valueMatch[1];
+    let testValue = '';
+    
+    // Look for numeric value in the next 100 characters after test name
+    const startPos = flat.indexOf(glucoseMatch[0]);
+    const searchArea = flat.substring(startPos, startPos + 150);
+    console.log('Searching for glucose value in:', searchArea);
+    
+    // Pattern 1: Direct number with optional unit (120 mg/dL, 95.5, etc.)
+    const valueMatch = searchArea.match(/(?:Easting|Fasting)\s+(?:[^0-9]*?)([0-9]+\.?[0-9]*)\s*(mg\/dL|mmol\/L|[A-Za-z\/]*)?/i)
+      || searchArea.match(/[^0-9]*?([0-9]{2,3}\.?[0-9]*)\s*(mg\/dL|mmol\/L)?/);
+    
+    if (valueMatch) {
+      testValue = valueMatch[1];
+      if (valueMatch[2]) testValue += ' ' + valueMatch[2];
+      console.log('Found glucose value:', testValue);
     }
+    
     conditionText = testValue ? `${testName}: ${testValue.trim()}` : testName;
   }
   
