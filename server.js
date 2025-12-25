@@ -142,18 +142,37 @@ function extractMedicalInfo(text) {
   const medicationsMatch = flat.match(/(?:medication|medicine|drug)s?[:\-]?\s*([^|]{5,200})/i);
   if (medicationsMatch) data.medications = medicationsMatch[1].trim().substring(0,200);
 
-  // Conditions - capture diagnosis, conditions, or test types
-  // Look for common test names that appear on their own line in reports
-  const conditionsMatch = flat.match(/(?:diagnosis|condition|disease|history)[:\-]?\s*([^|]{5,200})/i)
-    || flat.match(/(?:Giueose|Glucose)\s+(Easting|Fasting)/i)
-    || flat.match(/(?:test|diabetes|sugar)[:\-]?\s*([A-Za-z\s]{5,100})/i);
-  if (conditionsMatch) {
-    let condition = conditionsMatch[0] || conditionsMatch[1];
-    condition = condition.trim().substring(0,200);
-    // Clean up OCR noise: fix common misreads
-    condition = condition.replace(/Giueose/i, 'Glucose').replace(/Easting/i, 'Fasting');
-    condition = condition.replace(/\s+/g, ' ');
-    if (condition.length > 3) data.medicalConditions = condition;
+  // Conditions - capture diagnosis, conditions, or test types WITH VALUES
+  // Look for test names and their numeric values
+  let conditionText = '';
+  
+  // Try to find glucose/fasting test with value
+  const glucoseMatch = flat.match(/(?:Giueose|Glucose)\s+(Easting|Fasting)\s+([^\s]+(?:\s+[^\s]+)?)?/i);
+  if (glucoseMatch) {
+    let testName = 'Glucose Fasting';
+    let testValue = glucoseMatch[2] || '';
+    // Look for numeric value nearby if not captured
+    if (!testValue || testValue.length < 2) {
+      const valueMatch = flat.substring(flat.indexOf(glucoseMatch[0])).match(/(?:Easting|Fasting)\s+([0-9\.]+\s*(?:mg\/dL|mmol\/L|[A-Za-z\/]+)?)/i);
+      if (valueMatch) testValue = valueMatch[1];
+    }
+    conditionText = testValue ? `${testName}: ${testValue.trim()}` : testName;
+  }
+  
+  // Fallback to general condition/diagnosis patterns
+  if (!conditionText) {
+    const conditionsMatch = flat.match(/(?:diagnosis|condition|disease|history)[:\-]?\s*([^|]{5,200})/i)
+      || flat.match(/(?:test|diabetes|sugar)[:\-]?\s*([A-Za-z\s]{5,100})/i);
+    if (conditionsMatch) {
+      conditionText = (conditionsMatch[1] || conditionsMatch[0]).trim().substring(0,200);
+    }
+  }
+  
+  if (conditionText) {
+    // Clean up OCR noise
+    conditionText = conditionText.replace(/Giueose/gi, 'Glucose').replace(/Easting/gi, 'Fasting');
+    conditionText = conditionText.replace(/\s+/g, ' ').trim();
+    if (conditionText.length > 3) data.medicalConditions = conditionText;
   }
 
   // Report date - handle "Report Date: Dec 20,2025, 0529 PM" format
