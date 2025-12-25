@@ -143,11 +143,15 @@ function extractMedicalInfo(text) {
   if (medicationsMatch) data.medications = medicationsMatch[1].trim().substring(0,200);
 
   // Conditions - capture diagnosis, conditions, or test types
+  // Look for common test names that appear on their own line in reports
   const conditionsMatch = flat.match(/(?:diagnosis|condition|disease|history)[:\-]?\s*([^|]{5,200})/i)
-    || flat.match(/(?:test|glucose|diabetes|sugar|fasting)[:\-]?\s*([A-Za-z\s]{5,100})/i);
+    || flat.match(/(?:Giueose|Glucose)\s+(Easting|Fasting)/i)
+    || flat.match(/(?:test|diabetes|sugar)[:\-]?\s*([A-Za-z\s]{5,100})/i);
   if (conditionsMatch) {
-    let condition = conditionsMatch[1].trim().substring(0,200);
-    // Clean up OCR noise
+    let condition = conditionsMatch[0] || conditionsMatch[1];
+    condition = condition.trim().substring(0,200);
+    // Clean up OCR noise: fix common misreads
+    condition = condition.replace(/Giueose/i, 'Glucose').replace(/Easting/i, 'Fasting');
     condition = condition.replace(/\s+/g, ' ');
     if (condition.length > 3) data.medicalConditions = condition;
   }
@@ -164,13 +168,21 @@ function extractMedicalInfo(text) {
   if (phoneMatch) data.emergencyContact = phoneMatch[1].replace(/[^\d+]/g,'').substring(0,15);
 
   // Name (handle OCR variants: patient/patent/patert/name)
-  // Look for pattern like "NAME: Ms k nagalakshmi" or "Patient NAME: John Doe"
-  // Match text AFTER the colon/dash, stopping at age/gender/report keywords or special chars
-  const nameMatch = flat.match(/(?:patient|patent|patert)?\s*name[:\-]?\s*:?\s*([A-Za-z][A-Za-z\s\.]{2,60}?)(?:a[EeGg]|age|gender|report|status|\d{2,}|[|]|\s{3,})/i);
+  // Look for pattern like "NAME: Ms k nagalakshmi aE" - capture until OCR noise starts
+  console.log('Attempting name extraction from:', flat.substring(0, 150));
+  let nameMatch = flat.match(/(?:patient|patent|patert)?\s*name[:\-]?\s*:?\s*([A-Za-z][A-Za-z\s\.]+?)\s+(?:a[A-Z]|age|gender|report|status|\d{2,}|OO)/i);
+  console.log('First pattern match:', nameMatch);
+  if (!nameMatch) {
+    // Fallback: simpler pattern - just get text after NAME: until a clear terminator
+    nameMatch = flat.match(/name[:\-]?\s*:?\s*([A-Z][A-Za-z\s\.]{3,70}?)(?:\s+[a-z][A-Z]|\s+OO|\s+age|\.|$)/i);
+    console.log('Fallback pattern match:', nameMatch);
+  }
   if (nameMatch) {
     let name = nameMatch[1].trim();
+    console.log('Raw extracted name:', name);
     // Clean up OCR artifacts: remove trailing dots, excess spaces, single letters at end
     name = name.replace(/\s+/g, ' ').replace(/\s*\.\s*$/, '').replace(/\s+[a-zA-Z]\s*$/, '');
+    console.log('Cleaned name:', name);
     if (name.length > 2) data.fullName = name;
   }
 
