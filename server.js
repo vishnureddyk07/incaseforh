@@ -142,12 +142,18 @@ function extractMedicalInfo(text) {
   const medicationsMatch = flat.match(/(?:medication|medicine|drug)s?[:\-]?\s*([^|]{5,200})/i);
   if (medicationsMatch) data.medications = medicationsMatch[1].trim().substring(0,200);
 
-  // Conditions
-  const conditionsMatch = flat.match(/(?:diagnosis|condition|disease|history)[:\-]?\s*([^|]{5,200})/i);
-  if (conditionsMatch) data.medicalConditions = conditionsMatch[1].trim().substring(0,200);
+  // Conditions - capture diagnosis, conditions, or test types
+  const conditionsMatch = flat.match(/(?:diagnosis|condition|disease|history)[:\-]?\s*([^|]{5,200})/i)
+    || flat.match(/(?:test|glucose|diabetes|sugar|fasting)[:\-]?\s*([A-Za-z\s]{5,100})/i);
+  if (conditionsMatch) {
+    let condition = conditionsMatch[1].trim().substring(0,200);
+    // Clean up OCR noise
+    condition = condition.replace(/\s+/g, ' ');
+    if (condition.length > 3) data.medicalConditions = condition;
+  }
 
-  // Report date
-  const reportDateMatch = flat.match(/report\s*date[:\-]?\s*([^\s]{3,20})/i)
+  // Report date - handle "Report Date: Dec 20,2025, 0529 PM" format
+  const reportDateMatch = flat.match(/report\s*date[:\-]?\s*([A-Za-z]{3,9}\s+\d{1,2},?\s*\d{2,4})/i)
     || flat.match(/date[:\-]?\s*([A-Za-z]{3,9}\s+\d{1,2},?\s*\d{2,4})/i)
     || flat.match(/(\d{1,2}[\.\/-\s]\d{1,2}[\.\/-\s]\d{2,4})/);
   const parsedReportDate = parseDate(reportDateMatch ? reportDateMatch[1] : null);
@@ -158,8 +164,15 @@ function extractMedicalInfo(text) {
   if (phoneMatch) data.emergencyContact = phoneMatch[1].replace(/[^\d+]/g,'').substring(0,15);
 
   // Name (handle OCR variants: patient/patent/patert/name)
-  const nameMatch = flat.match(/(?:patient|patent|patert|name)[:\-]?\s*([A-Za-z][A-Za-z\s\.]{2,60})/i) || flat.match(/^([A-Z][a-z]+\s+[A-Z][a-z]+)/);
-  if (nameMatch) data.fullName = nameMatch[1].trim();
+  // Look for pattern like "NAME: Ms k nagalakshmi" or "Patient NAME: John Doe"
+  // Match text AFTER the colon/dash, stopping at age/gender/report keywords or special chars
+  const nameMatch = flat.match(/(?:patient|patent|patert)?\s*name[:\-]?\s*:?\s*([A-Za-z][A-Za-z\s\.]{2,60}?)(?:a[EeGg]|age|gender|report|status|\d{2,}|[|]|\s{3,})/i);
+  if (nameMatch) {
+    let name = nameMatch[1].trim();
+    // Clean up OCR artifacts: remove trailing dots, excess spaces, single letters at end
+    name = name.replace(/\s+/g, ' ').replace(/\s*\.\s*$/, '').replace(/\s+[a-zA-Z]\s*$/, '');
+    if (name.length > 2) data.fullName = name;
+  }
 
   // DOB
   const dobMatch = flat.match(/(?:date\s+of\s+)?birth[:\-]?\s*([^\s]{3,20})/i) || flat.match(/(?:dob|d\.o\.b\.?)[:\-]?\s*([^\s]{3,20})/i);
