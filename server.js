@@ -146,27 +146,31 @@ function extractMedicalInfo(text) {
   // Look for test names and their numeric values
   let conditionText = '';
   
-  // Try to find glucose/fasting test with value
+  // Try to find specific test types
+  // Pattern 1: Glucose Fasting test
   const glucoseMatch = flat.match(/(?:Giueose|Glucose)\s+(Easting|Fasting)/i);
   if (glucoseMatch) {
     let testName = 'Glucose Fasting';
     let testValue = '';
     
-    // Look for numeric value in the next 100 characters after test name
     const startPos = flat.indexOf(glucoseMatch[0]);
     const searchArea = flat.substring(startPos, startPos + 150);
-    console.log('Searching for glucose value in:', searchArea);
-    
-    // Pattern: Look for actual numbers (2-4 digits) with optional decimals
-    // Require at least 2 consecutive digits to avoid matching single letters
     const valueMatch = searchArea.match(/(?:Easting|Fasting)[^0-9]*?\s+([0-9]{2,3}(?:\.[0-9]{1,2})?)\s*(?:mg\/dL|mmol\/L)?/i);
     
     if (valueMatch && valueMatch[1]) {
       testValue = valueMatch[1];
-      console.log('Found glucose value:', testValue);
     }
     
     conditionText = testValue ? `${testName}: ${testValue.trim()}` : testName;
+  }
+  
+  // Pattern 2: Complete Blood Count (CBC) test
+  if (!conditionText) {
+    const cbcMatch = flat.match(/(?:COMPLETE\s+BLOOD\s+COUNT|CBC|FBC|FTTIRACE)/i);
+    if (cbcMatch) {
+      conditionText = 'Complete Blood Count (CBC)';
+      console.log('Found CBC test');
+    }
   }
   
   // Fallback to general condition/diagnosis patterns
@@ -174,15 +178,20 @@ function extractMedicalInfo(text) {
     const conditionsMatch = flat.match(/(?:diagnosis|condition|disease|history)[:\-]?\s*([^|]{5,200})/i)
       || flat.match(/(?:test|diabetes|sugar)[:\-]?\s*([A-Za-z\s]{5,100})/i);
     if (conditionsMatch) {
-      conditionText = (conditionsMatch[1] || conditionsMatch[0]).trim().substring(0,200);
+      let match = conditionsMatch[1] || conditionsMatch[0];
+      // Only use if it's not just noise (avoid matches with too many non-words)
+      if (match && /[A-Z]{2,}/.test(match)) {
+        conditionText = match.trim().substring(0,200);
+      }
     }
   }
   
   if (conditionText) {
     // Clean up OCR noise
     conditionText = conditionText.replace(/Giueose/gi, 'Glucose').replace(/Easting/gi, 'Fasting');
+    conditionText = conditionText.replace(/FTTIRACE[A-Z]*/gi, 'Pathology');
     conditionText = conditionText.replace(/\s+/g, ' ').trim();
-    if (conditionText.length > 3) data.medicalConditions = conditionText;
+    if (conditionText.length > 3 && conditionText.length < 300) data.medicalConditions = conditionText;
   }
 
   // Report date - handle "Report Date: Dec 20,2025, 0529 PM" format
@@ -197,22 +206,19 @@ function extractMedicalInfo(text) {
   if (phoneMatch) data.emergencyContact = phoneMatch[1].replace(/[^\d+]/g,'').substring(0,15);
 
   // Name (handle OCR variants: patient/patent/patert/name)
-  // Look for pattern like "NAME: Ms k nagalakshmi aE" - capture until OCR noise starts
-  console.log('Attempting name extraction from:', flat.substring(0, 150));
+  // Only extract if clear "Patient NAME:" or similar pattern found
   let nameMatch = flat.match(/(?:patient|patent|patert)?\s*name[:\-]?\s*:?\s*([A-Za-z][A-Za-z\s\.]+?)\s+(?:a[A-Z]|age|gender|report|status|\d{2,}|OO)/i);
-  console.log('First pattern match:', nameMatch);
   if (!nameMatch) {
-    // Fallback: simpler pattern - just get text after NAME: until a clear terminator
+    // Fallback: simpler pattern
     nameMatch = flat.match(/name[:\-]?\s*:?\s*([A-Z][A-Za-z\s\.]{3,70}?)(?:\s+[a-z][A-Z]|\s+OO|\s+age|\.|$)/i);
-    console.log('Fallback pattern match:', nameMatch);
   }
-  if (nameMatch) {
+  if (nameMatch && nameMatch[1]) {
     let name = nameMatch[1].trim();
-    console.log('Raw extracted name:', name);
-    // Clean up OCR artifacts: remove trailing dots, excess spaces, single letters at end
+    // Clean up OCR artifacts
     name = name.replace(/\s+/g, ' ').replace(/\s*\.\s*$/, '').replace(/\s+[a-zA-Z]\s*$/, '');
-    console.log('Cleaned name:', name);
-    if (name.length > 2) data.fullName = name;
+    if (name.length > 2 && !/^(REPORT|TEST|COMPLETE|BLOOD|COUNT)/.test(name)) {
+      data.fullName = name;
+    }
   }
 
   // DOB
