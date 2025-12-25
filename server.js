@@ -85,7 +85,8 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// Helper function to extract medical information from OCR text
+// ===== COMMENTED OUT: Medical Info Extraction Function (Will be implemented later) =====
+/*
 function extractMedicalInfo(text) {
   console.log('=== STARTING MEDICAL INFO EXTRACTION ===');
   console.log('Input text sample:', (text || '').substring(0, 500));
@@ -230,6 +231,8 @@ function extractMedicalInfo(text) {
   console.log('Extracted data:', JSON.stringify(data, null, 2));
   return data;
 }
+*/
+// ===== END COMMENTED OUT CODE =====
 
 
 
@@ -383,6 +386,8 @@ app.post('/api/admin/users/manager', requireAuth, requireAdmin, async (req, res)
 });
 
 // AI: Extract medical info from document (public endpoint)
+// ===== COMMENTED OUT: Medical Document Upload API Endpoint (Will be implemented later) =====
+/*
 app.post('/api/extract-medical-info', upload.single('document'), async (req, res) => {
   try {
     if (!req.file) {
@@ -437,6 +442,8 @@ app.post('/api/extract-medical-info', upload.single('document'), async (req, res
     res.status(500).json({ error: 'Failed to extract medical information', details: error.message });
   }
 });
+*/
+// ===== END COMMENTED OUT CODE =====
 
 // API Routes
 app.post('/api/emergency', upload.single('photo'), async (req, res) => {

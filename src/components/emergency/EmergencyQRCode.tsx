@@ -167,7 +167,8 @@ export default function EmergencyQRCode() {
             Personal Information
           </h4>
           
-          {/* AI Document Upload */}
+          {/* ===== COMMENTED OUT: AI Medical Document Upload Feature (Will be implemented later) ===== */}
+          {/* 
           <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
             <div className="flex items-center justify-between mb-2">
               <div>
@@ -199,6 +200,8 @@ export default function EmergencyQRCode() {
               </p>
             )}
           </div>
+          */}
+          {/* ===== END COMMENTED OUT CODE ===== */}
 
           <EmergencyForm
             emergencyInfo={emergencyInfo}
