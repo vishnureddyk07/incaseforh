@@ -157,13 +157,12 @@ function extractMedicalInfo(text) {
     const searchArea = flat.substring(startPos, startPos + 150);
     console.log('Searching for glucose value in:', searchArea);
     
-    // Pattern 1: Direct number with optional unit (120 mg/dL, 95.5, etc.)
-    const valueMatch = searchArea.match(/(?:Easting|Fasting)\s+(?:[^0-9]*?)([0-9]+\.?[0-9]*)\s*(mg\/dL|mmol\/L|[A-Za-z\/]*)?/i)
-      || searchArea.match(/[^0-9]*?([0-9]{2,3}\.?[0-9]*)\s*(mg\/dL|mmol\/L)?/);
+    // Pattern: Look for actual numbers (2-4 digits) with optional decimals
+    // Require at least 2 consecutive digits to avoid matching single letters
+    const valueMatch = searchArea.match(/(?:Easting|Fasting)[^0-9]*?\s+([0-9]{2,3}(?:\.[0-9]{1,2})?)\s*(?:mg\/dL|mmol\/L)?/i);
     
-    if (valueMatch) {
+    if (valueMatch && valueMatch[1]) {
       testValue = valueMatch[1];
-      if (valueMatch[2]) testValue += ' ' + valueMatch[2];
       console.log('Found glucose value:', testValue);
     }
     
