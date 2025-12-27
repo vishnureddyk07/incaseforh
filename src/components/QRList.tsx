@@ -34,6 +34,7 @@ export default function QRList() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
+  const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
   const { isAuthenticated, token, user } = useAuth();
   const navigate = useNavigate();
 
@@ -63,6 +64,64 @@ export default function QRList() {
         setLoading(false);
       });
   }, [isAuthenticated, token, user]);
+
+  // Resolve authenticated photo URLs into stable object URLs (or keep data URLs)
+  useEffect(() => {
+    let isActive = true;
+    const aborters: AbortController[] = [];
+
+    const resolvePhotos = async () => {
+      if (!isAuthenticated || !token) return;
+      const nextMap = new Map(photoUrls);
+
+      for (const rec of qrs) {
+        if (!rec.photo) continue;
+        const src = rec.photo.trim();
+        const id = rec._id;
+
+        // Skip if already resolved
+        if (nextMap.has(id)) continue;
+
+        // Data URL: use as-is
+        if (src.startsWith('data:')) {
+          nextMap.set(id, src);
+          continue;
+        }
+
+        // Otherwise, fetch with auth and create object URL
+        try {
+          const controller = new AbortController();
+          aborters.push(controller);
+          const res = await fetch(src, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          });
+          if (!res.ok) throw new Error(`Photo fetch failed (${res.status})`);
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          nextMap.set(id, url);
+        } catch (e) {
+          console.warn('Photo resolve error for', id, e);
+        }
+      }
+
+      if (isActive) setPhotoUrls(nextMap);
+    };
+
+    resolvePhotos();
+
+    return () => {
+      isActive = false;
+      aborters.forEach((c) => c.abort());
+      // Revoke object URLs
+      for (const [id, url] of photoUrls.entries()) {
+        if (url && !url.startsWith('data:')) {
+          URL.revokeObjectURL(url);
+        }
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrs, isAuthenticated, token]);
 
   const handleOpen = (record: EmergencyInfo) => {
     const identifier = (record.email && record.email.trim()) || (record.phoneNumber && record.phoneNumber.trim());
@@ -389,7 +448,7 @@ export default function QRList() {
           <div key={qr._id} className="bg-white p-4 rounded-lg shadow hover:shadow-md transition">
             <div className="flex gap-4 cursor-pointer" onClick={() => handleOpen(qr)}>
               {qr.photo ? (
-                <img src={qr.photo} alt={qr.fullName} className="w-20 h-20 rounded object-cover border" />
+                <img src={photoUrls.get(qr._id) || qr.photo} alt={qr.fullName} className="w-20 h-20 rounded object-cover border" />
               ) : (
                 <div className="w-20 h-20 rounded bg-gray-100 grid place-items-center text-gray-500 text-xs">No Photo</div>
               )}
