@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 import { useAuth } from "../context/AuthContext";
 
 interface EmergencyInfo {
   _id: string;
   fullName: string;
-  email: string;
+  email?: string;
   qrCode: string;
   photo?: string;
   bloodType?: string;
@@ -16,6 +18,8 @@ interface EmergencyInfo {
   dateOfBirth?: string;
   phoneNumber?: string;
   address?: string;
+  alternateNumber1?: string;
+  alternateNumber2?: string;
   createdAt?: string;
 }
 
@@ -27,6 +31,9 @@ export default function QRList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
   const [editingRecord, setEditingRecord] = useState<EmergencyInfo | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [downloading, setDownloading] = useState(false);
   const { isAuthenticated, token, user } = useAuth();
   const navigate = useNavigate();
 
@@ -57,8 +64,13 @@ export default function QRList() {
       });
   }, [isAuthenticated, token, user]);
 
-  const handleOpen = (email: string) => {
-    navigate(`/emergencyinfo/${encodeURIComponent(email)}`);
+  const handleOpen = (record: EmergencyInfo) => {
+    const identifier = (record.email && record.email.trim()) || (record.phoneNumber && record.phoneNumber.trim());
+    if (!identifier) {
+      alert('No email or phone number available for this record');
+      return;
+    }
+    navigate(`/emergencyinfo/${encodeURIComponent(identifier)}`);
   };
 
   // Search and filter logic
@@ -67,9 +79,11 @@ export default function QRList() {
 
     // Apply search
     if (searchTerm) {
+      const needle = searchTerm.toLowerCase();
       filtered = filtered.filter(q => 
-        q.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        q.email.toLowerCase().includes(searchTerm.toLowerCase())
+        q.fullName.toLowerCase().includes(needle) ||
+        (q.email || '').toLowerCase().includes(needle) ||
+        (q.phoneNumber || '').toLowerCase().includes(needle)
       );
     }
 
@@ -93,6 +107,159 @@ export default function QRList() {
     setFilteredQrs(filtered);
   }, [searchTerm, sortBy, qrs]);
 
+  const filteredMap = useMemo(() => {
+    const map = new Map<string, EmergencyInfo>();
+    filteredQrs.forEach((r) => map.set(r._id, r));
+    return map;
+  }, [filteredQrs]);
+
+  const toggleSelectionMode = () => {
+    setSelectionMode((prev) => {
+      if (prev) setSelectedIds(new Set());
+      return !prev;
+    });
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => {
+    setSelectedIds(new Set(filteredQrs.map((r) => r._id)));
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const dataUrlToBlob = (dataUrl: string): Blob => {
+    if (!dataUrl) throw new Error('Invalid data URL: empty or null');
+    
+    const trimmed = dataUrl.trim();
+    console.log('dataUrlToBlob input length:', trimmed.length);
+    console.log('dataUrlToBlob first 100 chars:', trimmed.substring(0, 100));
+    
+    try {
+      // Check if it's actually a data URL
+      if (!trimmed.startsWith('data:')) {
+        throw new Error(`Not a data URL. Starts with: "${trimmed.substring(0, 50)}"`);
+      }
+      
+      // Find the comma separator
+      const commaIndex = trimmed.indexOf(',');
+      if (commaIndex === -1) {
+        throw new Error('Data URL missing comma separator');
+      }
+      
+      const header = trimmed.substring(0, commaIndex);
+      const data = trimmed.substring(commaIndex + 1);
+      
+      if (!data) {
+        throw new Error('Data URL has empty data portion');
+      }
+      
+      // Decode base64
+      let bstr;
+      try {
+        bstr = atob(data);
+      } catch (e) {
+        throw new Error(`Invalid base64 encoding: ${(e as Error).message}`);
+      }
+      
+      const n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      
+      for (let i = 0; i < n; i++) {
+        u8arr[i] = bstr.charCodeAt(i);
+      }
+      
+      const mimeMatch = header.match(/:(.*?);/);
+      const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+      
+      console.log('Successfully converted to blob. Size:', u8arr.length, 'MIME:', mimeType);
+      return new Blob([u8arr], { type: mimeType });
+    } catch (err) {
+      console.error('dataUrlToBlob error details:', {
+        inputLength: trimmed.length,
+        firstChars: trimmed.substring(0, 100),
+        error: (err as Error).message,
+      });
+      throw err;
+    }
+  };
+
+  const downloadSingle = async (record: EmergencyInfo) => {
+    if (!record.qrCode) {
+      alert('QR code not available for this record');
+      return;
+    }
+    try {
+      const blob = dataUrlToBlob(record.qrCode);
+      const filename = `${(record.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_')}.png`;
+      saveAs(blob, filename);
+    } catch (err) {
+      console.error('Download error:', err);
+      alert('Failed to download QR code. Data may be corrupted.');
+    }
+  };
+
+  const downloadSelected = async () => {
+    if (selectedIds.size === 0) {
+      alert('Select at least one record');
+      return;
+    }
+    setDownloading(true);
+    try {
+      if (selectedIds.size === 1) {
+        const onlyId = Array.from(selectedIds)[0];
+        const rec = filteredMap.get(onlyId);
+        if (!rec) throw new Error('Record missing');
+        await downloadSingle(rec);
+        return;
+      }
+
+      const zip = new JSZip();
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const id of selectedIds) {
+        const rec = filteredMap.get(id);
+        if (!rec || !rec.qrCode) {
+          failCount++;
+          continue;
+        }
+        try {
+          const blob = dataUrlToBlob(rec.qrCode);
+          const name = (rec.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_');
+          zip.file(`${name}.png`, blob);
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to add ${rec.fullName} to zip:`, err);
+          failCount++;
+        }
+      }
+
+      if (successCount === 0) {
+        alert('No valid QR codes to download.');
+        setDownloading(false);
+        return;
+      }
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `emergency-qrs-${successCount}.zip`);
+      if (failCount > 0) {
+        alert(`Downloaded ${successCount} QR codes (${failCount} failed due to corruption).`);
+      }
+    } catch (err) {
+      console.error('Bulk download error:', err);
+      alert('Failed to download selected QR codes.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const handleEdit = (e: React.MouseEvent, record: EmergencyInfo) => {
     e.stopPropagation();
     setEditingRecord(record);
@@ -101,7 +268,16 @@ export default function QRList() {
   const handleSaveEdit = async (updatedData: Partial<EmergencyInfo>) => {
     if (!editingRecord || !token) return;
     try {
-      const res = await fetch(`https://incaseforh.onrender.com/api/emergency/${editingRecord.email}`, {
+      const identifier = (editingRecord.email && editingRecord.email.trim()) || (editingRecord.phoneNumber && editingRecord.phoneNumber.trim());
+      if (!identifier) {
+        alert('No email or phone number available for update');
+        return;
+      }
+      const isEmail = identifier.includes('@');
+      const url = isEmail
+        ? `https://incaseforh.onrender.com/api/emergency/${identifier}`
+        : `https://incaseforh.onrender.com/api/emergency/phone/${identifier}`;
+      const res = await fetch(url, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -152,7 +328,7 @@ export default function QRList() {
       <div className="bg-white p-4 rounded-lg shadow mb-6 space-y-3">
         <input
           type="text"
-          placeholder="Search by name or email..."
+          placeholder="Search by name, email, or phone..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full px-4 py-2 border rounded-md"
@@ -169,13 +345,49 @@ export default function QRList() {
             <option value="name">Name (A-Z)</option>
           </select>
           <span className="ml-auto text-sm text-gray-600">{filteredQrs.length} record(s)</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={toggleSelectionMode}
+              className="px-3 py-1 border rounded hover:bg-gray-100"
+            >
+              {selectionMode ? 'Close download mode' : 'Download'}
+            </button>
+            {selectionMode && (
+              <>
+                <button
+                  type="button"
+                  onClick={selectAllVisible}
+                  className="px-3 py-1 border rounded hover:bg-gray-100"
+                >
+                  Select visible
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  className="px-3 py-1 border rounded hover:bg-gray-100"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={downloadSelected}
+                  disabled={downloading}
+                  className="px-3 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-60"
+                >
+                  {downloading ? 'Preparing...' : `Download (${selectedIds.size || 0})`}
+                </button>
+              </>
+            )}
+          </div>
         </div>
+        {selectionMode && <p className="text-xs text-gray-500">Tip: toggle cards to include them; multiple selections will download as a zip, single selection as a PNG.</p>}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredQrs.map((qr) => (
           <div key={qr._id} className="bg-white p-4 rounded-lg shadow hover:shadow-md transition">
-            <div className="flex gap-4 cursor-pointer" onClick={() => handleOpen(qr.email)}>
+            <div className="flex gap-4 cursor-pointer" onClick={() => handleOpen(qr)}>
               {qr.photo ? (
                 <img src={qr.photo} alt={qr.fullName} className="w-20 h-20 rounded object-cover border" />
               ) : (
@@ -183,18 +395,41 @@ export default function QRList() {
               )}
               <div className="flex-1">
                 <h3 className="text-lg font-semibold">{qr.fullName}</h3>
-                <p className="text-sm text-gray-600">{qr.email}</p>
+                <p className="text-sm text-gray-600">{qr.email || 'Email not provided'}</p>
+                <p className="text-sm text-gray-700">{qr.phoneNumber || 'Phone not provided'}</p>
+                {(qr.alternateNumber1 || qr.alternateNumber2) && (
+                  <p className="text-xs text-gray-500">
+                    Alt: {[qr.alternateNumber1, qr.alternateNumber2].filter(Boolean).join(' | ')}
+                  </p>
+                )}
                 <p className="text-xs text-gray-400 mt-1">
                   {qr.createdAt ? new Date(qr.createdAt).toLocaleDateString() : 'N/A'} {qr.createdAt ? new Date(qr.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
                 </p>
               </div>
+              {selectionMode && (
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(qr._id)}
+                  onChange={() => toggleSelect(qr._id)}
+                  className="w-5 h-5 mt-1"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              )}
             </div>
-            <button
-              onClick={(e) => handleEdit(e, qr)}
-              className="mt-3 w-full text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded"
-            >
-              Edit Info
-            </button>
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                onClick={(e) => handleEdit(e, qr)}
+                className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded"
+              >
+                Edit Info
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); downloadSingle(qr); }}
+                className="text-sm bg-orange-100 hover:bg-orange-200 px-3 py-1 rounded"
+              >
+                Download QR
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -219,6 +454,7 @@ function EditRecordModal({ record, onClose, onSave }: {
 }) {
   const [formData, setFormData] = useState({
     fullName: record.fullName || '',
+    email: record.email || '',
     bloodType: record.bloodType || '',
     emergencyContact: record.emergencyContact || '',
     allergies: record.allergies || '',
@@ -226,6 +462,8 @@ function EditRecordModal({ record, onClose, onSave }: {
     medicalConditions: record.medicalConditions || '',
     dateOfBirth: record.dateOfBirth || '',
     phoneNumber: record.phoneNumber || '',
+    alternateNumber1: record.alternateNumber1 || '',
+    alternateNumber2: record.alternateNumber2 || '',
     address: record.address || '',
   });
 
@@ -248,6 +486,10 @@ function EditRecordModal({ record, onClose, onSave }: {
             <input value={formData.fullName} onChange={(e) => setFormData({...formData, fullName: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" required />
           </div>
           <div>
+            <label className="block text-sm font-medium">Email (optional)</label>
+            <input value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" type="email" />
+          </div>
+          <div>
             <label className="block text-sm font-medium">Blood Type</label>
             <input value={formData.bloodType} onChange={(e) => setFormData({...formData, bloodType: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
           </div>
@@ -258,6 +500,16 @@ function EditRecordModal({ record, onClose, onSave }: {
           <div>
             <label className="block text-sm font-medium">Phone Number</label>
             <input value={formData.phoneNumber} onChange={(e) => setFormData({...formData, phoneNumber: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium">Alternate Number 1</label>
+              <input value={formData.alternateNumber1} onChange={(e) => setFormData({...formData, alternateNumber1: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Alternate Number 2</label>
+              <input value={formData.alternateNumber2} onChange={(e) => setFormData({...formData, alternateNumber2: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium">Date of Birth</label>

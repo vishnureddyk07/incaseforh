@@ -80,26 +80,12 @@ export default function EmergencyForm({
 
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            Email
+            Email (Optional)
           </label>
           <input
-            type="text"
+            type="email"
             name="email"
             value={emergencyInfo.email}
-            onChange={onChange}
-            className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Date of Birth
-          </label>
-          <input
-            type="date"
-            name="dateOfBirth"
-            value={emergencyInfo.dateOfBirth}
             onChange={onChange}
             className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
           />
@@ -109,18 +95,67 @@ export default function EmergencyForm({
       <div className="grid md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            Phone Number
+            Phone Number <span className="text-red-500">*</span>
           </label>
           <input
             type="tel"
             name="phoneNumber"
             value={emergencyInfo.phoneNumber}
             onChange={onChange}
+            required
             className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
             placeholder="+91 98765 43210"
           />
         </div>
 
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Date of Birth <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="date"
+            name="dateOfBirth"
+            value={emergencyInfo.dateOfBirth}
+            onChange={onChange}
+            required
+            className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
+          />
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Alternate Number 1 <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="tel"
+            name="alternateNumber1"
+            value={emergencyInfo.alternateNumber1}
+            onChange={onChange}
+            required
+            className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
+            placeholder="+91 98765 43211"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Alternate Number 2 <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="tel"
+            name="alternateNumber2"
+            value={emergencyInfo.alternateNumber2}
+            onChange={onChange}
+            required
+            className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
+            placeholder="+91 98765 43212"
+          />
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700">
             Blood Type

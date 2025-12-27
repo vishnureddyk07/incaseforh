@@ -1,6 +1,6 @@
 export interface EmergencyInfo {
   fullName: string;
-  email : string;
+  email: string;
   bloodType: string;
   emergencyContact: string;
   allergies: string;
@@ -10,4 +10,6 @@ export interface EmergencyInfo {
   dateOfBirth: string;
   address: string;
   phoneNumber: string;
+  alternateNumber1: string;
+  alternateNumber2: string;
 }

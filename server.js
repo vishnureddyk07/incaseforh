@@ -85,153 +85,19 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+// Admin: clear all emergency records (for testing/resetting)
+app.delete('/api/admin/emergency/clear-all', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await EmergencyInfo.deleteMany({});
+    res.json({ message: `Cleared ${result.deletedCount} emergency records` });
+  } catch (error) {
+    console.error('Error clearing emergency records:', error);
+    res.status(500).json({ error: 'Failed to clear emergency records' });
+  }
+});
+
 // ===== COMMENTED OUT: Medical Info Extraction Function (Will be implemented later) =====
-/*
-function extractMedicalInfo(text) {
-  console.log('=== STARTING MEDICAL INFO EXTRACTION ===');
-  console.log('Input text sample:', (text || '').substring(0, 500));
-
-  const raw = text || '';
-  const flat = raw.replace(/\s+/g, ' ').replace(/[^\x20-\x7E]/g, ' ').trim();
-
-  const data = {
-    bloodType: null,
-    allergies: null,
-    medications: null,
-    medicalConditions: null,
-    dateOfReport: null,
-    emergencyContact: null,
-    fullName: null,
-    dateOfBirth: null
-  };
-
-  const parseDate = (val) => {
-    if (!val) return null;
-    const v = val.trim();
-    const monthMap = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12 };
-    // formats: 20/12/2025 or Dec 20,2025
-    let m;
-        m = v.match(/(\d{1,2})[\.\/\-\s](\d{1,2})[\.\/\-\s](\d{2,4})/);
-    if (m) {
-      let [ , d1, d2, y ] = m;
-      let day, month, year = y.length === 2 ? (parseInt(y,10) > 30 ? '19'+y : '20'+y) : y;
-      if (d1.length === 4) { year = d1; month = d2; day = m[3]; }
-      else if (y.length === 4 && parseInt(d1,10) > 12) { day = d1; month = d2; }
-      else { day = d2; month = d1; }
-      return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    }
-    m = v.match(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s*(\d{2,4})/);
-    if (m) {
-      const mm = monthMap[m[1].toLowerCase().slice(0,3)];
-      const day = m[2];
-      let year = m[3];
-      if (year.length === 2) year = parseInt(year,10) > 30 ? '19'+year : '20'+year;
-      if (mm) return `${year}-${String(mm).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    }
-    return null;
-  };
-
-  // Blood type
-  const bloodMatch = flat.match(/blood\s*[:\-]?\s*(?:type|group)?[:\-]?\s*([ABO]{1,2}[+-]?)/i);
-  if (bloodMatch) data.bloodType = bloodMatch[1].toUpperCase();
-
-  // Allergies
-  const allergiesMatch = flat.match(/allergi(?:es|c)?[:\-]?\s*([^\.]+?)(?:\.|$)/i) || flat.match(/allergic\s+to[:\-]?\s*([^\.]+?)(?:\.|$)/i);
-  if (allergiesMatch) data.allergies = allergiesMatch[1].trim();
-
-  // Medications
-  const medicationsMatch = flat.match(/(?:medication|medicine|drug)s?[:\-]?\s*([^|]{5,200})/i);
-  if (medicationsMatch) data.medications = medicationsMatch[1].trim().substring(0,200);
-
-  // Conditions - capture diagnosis, conditions, or test types WITH VALUES
-  // Look for test names and their numeric values
-  let conditionText = '';
-  
-  // Try to find specific test types
-  // Pattern 1: Glucose Fasting test
-  const glucoseMatch = flat.match(/(?:Giueose|Glucose)\s+(Easting|Fasting)/i);
-  if (glucoseMatch) {
-    let testName = 'Glucose Fasting';
-    let testValue = '';
-    
-    const startPos = flat.indexOf(glucoseMatch[0]);
-    const searchArea = flat.substring(startPos, startPos + 150);
-    const valueMatch = searchArea.match(/(?:Easting|Fasting)[^0-9]*?\s+([0-9]{2,3}(?:\.[0-9]{1,2})?)\s*(?:mg\/dL|mmol\/L)?/i);
-    
-    if (valueMatch && valueMatch[1]) {
-      testValue = valueMatch[1];
-    }
-    
-    conditionText = testValue ? `${testName}: ${testValue.trim()}` : testName;
-  }
-  
-  // Pattern 2: Complete Blood Count (CBC) test
-  if (!conditionText) {
-    const cbcMatch = flat.match(/(?:COMPLETE\s+BLOOD\s+COUNT|CBC|FBC|FTTIRACE)/i);
-    if (cbcMatch) {
-      conditionText = 'Complete Blood Count (CBC)';
-      console.log('Found CBC test');
-    }
-  }
-  
-  // Fallback to general condition/diagnosis patterns
-  if (!conditionText) {
-    const conditionsMatch = flat.match(/(?:diagnosis|condition|disease|history)[:\-]?\s*([^|]{5,200})/i)
-      || flat.match(/(?:test|diabetes|sugar)[:\-]?\s*([A-Za-z\s]{5,100})/i);
-    if (conditionsMatch) {
-      let match = conditionsMatch[1] || conditionsMatch[0];
-      // Only use if it's not just noise (avoid matches with too many non-words)
-      if (match && /[A-Z]{2,}/.test(match)) {
-        conditionText = match.trim().substring(0,200);
-      }
-    }
-  }
-  
-  if (conditionText) {
-    // Clean up OCR noise
-    conditionText = conditionText.replace(/Giueose/gi, 'Glucose').replace(/Easting/gi, 'Fasting');
-    conditionText = conditionText.replace(/FTTIRACE[A-Z]*/gi, 'Pathology');
-    conditionText = conditionText.replace(/\s+/g, ' ').trim();
-    if (conditionText.length > 3 && conditionText.length < 300) data.medicalConditions = conditionText;
-  }
-
-  // Report date - handle "Report Date: Dec 20,2025, 0529 PM" format
-  const reportDateMatch = flat.match(/report\s*date[:\-]?\s*([A-Za-z]{3,9}\s+\d{1,2},?\s*\d{2,4})/i)
-    || flat.match(/date[:\-]?\s*([A-Za-z]{3,9}\s+\d{1,2},?\s*\d{2,4})/i)
-    || flat.match(/(\d{1,2}[\.\/-\s]\d{1,2}[\.\/-\s]\d{2,4})/);
-  const parsedReportDate = parseDate(reportDateMatch ? reportDateMatch[1] : null);
-  if (parsedReportDate) data.dateOfReport = parsedReportDate;
-
-  // Phone
-  const phoneMatch = flat.match(/(?:emergency|contact|phone|mobile|tel)[:\-]?\s*(\+?[\d\s\-()]{10,})/i) || flat.match(/(\+?\d{10,})/);
-  if (phoneMatch) data.emergencyContact = phoneMatch[1].replace(/[^\d+]/g,'').substring(0,15);
-
-  // Name (handle OCR variants: patient/patent/patert/name)
-  // Only extract if clear "Patient NAME:" or similar pattern found
-  let nameMatch = flat.match(/(?:patient|patent|patert)?\s*name[:\-]?\s*:?\s*([A-Za-z][A-Za-z\s\.]+?)\s+(?:a[A-Z]|age|gender|report|status|\d{2,}|OO)/i);
-  if (!nameMatch) {
-    // Fallback: simpler pattern
-    nameMatch = flat.match(/name[:\-]?\s*:?\s*([A-Z][A-Za-z\s\.]{3,70}?)(?:\s+[a-z][A-Z]|\s+OO|\s+age|\.|$)/i);
-  }
-  if (nameMatch && nameMatch[1]) {
-    let name = nameMatch[1].trim();
-    // Clean up OCR artifacts
-    name = name.replace(/\s+/g, ' ').replace(/\s*\.\s*$/, '').replace(/\s+[a-zA-Z]\s*$/, '');
-    if (name.length > 2 && !/^(REPORT|TEST|COMPLETE|BLOOD|COUNT)/.test(name)) {
-      data.fullName = name;
-    }
-  }
-
-  // DOB
-  const dobMatch = flat.match(/(?:date\s+of\s+)?birth[:\-]?\s*([^\s]{3,20})/i) || flat.match(/(?:dob|d\.o\.b\.?)[:\-]?\s*([^\s]{3,20})/i);
-  const parsedDob = parseDate(dobMatch ? dobMatch[1] : null);
-  if (parsedDob) data.dateOfBirth = parsedDob;
-
-  console.log('=== EXTRACTION COMPLETE ===');
-  console.log('Extracted data:', JSON.stringify(data, null, 2));
-  return data;
-}
-*/
+/* OCR extraction disabled intentionally. */
 // ===== END COMMENTED OUT CODE =====
 
 
@@ -454,7 +320,7 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
 
     // STEP 1: VALIDATION - Check required fields
     console.log('STEP 1: Validating required fields...');
-    const { fullName, email } = req.body;
+    const { fullName, phoneNumber, dateOfBirth, alternateNumber1, alternateNumber2 } = req.body;
     
     if (!fullName) {
       console.error('❌ VALIDATION FAILED: fullName is undefined/null');
@@ -465,13 +331,28 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
       return res.status(400).json({ error: 'fullName must be non-empty string', received: { fullName } });
     }
 
-    if (!email) {
-      console.error('❌ VALIDATION FAILED: email is undefined/null');
-      return res.status(400).json({ error: 'email is required', received: { email } });
+    if (!phoneNumber) {
+      console.error('❌ VALIDATION FAILED: phoneNumber is undefined/null');
+      return res.status(400).json({ error: 'phoneNumber is required', received: { phoneNumber } });
     }
-    if (typeof email !== 'string' || email.trim() === '') {
-      console.error('❌ VALIDATION FAILED: email is empty or not string:', typeof email);
-      return res.status(400).json({ error: 'email must be non-empty string', received: { email } });
+    if (typeof phoneNumber !== 'string' || phoneNumber.trim() === '') {
+      console.error('❌ VALIDATION FAILED: phoneNumber is empty or not string:', typeof phoneNumber);
+      return res.status(400).json({ error: 'phoneNumber must be non-empty string', received: { phoneNumber } });
+    }
+
+    if (!dateOfBirth) {
+      console.error('❌ VALIDATION FAILED: dateOfBirth is undefined/null');
+      return res.status(400).json({ error: 'dateOfBirth is required', received: { dateOfBirth } });
+    }
+
+    if (!alternateNumber1) {
+      console.error('❌ VALIDATION FAILED: alternateNumber1 is undefined/null');
+      return res.status(400).json({ error: 'alternateNumber1 is required', received: { alternateNumber1 } });
+    }
+
+    if (!alternateNumber2) {
+      console.error('❌ VALIDATION FAILED: alternateNumber2 is undefined/null');
+      return res.status(400).json({ error: 'alternateNumber2 is required', received: { alternateNumber2 } });
     }
 
     console.log('✅ Required fields valid');
@@ -492,17 +373,19 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
 
     const emergencyData = {
       fullName: safeString(fullName),
-      email: safeString(email),
+      email: safeString(req.body.email) || null,
       bloodType: safeString(req.body.bloodType),
       emergencyContact: safeString(req.body.emergencyContact),
       allergies: safeString(req.body.allergies),
       medications: safeString(req.body.medications),
       medicalConditions: safeString(req.body.medicalConditions),
       photo: req.file ? `${baseUrl}/uploads/${req.file.filename}` : null,
-      dateOfBirth: safeString(req.body.dateOfBirth),
+      dateOfBirth: safeString(dateOfBirth),
       address: safeString(req.body.address),
-      phoneNumber: safeString(req.body.phoneNumber),
-      qrCode: safeString(req.body.qrCode),
+      phoneNumber: safeString(phoneNumber),
+      alternateNumber1: safeString(alternateNumber1),
+      alternateNumber2: safeString(alternateNumber2),
+      qrCode: safeString(req.body.qrCode) ? (safeString(req.body.qrCode).substring(0, 500000)) : null,
     };
 
     console.log('✅ Fields converted:', JSON.stringify(emergencyData, null, 2));
@@ -568,6 +451,26 @@ app.get('/api/emergency/:email', async (req, res) => {
   }
 });
 
+// Fetch emergency info by phone number (case-insensitive exact match)
+app.get('/api/emergency/phone/:phoneNumber', async (req, res) => {
+  try {
+    const raw = req.params.phoneNumber || '';
+    const decoded = (() => { try { return decodeURIComponent(raw); } catch { return raw; } })();
+    const needle = decoded.trim();
+    const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`^${escapeRegExp(needle)}$`, 'i');
+    console.log('Lookup phone param:', { raw, decoded, needle });
+    const emergency = await EmergencyInfo.findOne({ phoneNumber: regex });
+    if (!emergency) {
+      return res.status(404).json({ error: 'Emergency info not found' });
+    }
+    res.json(emergency);
+  } catch (error) {
+    console.error('Error in GET /api/emergency/phone/:phoneNumber', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // PUT: Update emergency info (admin-only, QR code preserved)
 app.put('/api/emergency/:email', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -584,7 +487,8 @@ app.put('/api/emergency/:email', requireAuth, requireAdmin, async (req, res) => 
 
     // Update fields but preserve email and qrCode
     const allowedFields = ['fullName', 'bloodType', 'emergencyContact', 'allergies', 
-                           'medications', 'medicalConditions', 'dateOfBirth', 'phoneNumber', 'address'];
+                 'medications', 'medicalConditions', 'dateOfBirth', 'phoneNumber', 'address',
+                 'alternateNumber1', 'alternateNumber2', 'email'];
     
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
@@ -600,11 +504,43 @@ app.put('/api/emergency/:email', requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
+// PUT: Update emergency info by phone (admin-only)
+app.put('/api/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const raw = req.params.phoneNumber || '';
+    const decoded = (() => { try { return decodeURIComponent(raw); } catch { return raw; } })();
+    const needle = decoded.trim();
+    const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`^${escapeRegExp(needle)}$`, 'i');
+
+    const existing = await EmergencyInfo.findOne({ phoneNumber: regex });
+    if (!existing) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+
+    const allowedFields = ['fullName', 'bloodType', 'emergencyContact', 'allergies', 
+                 'medications', 'medicalConditions', 'dateOfBirth', 'phoneNumber', 'address',
+                 'alternateNumber1', 'alternateNumber2', 'email'];
+    
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        existing[field] = req.body[field];
+      }
+    });
+
+    await existing.save();
+    res.json({ message: 'Record updated', record: existing });
+  } catch (error) {
+    console.error('Error updating record by phone:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET all emergency records (admin-only)
 app.get('/api/emergency', requireAuth, requireAdmin, async (req, res) => {
   try {
     console.log('Fetching all emergency records...');
-    const allEmergencies = await EmergencyInfo.find({}).select('fullName email qrCode photo createdAt');
+    const allEmergencies = await EmergencyInfo.find({}).select('fullName email qrCode photo createdAt phoneNumber alternateNumber1 alternateNumber2 dateOfBirth address bloodType emergencyContact');
     console.log(`Found ${allEmergencies.length} records`);
     console.log('Sample photo URLs:', allEmergencies.slice(0, 2).map(e => ({ name: e.fullName, photo: e.photo })));
     res.json(allEmergencies);

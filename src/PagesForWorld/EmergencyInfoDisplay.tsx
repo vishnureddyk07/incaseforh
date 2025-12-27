@@ -4,36 +4,43 @@ import { useParams } from "react-router-dom";
 
 type EmergencyInfo = {
   fullName: string;
-  email: string;
-  qrCode: string;
-  bloodType: string;
-  emergencyContact: string;
-  allergies: string;
-  medications: string;
-  medicalConditions: string;
-  dateOfBirth: string;
-  phoneNumber: string;
-  address: string;
-  photo: string;
+  email?: string;
+  qrCode?: string;
+  bloodType?: string;
+  emergencyContact?: string;
+  allergies?: string;
+  medications?: string;
+  medicalConditions?: string;
+  dateOfBirth?: string;
+  phoneNumber?: string;
+  alternateNumber1?: string;
+  alternateNumber2?: string;
+  address?: string;
+  photo?: string;
 };
 
 export default function EmergencyInfoDisplay() {
-  const { email } = useParams();
-  console.log("🔍 Route email param:", email);
+  const { email: identifierParam } = useParams();
+  console.log("🔍 Route identifier param:", identifierParam);
   const [info, setInfo] = useState<EmergencyInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!email) {
+    if (!identifierParam) {
       console.error("❌ No email param");
-      setError("No email provided");
+      setError("No identifier provided");
       setLoading(false);
       return;
     }
 
-    console.log("📡 Fetching from:", `https://incaseforh.onrender.com/api/emergency/${email}`);
-    fetch(`https://incaseforh.onrender.com/api/emergency/${email}`)
+    const isEmail = identifierParam.includes('@');
+    const endpoint = isEmail
+      ? `https://incaseforh.onrender.com/api/emergency/${encodeURIComponent(identifierParam)}`
+      : `https://incaseforh.onrender.com/api/emergency/phone/${encodeURIComponent(identifierParam)}`;
+
+    console.log("📡 Fetching from:", endpoint);
+    fetch(endpoint)
       .then((res) => {
         console.log("📊 Response status:", res.status);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -46,6 +53,8 @@ export default function EmergencyInfoDisplay() {
         console.log("   bloodType:", data.bloodType);
         console.log("   emergencyContact:", data.emergencyContact);
         console.log("   phoneNumber:", data.phoneNumber);
+        console.log("   alternateNumber1:", data.alternateNumber1);
+        console.log("   alternateNumber2:", data.alternateNumber2);
         console.log("   address:", data.address);
         console.log("   dateOfBirth:", data.dateOfBirth);
         console.log("   allergies:", data.allergies);
@@ -60,7 +69,7 @@ export default function EmergencyInfoDisplay() {
         setError(err.message);
         setLoading(false);
       });
-  }, [email]);
+  }, [identifierParam]);
 
   // Error state
   if (error) {
@@ -69,7 +78,7 @@ export default function EmergencyInfoDisplay() {
         <div className="bg-white rounded-lg shadow p-6 max-w-md text-center">
           <h1 className="text-xl font-bold text-red-600 mb-2">Error</h1>
           <p className="text-gray-700 mb-4">{error}</p>
-          <p className="text-sm text-gray-600">Email: {email}</p>
+          <p className="text-sm text-gray-600">Identifier: {identifierParam}</p>
         </div>
       </div>
     );
@@ -93,8 +102,8 @@ export default function EmergencyInfoDisplay() {
       <div className="min-h-screen bg-yellow-50 p-4 flex items-center justify-center">
         <div className="bg-white rounded-lg shadow p-6 max-w-md text-center">
           <h1 className="text-xl font-bold text-yellow-600 mb-2">Not Found</h1>
-          <p className="text-gray-700 mb-4">No information found for this email.</p>
-          <p className="text-sm text-gray-600">Email: {email}</p>
+          <p className="text-gray-700 mb-4">No information found for this identifier.</p>
+          <p className="text-sm text-gray-600">Identifier: {identifierParam}</p>
         </div>
       </div>
     );
@@ -124,8 +133,24 @@ export default function EmergencyInfoDisplay() {
         {/* All Fields - Guaranteed to Display */}
         <div className="space-y-4 text-gray-800">
           <div className="border-b pb-3">
-            <p className="text-sm text-gray-600">Email</p>
+            <p className="text-sm text-gray-600">Email (optional)</p>
             <p className="text-lg font-medium">{info.email || "—"}</p>
+          </div>
+
+          <div className="border-b pb-3">
+            <p className="text-sm text-gray-600">Phone Number</p>
+            <p className="text-lg font-medium">{info.phoneNumber || "—"}</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b pb-3">
+            <div>
+              <p className="text-sm text-gray-600">Alternate Number 1</p>
+              <p className="text-lg font-medium">{info.alternateNumber1 || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Alternate Number 2</p>
+              <p className="text-lg font-medium">{info.alternateNumber2 || "—"}</p>
+            </div>
           </div>
 
           <div className="border-b pb-3">
@@ -136,11 +161,6 @@ export default function EmergencyInfoDisplay() {
           <div className="border-b pb-3">
             <p className="text-sm text-gray-600">Emergency Contact</p>
             <p className="text-lg font-medium">{info.emergencyContact || "—"}</p>
-          </div>
-
-          <div className="border-b pb-3">
-            <p className="text-sm text-gray-600">Phone Number</p>
-            <p className="text-lg font-medium">{info.phoneNumber || "—"}</p>
           </div>
 
           <div className="border-b pb-3">

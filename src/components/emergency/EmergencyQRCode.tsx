@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Shield, CheckCircle, Upload, Loader } from "lucide-react";
+import * as QRCodeLib from 'qrcode';
 import type { EmergencyInfo } from "../../types/emergency";
 import EmergencyForm from "./EmergencyForm";
 
@@ -16,6 +17,8 @@ export default function EmergencyQRCode() {
     dateOfBirth: "",
     address: "",
     phoneNumber: "",
+    alternateNumber1: "",
+    alternateNumber2: "",
   });
   const [showSuccess, setShowSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -84,8 +87,8 @@ export default function EmergencyQRCode() {
   };
 
   const handleSubmit = async () => {
-    if (!emergencyInfo.fullName || !emergencyInfo.email) {
-      alert("Please enter your full name and email before submitting.");
+    if (!emergencyInfo.fullName || !emergencyInfo.phoneNumber || !emergencyInfo.dateOfBirth || !emergencyInfo.alternateNumber1 || !emergencyInfo.alternateNumber2) {
+      alert("Please enter your full name, phone number, date of birth, and both alternate numbers before submitting.");
       return;
     }
 
@@ -93,18 +96,22 @@ export default function EmergencyQRCode() {
     try {
       const formData = new FormData();
 
-      const qrData = generateQRData();
+      // Generate QR code as PNG data URL
+      const qrDataUrl = await generateQRPNG();
+      
       formData.append('fullName', emergencyInfo.fullName);
-      formData.append('email', emergencyInfo.email);
+      formData.append('email', emergencyInfo.email || '');
       formData.append('bloodType', emergencyInfo.bloodType || '');
       formData.append('emergencyContact', emergencyInfo.emergencyContact || '');
       formData.append('allergies', emergencyInfo.allergies || '');
       formData.append('medications', emergencyInfo.medications || '');
       formData.append('medicalConditions', emergencyInfo.medicalConditions || '');
-      formData.append('dateOfBirth', emergencyInfo.dateOfBirth || '');
+      formData.append('dateOfBirth', emergencyInfo.dateOfBirth);
       formData.append('address', emergencyInfo.address || '');
-      formData.append('phoneNumber', emergencyInfo.phoneNumber || '');
-      formData.append('qrCode', qrData);
+      formData.append('phoneNumber', emergencyInfo.phoneNumber);
+      formData.append('alternateNumber1', emergencyInfo.alternateNumber1);
+      formData.append('alternateNumber2', emergencyInfo.alternateNumber2);
+      formData.append('qrCode', qrDataUrl);
       if (emergencyInfo.photo instanceof File) {
         formData.append('photo', emergencyInfo.photo);
       }
@@ -133,6 +140,8 @@ export default function EmergencyQRCode() {
         dateOfBirth: "",
         address: "",
         phoneNumber: "",
+        alternateNumber1: "",
+        alternateNumber2: "",
       });
 
       // Hide success message after 5 seconds
@@ -145,11 +154,40 @@ export default function EmergencyQRCode() {
     }
   };
 
+  const resolveBaseUrl = () => {
+    const envBase = import.meta.env.VITE_PUBLIC_BASE_URL?.trim();
+    if (envBase) {
+      return envBase.replace(/\/$/, '');
+    }
+    return window.location.origin;
+  };
+
   const generateQRData = () => {
     const { photo, ...dataWithoutPhoto } = emergencyInfo;
-    const baseUrl = window.location.origin;
-    const email = dataWithoutPhoto.email?.trim().toLowerCase();
-    return `${baseUrl}/emergencyinfo/${encodeURIComponent(email)}`;
+    const baseUrl = resolveBaseUrl();
+    const identifier = (dataWithoutPhoto.email?.trim().toLowerCase() || dataWithoutPhoto.phoneNumber);
+    return `${baseUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
+  };
+
+  const generateQRPNG = async (): Promise<string> => {
+    const qrValue = generateQRData();
+    
+    try {
+      // Use qrcode library to generate PNG data URL
+      const dataUrl = await QRCodeLib.toDataURL(qrValue, { 
+        width: 300, 
+        margin: 1,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        }
+      });
+      console.log('QR Code generated successfully:', dataUrl.substring(0, 50) + '...');
+      return dataUrl;
+    } catch (err) {
+      console.error('QR generation failed:', err);
+      throw new Error('Failed to generate QR code: ' + (err instanceof Error ? err.message : String(err)));
+    }
   };
 
   return (
