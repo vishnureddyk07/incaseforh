@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
-import WhyPrepare from './components/WhyPrepare';
-import SafetyTips from './components/SafetyTips';
-import EmergencyContacts from './components/EmergencyContacts';
+const WhyPrepare = lazy(() => import('./components/WhyPrepare'));
+const SafetyTips = lazy(() => import('./components/SafetyTips'));
+const EmergencyContacts = lazy(() => import('./components/EmergencyContacts'));
 import EmergencyQRCode from './components/emergency/EmergencyQRCode';
 import QRScanDisplay from './components/emergency/QRScanDisplay';
 import EmergencyInfoDisplay from './PagesForWorld/EmergencyInfoDisplay';
@@ -30,9 +30,11 @@ function MainContent() {
           <EmergencyQRCode />
         </div>
       </section>
-      <WhyPrepare />
-      <SafetyTips />
-      <EmergencyContacts />
+      <Suspense fallback={<div className="text-center py-10">Loading tips and info…</div>}>
+        <WhyPrepare />
+        <SafetyTips />
+        <EmergencyContacts />
+      </Suspense>
       <footer className="bg-gray-900 text-white py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <p>© 2024 RideGuard Emergency Platform. All rights reserved.</p>

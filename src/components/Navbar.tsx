@@ -15,7 +15,7 @@ export default function Navbar() {
   const closeMenu = () => setIsOpen(false);
 
   return (
-    <nav className="bg-white/90 backdrop-blur shadow-md fixed w-full z-20">
+    <nav className="bg-white/90 backdrop-blur shadow-md fixed w-full z-20" role="navigation" aria-label="Primary">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
@@ -24,6 +24,8 @@ export default function Navbar() {
               INcase
             </span>
           </div>
+          {/* Skip to main CTA for accessibility */}
+          <a href="#emergency-info" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 bg-orange-600 text-white px-3 py-2 rounded-md">Skip to Create QR</a>
           <div className="hidden md:flex items-center space-x-8">
             {navItems.map((item) => (
               <a key={item.href} href={item.href} className="text-gray-700 hover:text-orange-500">

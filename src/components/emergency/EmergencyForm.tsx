@@ -73,6 +73,7 @@ export default function EmergencyForm({
             name="fullName"
             value={emergencyInfo.fullName}
             onChange={onChange}
+            autoComplete="name"
             className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
             required
           />
@@ -87,6 +88,7 @@ export default function EmergencyForm({
             name="email"
             value={emergencyInfo.email}
             onChange={onChange}
+            autoComplete="email"
             className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
           />
         </div>
@@ -103,6 +105,9 @@ export default function EmergencyForm({
             value={emergencyInfo.phoneNumber}
             onChange={onChange}
             required
+            inputMode="numeric"
+            autoComplete="tel"
+            pattern="^\\+?\d{10,13}$"
             className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
             placeholder="+91 98765 43210"
           />
@@ -134,6 +139,9 @@ export default function EmergencyForm({
             value={emergencyInfo.alternateNumber1}
             onChange={onChange}
             required
+            inputMode="numeric"
+            autoComplete="tel"
+            pattern="^\\+?\d{10,13}$"
             className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
             placeholder="+91 98765 43211"
           />
@@ -149,6 +157,9 @@ export default function EmergencyForm({
             value={emergencyInfo.alternateNumber2}
             onChange={onChange}
             required
+            inputMode="numeric"
+            autoComplete="tel"
+            pattern="^\\+?\d{10,13}$"
             className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
             placeholder="+91 98765 43212"
           />
