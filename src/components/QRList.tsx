@@ -70,9 +70,19 @@ export default function QRList() {
     let isActive = true;
     const aborters: AbortController[] = [];
 
+    const resolveSrc = (src: string): string => {
+      const trimmed = src.trim();
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+        return trimmed;
+      }
+      // Treat as backend-relative path
+      const base = 'https://incaseforh.onrender.com';
+      return trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`;
+    };
+
     const resolvePhotos = async () => {
       if (!isAuthenticated || !token) return;
-      const nextMap = new Map(photoUrls);
+      const nextMap = new Map<string, string>();
 
       for (const rec of qrs) {
         if (!rec.photo) continue;
@@ -80,11 +90,11 @@ export default function QRList() {
         const id = rec._id;
 
         // Skip if already resolved
-        if (nextMap.has(id)) continue;
+        const resolved = resolveSrc(src);
 
         // Data URL: use as-is
-        if (src.startsWith('data:')) {
-          nextMap.set(id, src);
+        if (resolved.startsWith('data:')) {
+          nextMap.set(id, resolved);
           continue;
         }
 
@@ -92,7 +102,7 @@ export default function QRList() {
         try {
           const controller = new AbortController();
           aborters.push(controller);
-          const res = await fetch(src, {
+          const res = await fetch(resolved, {
             headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
           });
@@ -113,12 +123,7 @@ export default function QRList() {
     return () => {
       isActive = false;
       aborters.forEach((c) => c.abort());
-      // Revoke object URLs
-      for (const [id, url] of photoUrls.entries()) {
-        if (url && !url.startsWith('data:')) {
-          URL.revokeObjectURL(url);
-        }
-      }
+      // Note: do not revoke object URLs here to preserve image visibility across re-opens.
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qrs, isAuthenticated, token]);
