@@ -27,9 +27,12 @@ const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || null;
 // Middleware
 app.use((req, res, next) => {
   console.log(`Request: ${req.method} ${req.url}`);
-  const allowedOrigins = ['http://localhost:5173', 'https://incaseforh.vercel.app'];
+  const allowedOrigins = ['http://localhost:5173', 'https://incaseforh.vercel.app', /^https:\/\/incaseforh-.*\.vercel\.app$/];
   const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
+  const allowed = allowedOrigins.some(ao => 
+    typeof ao === 'string' ? ao === origin : ao.test(origin)
+  );
+  if (allowed) {
     res.header('Access-Control-Allow-Origin', origin);
   }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
