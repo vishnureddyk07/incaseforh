@@ -155,11 +155,7 @@ export default function EmergencyQRCode() {
   };
 
   const resolveBaseUrl = () => {
-    const envBase = import.meta.env.VITE_PUBLIC_BASE_URL?.trim();
-    if (envBase) {
-      return envBase.replace(/\/$/, '');
-    }
-    return window.location.origin;
+    return 'https://incaseforh.vercel.app';
   };
 
   const generateQRData = () => {
