@@ -118,7 +118,9 @@ export default function EmergencyInfoDisplay() {
         {info.photo ? (
           <div className="mb-6 flex justify-center">
             <img
-              src={info.photo}
+              src={(info.photo.startsWith('http://') || info.photo.startsWith('https://') || info.photo.startsWith('data:'))
+                ? info.photo
+                : `https://incaseforh.onrender.com${info.photo.startsWith('/') ? '' : '/'}${info.photo}`}
               alt="Emergency Profile"
               className="w-48 h-48 rounded-lg object-cover border-4 border-orange-300"
             />

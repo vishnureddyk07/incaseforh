@@ -51,7 +51,9 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
               <div className="flex items-center space-x-6">
                 {emergencyData.photo ? (
                   <img
-                    src={emergencyData.photo}
+                    src={(emergencyData.photo.startsWith('http://') || emergencyData.photo.startsWith('https://') || emergencyData.photo.startsWith('data:'))
+                      ? emergencyData.photo
+                      : `https://incaseforh.onrender.com${emergencyData.photo.startsWith('/') ? '' : '/'}${emergencyData.photo}`}
                     alt={emergencyData.fullName}
                     className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg"
                   />
