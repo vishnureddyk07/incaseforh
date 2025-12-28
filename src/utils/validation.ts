@@ -1,9 +1,22 @@
 export const validateEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+  const trimmed = email.trim();
+  // Basic but robust: must have one @, a dot in domain, no consecutive dots
+  const emailRegex = /^(?!.*\.{2})[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(trimmed);
 };
 
 export const validatePhone = (phone: string): boolean => {
-  const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-  return phoneRegex.test(phone);
+  // Accept E.164-like formats and common Indian numbers
+  // Normalize by removing spaces and dashes
+  const normalized = phone.replace(/[\s-]/g, '');
+  const digitsOnly = normalized.replace(/^\+/, '');
+  // Explicit length check: 10–15 digits
+  if (digitsOnly.length < 10 || digitsOnly.length > 15) return false;
+  // Must start with non-zero
+  if (!/^\+?[1-9]/.test(normalized)) return false;
+  // Only digits after optional +
+  if (!/^\+?\d+$/.test(normalized)) return false;
+  // Reject repeated digits sequences (e.g., all zeros)
+  if (/^(\d)\1{9,14}$/.test(digitsOnly)) return false;
+  return true;
 };
