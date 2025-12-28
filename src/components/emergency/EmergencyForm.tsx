@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { Camera, Upload } from "lucide-react";
+import { Camera, Upload, Plus, Trash2 } from "lucide-react";
 import type { EmergencyInfo } from "../../types/emergency";
 
 interface EmergencyFormProps {
@@ -10,12 +10,18 @@ interface EmergencyFormProps {
     >
   ) => void;
   onPhotoChange: (photo: File) => void;
+  onAddEmergencyContact?: () => void;
+  onRemoveEmergencyContact?: (index: number) => void;
+  onEmergencyContactChange?: (index: number, field: "name" | "phone", value: string) => void;
 }
 
 export default function EmergencyForm({
   emergencyInfo,
   onChange,
   onPhotoChange,
+  onAddEmergencyContact,
+  onRemoveEmergencyContact,
+  onEmergencyContactChange,
 }: EmergencyFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -131,44 +137,6 @@ export default function EmergencyForm({
       <div className="grid md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            Alternate Number 1 <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="tel"
-            name="alternateNumber1"
-            value={emergencyInfo.alternateNumber1}
-            onChange={onChange}
-            required
-            inputMode="numeric"
-            autoComplete="tel"
-            pattern="^\\+?\d{10,13}$"
-            className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
-            placeholder="+91 98765 43211"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Alternate Number 2 <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="tel"
-            name="alternateNumber2"
-            value={emergencyInfo.alternateNumber2}
-            onChange={onChange}
-            required
-            inputMode="numeric"
-            autoComplete="tel"
-            pattern="^\\+?\d{10,13}$"
-            className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
-            placeholder="+91 98765 43212"
-          />
-        </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
             Blood Type
           </label>
           <select
@@ -202,18 +170,84 @@ export default function EmergencyForm({
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700">
-          Emergency Contact *
-        </label>
-        <input
-          type="text"
-          name="emergencyContact"
-          value={emergencyInfo.emergencyContact}
-          onChange={onChange}
-          className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
-          placeholder="Name: +91 98765 43210"
-          required
-        />
+        <div className="flex items-center justify-between mb-4">
+          <label className="block text-sm font-medium text-gray-700">
+            Emergency Contacts <span className="text-red-500">*</span>
+            <span className="text-xs text-gray-500 ml-2">(Minimum 1, Maximum 5)</span>
+          </label>
+          <button
+            type="button"
+            onClick={onAddEmergencyContact}
+            disabled={(emergencyInfo.emergencyContacts?.length || 0) >= 5}
+            className="flex items-center gap-2 px-3 py-1 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Add
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {emergencyInfo.emergencyContacts && emergencyInfo.emergencyContacts.length > 0 ? (
+            emergencyInfo.emergencyContacts.map((contact, index) => (
+              <div key={index} className="border rounded-md p-4 bg-gray-50">
+                <div className="flex items-start justify-between mb-3">
+                  <h4 className="font-medium text-sm text-gray-700">Contact {index + 1}</h4>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveEmergencyContact?.(index)}
+                    disabled={(emergencyInfo.emergencyContacts?.length || 0) <= 1}
+                    className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+                    title={
+                      (emergencyInfo.emergencyContacts?.length || 0) <= 1
+                        ? "At least one contact is required"
+                        : "Remove contact"
+                    }
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Contact Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={contact.name}
+                      onChange={(e) =>
+                        onEmergencyContactChange?.(index, "name", e.target.value)
+                      }
+                      className="w-full px-3 py-2 border rounded-md text-sm focus:ring-orange-500 focus:border-orange-500"
+                      placeholder="Contact name"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Phone Number <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={contact.phone}
+                      onChange={(e) =>
+                        onEmergencyContactChange?.(index, "phone", e.target.value)
+                      }
+                      inputMode="numeric"
+                      pattern="^\\+?\d{10,13}$"
+                      className="w-full px-3 py-2 border rounded-md text-sm focus:ring-orange-500 focus:border-orange-500"
+                      placeholder="+91 98765 43210"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-gray-500 italic">No emergency contacts added</p>
+          )}
+        </div>
       </div>
 
       <div>

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { Shield, CheckCircle, Upload, Loader } from "lucide-react";
+import { Shield, CheckCircle, Upload, Loader, Plus, Trash2 } from "lucide-react";
 import * as QRCodeLib from 'qrcode';
-import type { EmergencyInfo } from "../../types/emergency";
+import type { EmergencyInfo, EmergencyContact } from "../../types/emergency";
 import EmergencyForm from "./EmergencyForm";
 
 export default function EmergencyQRCode() {
@@ -9,7 +9,7 @@ export default function EmergencyQRCode() {
     fullName: "",
     email: "",
     bloodType: "",
-    emergencyContact: "",
+    emergencyContacts: [{ name: "", phone: "" }],
     allergies: "",
     medications: "",
     medicalConditions: "",
@@ -17,14 +17,43 @@ export default function EmergencyQRCode() {
     dateOfBirth: "",
     address: "",
     phoneNumber: "",
-    alternateNumber1: "",
-    alternateNumber2: "",
   });
   const [showSuccess, setShowSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [reportDate, setReportDate] = useState("");
   const [consentChecked, setConsentChecked] = useState(false);
+
+  const handleAddEmergencyContact = () => {
+    if (emergencyInfo.emergencyContacts.length < 5) {
+      setEmergencyInfo((prev) => ({
+        ...prev,
+        emergencyContacts: [...prev.emergencyContacts, { name: "", phone: "" }],
+      }));
+    }
+  };
+
+  const handleRemoveEmergencyContact = (index: number) => {
+    if (emergencyInfo.emergencyContacts.length > 1) {
+      setEmergencyInfo((prev) => ({
+        ...prev,
+        emergencyContacts: prev.emergencyContacts.filter((_, i) => i !== index),
+      }));
+    }
+  };
+
+  const handleEmergencyContactChange = (
+    index: number,
+    field: keyof EmergencyContact,
+    value: string
+  ) => {
+    setEmergencyInfo((prev) => ({
+      ...prev,
+      emergencyContacts: prev.emergencyContacts.map((contact, i) =>
+        i === index ? { ...contact, [field]: value } : contact
+      ),
+    }));
+  };
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -92,8 +121,12 @@ export default function EmergencyQRCode() {
       alert("Please confirm your consent before submitting.");
       return;
     }
-    if (!emergencyInfo.fullName || !emergencyInfo.phoneNumber || !emergencyInfo.dateOfBirth || !emergencyInfo.alternateNumber1 || !emergencyInfo.alternateNumber2) {
-      alert("Please enter your full name, phone number, date of birth, and both alternate numbers before submitting.");
+    if (!emergencyInfo.fullName || !emergencyInfo.phoneNumber || !emergencyInfo.dateOfBirth) {
+      alert("Please enter your full name, phone number, and date of birth before submitting.");
+      return;
+    }
+    if (emergencyInfo.emergencyContacts.length === 0 || emergencyInfo.emergencyContacts.some(c => !c.name || !c.phone)) {
+      alert("Please add at least 1 emergency contact with both name and phone number.");
       return;
     }
 
@@ -107,15 +140,13 @@ export default function EmergencyQRCode() {
       formData.append('fullName', emergencyInfo.fullName);
       formData.append('email', emergencyInfo.email || '');
       formData.append('bloodType', emergencyInfo.bloodType || '');
-      formData.append('emergencyContact', emergencyInfo.emergencyContact || '');
+      formData.append('emergencyContacts', JSON.stringify(emergencyInfo.emergencyContacts));
       formData.append('allergies', emergencyInfo.allergies || '');
       formData.append('medications', emergencyInfo.medications || '');
       formData.append('medicalConditions', emergencyInfo.medicalConditions || '');
       formData.append('dateOfBirth', emergencyInfo.dateOfBirth);
       formData.append('address', emergencyInfo.address || '');
       formData.append('phoneNumber', emergencyInfo.phoneNumber);
-      formData.append('alternateNumber1', emergencyInfo.alternateNumber1);
-      formData.append('alternateNumber2', emergencyInfo.alternateNumber2);
       formData.append('qrCode', qrDataUrl);
       if (emergencyInfo.photo instanceof File) {
         formData.append('photo', emergencyInfo.photo);
@@ -137,7 +168,7 @@ export default function EmergencyQRCode() {
         fullName: "",
         email: "",
         bloodType: "",
-        emergencyContact: "",
+        emergencyContacts: [{ name: "", phone: "" }],
         allergies: "",
         medications: "",
         medicalConditions: "",
@@ -145,8 +176,6 @@ export default function EmergencyQRCode() {
         dateOfBirth: "",
         address: "",
         phoneNumber: "",
-        alternateNumber1: "",
-        alternateNumber2: "",
       });
 
       // Hide success message after 5 seconds
@@ -246,6 +275,9 @@ export default function EmergencyQRCode() {
             emergencyInfo={emergencyInfo}
             onChange={handleChange}
             onPhotoChange={handlePhotoChange}
+            onAddEmergencyContact={handleAddEmergencyContact}
+            onRemoveEmergencyContact={handleRemoveEmergencyContact}
+            onEmergencyContactChange={handleEmergencyContactChange}
           />
           
           <div className="mt-6">

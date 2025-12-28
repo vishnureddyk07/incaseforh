@@ -1,8 +1,13 @@
+export interface EmergencyContact {
+  name: string;
+  phone: string;
+}
+
 export interface EmergencyInfo {
   fullName: string;
   email: string;
   bloodType: string;
-  emergencyContact: string;
+  emergencyContacts: EmergencyContact[];
   allergies: string;
   medications: string;
   medicalConditions: string;
@@ -10,6 +15,4 @@ export interface EmergencyInfo {
   dateOfBirth: string;
   address: string;
   phoneNumber: string;
-  alternateNumber1: string;
-  alternateNumber2: string;
 }
