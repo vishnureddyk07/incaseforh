@@ -24,6 +24,7 @@ export default function EmergencyQRCode() {
   const [submitting, setSubmitting] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [reportDate, setReportDate] = useState("");
+  const [consentChecked, setConsentChecked] = useState(false);
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -87,6 +88,10 @@ export default function EmergencyQRCode() {
   };
 
   const handleSubmit = async () => {
+    if (!consentChecked) {
+      alert("Please confirm your consent before submitting.");
+      return;
+    }
     if (!emergencyInfo.fullName || !emergencyInfo.phoneNumber || !emergencyInfo.dateOfBirth || !emergencyInfo.alternateNumber1 || !emergencyInfo.alternateNumber2) {
       alert("Please enter your full name, phone number, date of birth, and both alternate numbers before submitting.");
       return;
@@ -244,9 +249,22 @@ export default function EmergencyQRCode() {
           />
           
           <div className="mt-6">
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={consentChecked}
+                  onChange={(e) => setConsentChecked(e.target.checked)}
+                  className="mt-1 w-5 h-5 accent-orange-500"
+                />
+                <span className="text-sm text-gray-700">
+                  I confirm that I am submitting this emergency information with full understanding of its purpose. This data will be used to provide critical medical and contact information to first responders and family members in emergency situations.
+                </span>
+              </label>
+            </div>
             <button
               onClick={handleSubmit}
-              disabled={submitting}
+              disabled={submitting || !consentChecked}
               className="w-full bg-orange-500 text-white px-8 py-3 rounded-full hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg font-semibold"
             >
               {submitting ? "Submitting..." : "Submit Information"}
