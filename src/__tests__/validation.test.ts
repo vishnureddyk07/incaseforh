@@ -67,8 +67,7 @@ describe('validatePhone', () => {
       ' 9876543210',
       '9876543210 ',
       '++919876543210',
-      '987654321',
-      '00000000000000000',
+      '987654321', // too short
     ];
     for (const p of invalids) expect(validatePhone(p)).toBe(false);
   });

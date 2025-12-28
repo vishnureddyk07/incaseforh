@@ -18,6 +18,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
     css: true,
+    exclude: ['**/e2e/**', '**/node_modules/**', '**/dist/**'],
     deps: {
       inline: ['@testing-library/react', '@testing-library/jest-dom', 'jest-axe'],
     },

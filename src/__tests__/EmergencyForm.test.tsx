@@ -2,7 +2,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import EmergencyForm from '../components/emergency/EmergencyForm';
-import { vi } from 'vitest';
 
 vi.mock('lucide-react', () => ({
   Camera: () => null,
