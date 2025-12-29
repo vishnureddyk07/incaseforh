@@ -40,11 +40,17 @@ export default function EmergencyForm({
             <img
               src={
                 typeof emergencyInfo.photo === "string"
-                  ? emergencyInfo.photo
+                  ? emergencyInfo.photo.startsWith('http') || emergencyInfo.photo.startsWith('data:')
+                    ? emergencyInfo.photo
+                    : `https://incaseforh.onrender.com${emergencyInfo.photo.startsWith('/') ? '' : '/'}${emergencyInfo.photo}`
                   : URL.createObjectURL(emergencyInfo.photo)
               }
               alt="Profile"
               className="w-24 h-24 rounded-full object-cover border-4 border-orange-200"
+              onError={(e) => {
+                console.error('Failed to load photo:', emergencyInfo.photo);
+                e.currentTarget.style.display = 'none';
+              }}
             />
           ) : (
             <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center border-4 border-orange-200">

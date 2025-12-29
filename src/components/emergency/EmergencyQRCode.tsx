@@ -5,24 +5,48 @@ import type { EmergencyInfo, EmergencyContact } from "../../types/emergency";
 import EmergencyForm from "./EmergencyForm";
 
 export default function EmergencyQRCode() {
-  const [emergencyInfo, setEmergencyInfo] = useState<EmergencyInfo>({
-    fullName: "",
-    email: "",
-    bloodType: "",
-    emergencyContacts: [{ name: "", phone: "" }],
-    allergies: "",
-    medications: "",
-    medicalConditions: "",
-    photo: null,
-    dateOfBirth: "",
-    address: "",
-    phoneNumber: "",
+  // Initialize state from localStorage if available
+  const [emergencyInfo, setEmergencyInfo] = useState<EmergencyInfo>(() => {
+    const saved = localStorage.getItem('emergencyFormData');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Failed to parse saved form data:', e);
+      }
+    }
+    return {
+      fullName: "",
+      email: "",
+      bloodType: "",
+      emergencyContacts: [{ name: "", phone: "" }],
+      allergies: "",
+      medications: "",
+      medicalConditions: "",
+      photo: null,
+      dateOfBirth: "",
+      address: "",
+      phoneNumber: "",
+    };
   });
   const [showSuccess, setShowSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [reportDate, setReportDate] = useState("");
   const [consentChecked, setConsentChecked] = useState(false);
+  const [savedPhotoUrl, setSavedPhotoUrl] = useState<string | null>(() => {
+    return localStorage.getItem('savedPhotoUrl');
+  });
+
+  // Save form data to localStorage whenever it changes (except photo File object)
+  React.useEffect(() => {
+    const { photo, ...dataWithoutFile } = emergencyInfo;
+    const dataToSave = {
+      ...dataWithoutFile,
+      photo: typeof photo === 'string' ? photo : savedPhotoUrl
+    };
+    localStorage.setItem('emergencyFormData', JSON.stringify(dataToSave));
+  }, [emergencyInfo, savedPhotoUrl]);
 
   const handleAddEmergencyContact = () => {
     if (emergencyInfo.emergencyContacts.length < 5) {
@@ -162,21 +186,24 @@ export default function EmergencyQRCode() {
 
       if (!res.ok) throw new Error("Failed to save to backend");
 
+      // Get the response which should contain the saved photo URL
+      const responseData = await res.json();
+      console.log('Backend response:', responseData);
+
+      // Save the photo URL from backend for future use
+      if (responseData.photo) {
+        setSavedPhotoUrl(responseData.photo);
+        localStorage.setItem('savedPhotoUrl', responseData.photo);
+      }
+
       setShowSuccess(true);
-      // Reset form
-      setEmergencyInfo({
-        fullName: "",
-        email: "",
-        bloodType: "",
-        emergencyContacts: [{ name: "", phone: "" }],
-        allergies: "",
-        medications: "",
-        medicalConditions: "",
-        photo: null,
-        dateOfBirth: "",
-        address: "",
-        phoneNumber: "",
-      });
+      
+      // Keep form data but clear the file object
+      // Store the photo URL instead
+      setEmergencyInfo(prev => ({
+        ...prev,
+        photo: responseData.photo || null
+      }));
 
       // Hide success message after 5 seconds
       setTimeout(() => setShowSuccess(false), 5000);

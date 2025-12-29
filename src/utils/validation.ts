@@ -7,8 +7,11 @@ export const validateEmail = (email: string): boolean => {
 
 export const validatePhone = (phone: string): boolean => {
   // Accept E.164-like formats and common Indian numbers
+  // First trim to reject leading/trailing spaces
+  const trimmed = phone.trim();
+  if (trimmed !== phone) return false; // Reject if had leading/trailing spaces
   // Normalize by removing spaces and dashes
-  const normalized = phone.replace(/[\s-]/g, '');
+  const normalized = trimmed.replace(/[\s-]/g, '');
   const digitsOnly = normalized.replace(/^\+/, '');
   // Explicit length check: 10–15 digits
   if (digitsOnly.length < 10 || digitsOnly.length > 15) return false;
