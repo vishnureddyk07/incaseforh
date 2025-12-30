@@ -47,14 +47,11 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // FOR FormData PARSING
 
-// Serve uploaded files statically with CORS
-app.use('/uploads', (req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET');
-  next();
-}, express.static('uploads'));
-
-const upload = multer({ dest: 'uploads/', limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
+// In-memory uploads (avoid ephemeral filesystem on Render)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit to keep payload reasonable
+});
 
 // Helper: sanitize user payload for responses
 const sanitizeUser = (user) => ({
@@ -359,7 +356,14 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
       return trimmed === '' ? null : trimmed;
     };
 
-    // Use relative path for photos so it works with any backend URL
+    // Convert photo to base64 data URL (persists across restarts)
+    let photoDataUrl = null;
+    if (req.file && req.file.buffer) {
+      const mime = req.file.mimetype || 'application/octet-stream';
+      const base64 = req.file.buffer.toString('base64');
+      photoDataUrl = `data:${mime};base64,${base64}`;
+    }
+
     const emergencyData = {
       fullName: safeString(fullName),
       email: safeString(req.body.email) || null,
@@ -368,7 +372,7 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
       allergies: safeString(req.body.allergies),
       medications: safeString(req.body.medications),
       medicalConditions: safeString(req.body.medicalConditions),
-      photo: req.file ? `/uploads/${req.file.filename}` : null,
+      photo: photoDataUrl,
       dateOfBirth: safeString(dateOfBirth),
       address: safeString(req.body.address),
       phoneNumber: safeString(phoneNumber),
