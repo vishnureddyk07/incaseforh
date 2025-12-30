@@ -223,12 +223,25 @@ export default function EmergencyQRCode() {
 
       setShowSuccess(true);
       
-      // Keep form data but clear the file object
-      // Store the photo URL instead
-      setEmergencyInfo(prev => ({
-        ...prev,
-        photo: responseData.photo || null
-      }));
+      // Clear the form after successful submission
+      setEmergencyInfo({
+        fullName: '',
+        email: '',
+        bloodType: '',
+        emergencyContacts: [{ name: '', phone: '' }],
+        allergies: '',
+        medications: '',
+        medicalConditions: '',
+        photo: null,
+        dateOfBirth: '',
+        address: '',
+        phoneNumber: '',
+      });
+      
+      // Clear localStorage
+      localStorage.removeItem('emergencyFormData');
+      localStorage.removeItem('savedPhotoUrl');
+      setSavedPhotoUrl(null);
 
       // Hide success message after 5 seconds
       setTimeout(() => setShowSuccess(false), 5000);
