@@ -5,48 +5,26 @@ import type { EmergencyInfo, EmergencyContact } from "../../types/emergency";
 import EmergencyForm from "./EmergencyForm";
 
 export default function EmergencyQRCode() {
-  // Initialize state from localStorage if available
-  const [emergencyInfo, setEmergencyInfo] = useState<EmergencyInfo>(() => {
-    const saved = localStorage.getItem('emergencyFormData');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Failed to parse saved form data:', e);
-      }
-    }
-    return {
-      fullName: "",
-      email: "",
-      bloodType: "",
-      emergencyContacts: [{ name: "", phone: "" }],
-      allergies: "",
-      medications: "",
-      medicalConditions: "",
-      photo: null,
-      dateOfBirth: "",
-      address: "",
-      phoneNumber: "",
-    };
+  // Fresh state every load (no localStorage persistence)
+  const [emergencyInfo, setEmergencyInfo] = useState<EmergencyInfo>({
+    fullName: "",
+    email: "",
+    bloodType: "",
+    emergencyContacts: [{ name: "", phone: "" }],
+    allergies: "",
+    medications: "",
+    medicalConditions: "",
+    photo: null,
+    dateOfBirth: "",
+    address: "",
+    phoneNumber: "",
   });
   const [showSuccess, setShowSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [reportDate, setReportDate] = useState("");
   const [consentChecked, setConsentChecked] = useState(false);
-  const [savedPhotoUrl, setSavedPhotoUrl] = useState<string | null>(() => {
-    return localStorage.getItem('savedPhotoUrl');
-  });
 
-  // Save form data to localStorage whenever it changes (except photo File object)
-  React.useEffect(() => {
-    const { photo, ...dataWithoutFile } = emergencyInfo;
-    const dataToSave = {
-      ...dataWithoutFile,
-      photo: typeof photo === 'string' ? photo : savedPhotoUrl
-    };
-    localStorage.setItem('emergencyFormData', JSON.stringify(dataToSave));
-  }, [emergencyInfo, savedPhotoUrl]);
 
   const handleAddEmergencyContact = () => {
     if (emergencyInfo.emergencyContacts.length < 5) {
@@ -215,12 +193,6 @@ export default function EmergencyQRCode() {
       const responseData = await res.json();
       console.log('✅ Backend response:', responseData);
 
-      // Save the photo URL from backend for future use
-      if (responseData.photo) {
-        setSavedPhotoUrl(responseData.photo);
-        localStorage.setItem('savedPhotoUrl', responseData.photo);
-      }
-
       setShowSuccess(true);
       
       // Clear the form after successful submission
@@ -238,11 +210,6 @@ export default function EmergencyQRCode() {
         phoneNumber: '',
       });
       
-      // Clear localStorage
-      localStorage.removeItem('emergencyFormData');
-      localStorage.removeItem('savedPhotoUrl');
-      setSavedPhotoUrl(null);
-
       // Hide success message after 5 seconds
       setTimeout(() => setShowSuccess(false), 5000);
     } catch (err) {
