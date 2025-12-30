@@ -369,10 +369,8 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
       return trimmed === '' ? null : trimmed;
     };
 
-    const protocolHeader = req.headers['x-forwarded-proto'];
-    const protocol = Array.isArray(protocolHeader) ? protocolHeader[0] : (protocolHeader || req.protocol);
-    const host = req.get('host');
-    const baseUrl = `${protocol}://${host}`;
+    // Use production URL for photo paths - always use Render backend URL
+    const baseUrl = process.env.BACKEND_URL || 'https://incaseforh.onrender.com';
 
     const emergencyData = {
       fullName: safeString(fullName),
