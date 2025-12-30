@@ -27,6 +27,8 @@ export default function EmergencyQRCode() {
       dateOfBirth: "",
       address: "",
       phoneNumber: "",
+      alternateNumber1: "",
+      alternateNumber2: "",
     };
   });
   const [showSuccess, setShowSuccess] = useState(false);
@@ -171,24 +173,51 @@ export default function EmergencyQRCode() {
       formData.append('dateOfBirth', emergencyInfo.dateOfBirth);
       formData.append('address', emergencyInfo.address || '');
       formData.append('phoneNumber', emergencyInfo.phoneNumber);
+      formData.append('alternateNumber1', emergencyInfo.alternateNumber1 || '');
+      formData.append('alternateNumber2', emergencyInfo.alternateNumber2 || '');
       formData.append('qrCode', qrDataUrl);
       if (emergencyInfo.photo instanceof File) {
         formData.append('photo', emergencyInfo.photo);
       }
+
+      // Log what we're sending (for debugging)
+      console.log('📤 Sending to backend:');
+      console.log('  - fullName:', emergencyInfo.fullName);
+      console.log('  - phoneNumber:', emergencyInfo.phoneNumber);
+      console.log('  - email:', emergencyInfo.email);
+      console.log('  - dateOfBirth:', emergencyInfo.dateOfBirth);
+      console.log('  - emergencyContacts:', emergencyInfo.emergencyContacts.length, 'contacts');
+      console.log('  - photo:', emergencyInfo.photo instanceof File ? 'File uploaded' : 'No file');
 
       const res = await fetch(
         "https://incaseforh.onrender.com/api/emergency",
         {
           method: "POST",
           body: formData,
+          headers: {
+            'Accept': 'application/json',
+          }
         }
       );
 
-      if (!res.ok) throw new Error("Failed to save to backend");
+      if (!res.ok) {
+        // Get the error details from backend
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Backend error response:', errorData);
+        
+        // Handle specific error cases
+        if (res.status === 502 || res.status === 503) {
+          throw new Error('Backend server is currently unavailable. Please try again later.');
+        } else if (res.status === 0 || res.statusText === 'Failed to fetch') {
+          throw new Error('CORS error or network issue. Make sure the backend has CORS enabled for localhost:5173');
+        }
+        
+        throw new Error(errorData.error || `Backend returned ${res.status}: ${res.statusText}`);
+      }
 
       // Get the response which should contain the saved photo URL
       const responseData = await res.json();
-      console.log('Backend response:', responseData);
+      console.log('✅ Backend response:', responseData);
 
       // Save the photo URL from backend for future use
       if (responseData.photo) {
@@ -208,8 +237,9 @@ export default function EmergencyQRCode() {
       // Hide success message after 5 seconds
       setTimeout(() => setShowSuccess(false), 5000);
     } catch (err) {
-      console.error(err);
-      alert("Something went wrong while saving data.");
+      console.error('❌ Submission error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Something went wrong while saving data.';
+      alert(`Error: ${errorMessage}\n\nPlease check the console for more details.`);
     } finally {
       setSubmitting(false);
     }

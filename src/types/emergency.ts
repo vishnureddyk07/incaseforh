@@ -11,8 +11,10 @@ export interface EmergencyInfo {
   allergies: string;
   medications: string;
   medicalConditions: string;
-  photo?: File | null;
+  photo?: File | string | null;
   dateOfBirth: string;
   address: string;
   phoneNumber: string;
+  alternateNumber1?: string;
+  alternateNumber2?: string;
 }
