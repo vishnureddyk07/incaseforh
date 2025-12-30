@@ -323,7 +323,7 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
 
     // STEP 1: VALIDATION - Check required fields
     console.log('STEP 1: Validating required fields...');
-    const { fullName, phoneNumber, dateOfBirth, alternateNumber1, alternateNumber2 } = req.body;
+    const { fullName, phoneNumber, dateOfBirth } = req.body;
     
     if (!fullName) {
       console.error('❌ VALIDATION FAILED: fullName is undefined/null');
@@ -346,16 +346,6 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
     if (!dateOfBirth) {
       console.error('❌ VALIDATION FAILED: dateOfBirth is undefined/null');
       return res.status(400).json({ error: 'dateOfBirth is required', received: { dateOfBirth } });
-    }
-
-    if (!alternateNumber1) {
-      console.error('❌ VALIDATION FAILED: alternateNumber1 is undefined/null');
-      return res.status(400).json({ error: 'alternateNumber1 is required', received: { alternateNumber1 } });
-    }
-
-    if (!alternateNumber2) {
-      console.error('❌ VALIDATION FAILED: alternateNumber2 is undefined/null');
-      return res.status(400).json({ error: 'alternateNumber2 is required', received: { alternateNumber2 } });
     }
 
     console.log('✅ Required fields valid');
@@ -382,8 +372,6 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
       dateOfBirth: safeString(dateOfBirth),
       address: safeString(req.body.address),
       phoneNumber: safeString(phoneNumber),
-      alternateNumber1: safeString(alternateNumber1),
-      alternateNumber2: safeString(alternateNumber2),
       qrCode: safeString(req.body.qrCode) ? (safeString(req.body.qrCode).substring(0, 500000)) : null,
     };
 
@@ -487,7 +475,7 @@ app.put('/api/emergency/:email', requireAuth, requireAdmin, async (req, res) => 
     // Update fields but preserve email and qrCode
     const allowedFields = ['fullName', 'bloodType', 'emergencyContact', 'allergies', 
                  'medications', 'medicalConditions', 'dateOfBirth', 'phoneNumber', 'address',
-                 'alternateNumber1', 'alternateNumber2', 'email'];
+                 'email'];
     
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
@@ -519,7 +507,7 @@ app.put('/api/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (r
 
     const allowedFields = ['fullName', 'bloodType', 'emergencyContact', 'allergies', 
                  'medications', 'medicalConditions', 'dateOfBirth', 'phoneNumber', 'address',
-                 'alternateNumber1', 'alternateNumber2', 'email'];
+                 'email'];
     
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
@@ -539,7 +527,7 @@ app.put('/api/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (r
 app.get('/api/emergency', requireAuth, requireAdmin, async (req, res) => {
   try {
     console.log('Fetching all emergency records...');
-    const allEmergencies = await EmergencyInfo.find({}).select('fullName email qrCode photo createdAt phoneNumber alternateNumber1 alternateNumber2 dateOfBirth address bloodType emergencyContact');
+    const allEmergencies = await EmergencyInfo.find({}).select('fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact');
     console.log(`Found ${allEmergencies.length} records`);
     console.log('Sample photo URLs:', allEmergencies.slice(0, 2).map(e => ({ name: e.fullName, photo: e.photo })));
     res.json(allEmergencies);
