@@ -24,6 +24,8 @@ interface EmergencyInfo {
 }
 
 export default function QRList() {
+  // Fallback placeholder if a photo is missing/404
+  const PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><rect width="120" height="120" fill="%23f3f4f6"/><circle cx="60" cy="45" r="22" fill="%23d1d5db"/><rect x="25" y="75" width="70" height="30" rx="12" fill="%23d1d5db"/></svg>';
   const [qrs, setQrs] = useState<EmergencyInfo[]>([]);
   const [filteredQrs, setFilteredQrs] = useState<EmergencyInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,12 +108,18 @@ export default function QRList() {
             headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
           });
-          if (!res.ok) throw new Error(`Photo fetch failed (${res.status})`);
+          if (!res.ok) {
+            console.warn(`Photo fetch failed (${res.status}) for`, id, resolved);
+            nextMap.set(id, PLACEHOLDER);
+            continue;
+          }
           const blob = await res.blob();
           const url = URL.createObjectURL(blob);
           nextMap.set(id, url);
         } catch (e) {
           console.warn('Photo resolve error for', id, e);
+          nextMap.set(id, PLACEHOLDER);
+          continue;
         }
       }
 
