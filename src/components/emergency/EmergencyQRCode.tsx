@@ -27,8 +27,6 @@ export default function EmergencyQRCode() {
       dateOfBirth: "",
       address: "",
       phoneNumber: "",
-      alternateNumber1: "",
-      alternateNumber2: "",
     };
   });
   const [showSuccess, setShowSuccess] = useState(false);
@@ -173,8 +171,6 @@ export default function EmergencyQRCode() {
       formData.append('dateOfBirth', emergencyInfo.dateOfBirth);
       formData.append('address', emergencyInfo.address || '');
       formData.append('phoneNumber', emergencyInfo.phoneNumber);
-      formData.append('alternateNumber1', emergencyInfo.alternateNumber1 || '');
-      formData.append('alternateNumber2', emergencyInfo.alternateNumber2 || '');
       formData.append('qrCode', qrDataUrl);
       if (emergencyInfo.photo instanceof File) {
         formData.append('photo', emergencyInfo.photo);

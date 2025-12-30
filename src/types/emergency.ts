@@ -15,6 +15,4 @@ export interface EmergencyInfo {
   dateOfBirth: string;
   address: string;
   phoneNumber: string;
-  alternateNumber1?: string;
-  alternateNumber2?: string;
 }

@@ -143,40 +143,6 @@ export default function EmergencyForm({
       <div className="grid md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            Alternate Number 1
-          </label>
-          <input
-            type="tel"
-            name="alternateNumber1"
-            value={emergencyInfo.alternateNumber1 || ''}
-            onChange={onChange}
-            inputMode="numeric"
-            autoComplete="tel"
-            className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
-            placeholder="+91 98765 43210"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Alternate Number 2
-          </label>
-          <input
-            type="tel"
-            name="alternateNumber2"
-            value={emergencyInfo.alternateNumber2 || ''}
-            onChange={onChange}
-            inputMode="numeric"
-            autoComplete="tel"
-            className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
-            placeholder="+91 98765 43210"
-          />
-        </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
             Blood Type
           </label>
           <select
