@@ -12,8 +12,8 @@ const emergencyInfoSchema = new mongoose.Schema({
   dateOfBirth: { type: String, required: true }, // Now required
   address: { type: String },
   phoneNumber: { type: String, required: true, index: true }, // Now required and indexed for search
-  alternateNumber1: { type: String, required: true }, // New required field
-  alternateNumber2: { type: String, required: true }, // New required field
+  alternateNumber1: { type: String, required: false },
+  alternateNumber2: { type: String, required: false },
   qrCode: { type: String }, // Store the QR code URL
 }, { timestamps: true });
 
