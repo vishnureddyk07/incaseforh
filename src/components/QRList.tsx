@@ -75,8 +75,8 @@ export default function QRList() {
       if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
         return trimmed;
       }
-      // Treat as backend-relative path
-      const base = 'https://incaseforh.onrender.com';
+      // Treat as backend-relative path - use env var or production default
+      const base = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
       return trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`;
     };
 

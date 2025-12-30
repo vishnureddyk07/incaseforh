@@ -369,9 +369,7 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
       return trimmed === '' ? null : trimmed;
     };
 
-    // Use production URL for photo paths - always use Render backend URL
-    const baseUrl = process.env.BACKEND_URL || 'https://incaseforh.onrender.com';
-
+    // Use relative path for photos so it works with any backend URL
     const emergencyData = {
       fullName: safeString(fullName),
       email: safeString(req.body.email) || null,
@@ -380,7 +378,7 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
       allergies: safeString(req.body.allergies),
       medications: safeString(req.body.medications),
       medicalConditions: safeString(req.body.medicalConditions),
-      photo: req.file ? `${baseUrl}/uploads/${req.file.filename}` : null,
+      photo: req.file ? `/uploads/${req.file.filename}` : null,
       dateOfBirth: safeString(dateOfBirth),
       address: safeString(req.body.address),
       phoneNumber: safeString(phoneNumber),

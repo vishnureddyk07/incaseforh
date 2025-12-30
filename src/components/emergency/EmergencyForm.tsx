@@ -42,7 +42,7 @@ export default function EmergencyForm({
                 typeof emergencyInfo.photo === "string"
                   ? emergencyInfo.photo.startsWith('http') || emergencyInfo.photo.startsWith('data:')
                     ? emergencyInfo.photo
-                    : `https://incaseforh.onrender.com${emergencyInfo.photo.startsWith('/') ? '' : '/'}${emergencyInfo.photo}`
+                    : `${import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com'}${emergencyInfo.photo.startsWith('/') ? '' : '/'}${emergencyInfo.photo}`
                   : URL.createObjectURL(emergencyInfo.photo)
               }
               alt="Profile"
