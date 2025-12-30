@@ -385,24 +385,14 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
     // STEP 4: SAVE TO DATABASE
     console.log('STEP 4: Saving to MongoDB...');
     
-    // If email is provided, update existing or create new. Otherwise, always create new.
-    let savedDoc;
-    if (emergencyData.email) {
-      savedDoc = await EmergencyInfo.findOneAndUpdate(
-        { email: emergencyData.email },
-        emergencyData,
-        { upsert: true, new: true, runValidators: true }
-      );
-    } else {
-      // No email provided, always create a new record
-      savedDoc = await newEmergency.save();
-    }
+    // Always create a new record - don't use email as unique identifier
+    const savedDoc = await newEmergency.save();
     
-    console.log('✅ SAVED/UPDATED SUCCESSFULLY:', savedDoc._id);
+    console.log('✅ SAVED SUCCESSFULLY:', savedDoc._id);
     res.status(201).json({ 
       message: 'Emergency info saved successfully', 
       id: savedDoc._id,
-      email: savedDoc.email,
+      phoneNumber: savedDoc.phoneNumber,
       timestamp: new Date()
     });
     
