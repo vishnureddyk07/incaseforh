@@ -85,6 +85,46 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+// Helper: Convert old file paths to base64 data URLs by fetching from production
+const convertPhotoToDataUrl = async (photo) => {
+  if (!photo) return null;
+  
+  // Already a data URL
+  if (photo.startsWith('data:')) {
+    return photo;
+  }
+  
+  // Old file path like /uploads/... or full URL to production server
+  try {
+    console.log('Converting old photo path to data URL:', photo);
+    
+    // If it's already a full URL to production, use it as-is
+    let photoUrl = photo;
+    if (!photo.startsWith('http')) {
+      // It's a relative path, prepend production URL
+      photoUrl = `https://incaseforh.onrender.com${photo.startsWith('/') ? '' : '/'}${photo}`;
+    }
+    
+    console.log('Fetching from:', photoUrl);
+    
+    const response = await fetch(photoUrl);
+    if (!response.ok) {
+      console.warn('Failed to fetch photo from production:', response.status);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    const mime = response.headers.get('content-type') || 'application/octet-stream';
+    const base64 = Buffer.from(buffer).toString('base64');
+    const dataUrl = `data:${mime};base64,${base64}`;
+    console.log('✅ Successfully converted photo to base64');
+    return dataUrl;
+  } catch (err) {
+    console.warn('Error converting photo:', err.message);
+    return null;
+  }
+};
+
 // Admin: clear all emergency records (for testing/resetting)
 app.delete('/api/admin/emergency/clear-all', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -431,6 +471,16 @@ app.get('/api/emergency/:email', async (req, res) => {
     if (!emergency) {
       return res.status(404).json({ error: 'Emergency info not found' });
     }
+    
+    // Convert old file paths to base64 if needed (anything that's not a data URL)
+    if (emergency.photo && !emergency.photo.startsWith('data:')) {
+      const convertedPhoto = await convertPhotoToDataUrl(emergency.photo);
+      if (convertedPhoto) {
+        emergency.photo = convertedPhoto;
+        console.log('✅ Photo converted and returned as base64');
+      }
+    }
+    
     res.json(emergency);
   } catch (error) {
     console.error('Error in GET /api/emergency/:email', error);
@@ -451,6 +501,16 @@ app.get('/api/emergency/phone/:phoneNumber', async (req, res) => {
     if (!emergency) {
       return res.status(404).json({ error: 'Emergency info not found' });
     }
+    
+    // Convert old file paths to base64 if needed (anything that's not a data URL)
+    if (emergency.photo && !emergency.photo.startsWith('data:')) {
+      const convertedPhoto = await convertPhotoToDataUrl(emergency.photo);
+      if (convertedPhoto) {
+        emergency.photo = convertedPhoto;
+        console.log('✅ Photo converted and returned as base64');
+      }
+    }
+    
     res.json(emergency);
   } catch (error) {
     console.error('Error in GET /api/emergency/phone/:phoneNumber', error);

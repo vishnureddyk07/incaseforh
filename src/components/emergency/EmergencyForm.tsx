@@ -36,11 +36,11 @@ export default function EmergencyForm({
     <div className="space-y-6">
       <div className="text-center">
         <div className="relative inline-block">
-          {emergencyInfo.photo ? (
+          {emergencyInfo.photo && typeof emergencyInfo.photo !== "undefined" ? (
             <img
               src={
                 typeof emergencyInfo.photo === "string"
-                  ? emergencyInfo.photo.startsWith('http') || emergencyInfo.photo.startsWith('data:')
+                  ? (emergencyInfo.photo.startsWith('http') || emergencyInfo.photo.startsWith('data:'))
                     ? emergencyInfo.photo
                     : `${import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com'}${emergencyInfo.photo.startsWith('/') ? '' : '/'}${emergencyInfo.photo}`
                   : URL.createObjectURL(emergencyInfo.photo)
@@ -49,7 +49,7 @@ export default function EmergencyForm({
               className="w-24 h-24 rounded-full object-cover border-4 border-orange-200"
               onError={(e) => {
                 console.error('Failed to load photo:', emergencyInfo.photo);
-                e.currentTarget.style.display = 'none';
+                (e.currentTarget as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"%3E%3Cpath d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/%3E%3Ccircle cx="12" cy="7" r="4"/%3E%3C/svg%3E';
               }}
             />
           ) : (

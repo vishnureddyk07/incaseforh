@@ -35,9 +35,10 @@ export default function EmergencyInfoDisplay() {
     }
 
     const isEmail = identifierParam.includes('@');
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
     const endpoint = isEmail
-      ? `https://incaseforh.onrender.com/api/emergency/${encodeURIComponent(identifierParam)}`
-      : `https://incaseforh.onrender.com/api/emergency/phone/${encodeURIComponent(identifierParam)}`;
+      ? `${apiUrl}/api/emergency/${encodeURIComponent(identifierParam)}`
+      : `${apiUrl}/api/emergency/phone/${encodeURIComponent(identifierParam)}`;
 
     console.log("📡 Fetching from:", endpoint);
     fetch(endpoint)
@@ -115,17 +116,27 @@ export default function EmergencyInfoDisplay() {
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="max-w-2xl mx-auto bg-white rounded-lg shadow p-6">
         {/* Photo */}
-        {info.photo ? (
-          <div className="mb-6 flex justify-center">
+        <div className="mb-6 flex justify-center">
+          {info.photo && typeof info.photo === 'string' && info.photo.trim() ? (
             <img
-              src={(info.photo.startsWith('http://') || info.photo.startsWith('https://') || info.photo.startsWith('data:'))
-                ? info.photo
-                : `https://incaseforh.onrender.com${info.photo.startsWith('/') ? '' : '/'}${info.photo}`}
+              src={info.photo}
               alt="Emergency Profile"
               className="w-48 h-48 rounded-lg object-cover border-4 border-orange-300"
+              onError={(e) => {
+                console.error('Failed to load profile photo:', info.photo);
+                e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"%3E%3Crect width="200" height="200" fill="%23E5E7EB"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-size="14" fill="%239CA3AF"%3EPhoto Not Available%3C/text%3E%3C/svg%3E';
+              }}
             />
-          </div>
-        ) : null}
+          ) : (
+            <div className="w-48 h-48 rounded-lg bg-gray-200 flex flex-col items-center justify-center border-4 border-orange-300">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 mb-2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+              <p className="text-sm text-gray-500 text-center">No photo</p>
+            </div>
+          )}
+        </div>
 
         {/* Title */}
         <h1 className="text-3xl font-bold mb-6 text-gray-900">
