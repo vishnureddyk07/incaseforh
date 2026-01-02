@@ -7,6 +7,16 @@ interface QRScanDisplayProps {
 }
 
 export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
+  const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+  const PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><rect width="120" height="120" fill="%23f3f4f6"/><circle cx="60" cy="45" r="22" fill="%23d1d5db"/><rect x="25" y="75" width="70" height="30" rx="12" fill="%23d1d5db"/></svg>';
+
+  const resolvePhoto = (photo?: string) => {
+    if (!photo) return PLACEHOLDER;
+    const src = photo.trim();
+    if (src.startsWith('data:') || src.startsWith('http://') || src.startsWith('https://')) return src;
+    return `${API_BASE}${src.startsWith('/') ? '' : '/'}${src}`;
+  };
+
   const formatDate = (dateString: string) => {
     if (!dateString) return 'Not provided';
     const date = new Date(dateString);
@@ -49,19 +59,12 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
             {/* Photo and Basic Info */}
             <div className="p-6 bg-gradient-to-r from-orange-500 to-red-500 text-white">
               <div className="flex items-center space-x-6">
-                {emergencyData.photo ? (
-                  <img
-                    src={(emergencyData.photo.startsWith('http://') || emergencyData.photo.startsWith('https://') || emergencyData.photo.startsWith('data:'))
-                      ? emergencyData.photo
-                      : `https://incaseforh.onrender.com${emergencyData.photo.startsWith('/') ? '' : '/'}${emergencyData.photo}`}
-                    alt={emergencyData.fullName}
-                    className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg"
-                  />
-                ) : (
-                  <div className="w-24 h-24 rounded-full bg-white/20 flex items-center justify-center border-4 border-white">
-                    <User className="h-12 w-12 text-white" />
-                  </div>
-                )}
+                <img
+                  src={resolvePhoto(emergencyData.photo)}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = PLACEHOLDER; }}
+                  alt={emergencyData.fullName || 'Emergency profile'}
+                  className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg"
+                />
                 <div className="flex-1">
                   <h2 className="text-3xl font-bold">{emergencyData.fullName || 'Name not provided'}</h2>
                   <div className="mt-2 space-y-1">
