@@ -127,8 +127,25 @@ export default function EmergencyQRCode() {
       alert("Please enter your full name, phone number, and date of birth before submitting.");
       return;
     }
-    if (emergencyInfo.emergencyContacts.length === 0 || emergencyInfo.emergencyContacts.some(c => !c.name || !c.phone)) {
+    if (
+      !emergencyInfo.emergencyContacts ||
+      emergencyInfo.emergencyContacts.length === 0 ||
+      emergencyInfo.emergencyContacts.some(
+        (c) => !c.name || !String(c.name).trim() || !c.phone || !String(c.phone).trim()
+      )
+    ) {
       alert("Please add at least 1 emergency contact with both name and phone number.");
+      return;
+    }
+    // Require blood type
+    if (!emergencyInfo.bloodType || emergencyInfo.bloodType.trim() === '') {
+      alert('Please select your blood type before submitting.');
+      return;
+    }
+    // Require profile photo (either a File or a non-empty string URL)
+    const hasPhoto = emergencyInfo.photo && (emergencyInfo.photo instanceof File || (typeof emergencyInfo.photo === 'string' && emergencyInfo.photo.trim() !== ''));
+    if (!hasPhoto) {
+      alert('Please upload a profile photo before submitting.');
       return;
     }
 

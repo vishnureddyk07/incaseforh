@@ -35,6 +35,9 @@ export default function EmergencyForm({
   return (
     <div className="space-y-6">
       <div className="text-center">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Photo <span className="text-red-500">*</span>
+        </label>
         <div className="relative inline-block">
           {emergencyInfo.photo && typeof emergencyInfo.photo !== "undefined" ? (
             <img
@@ -72,7 +75,7 @@ export default function EmergencyForm({
           onChange={handlePhotoUpload}
           className="hidden"
         />
-        <p className="mt-2 text-sm text-gray-600">Upload your photo (Max 50MB)</p>
+        <p className="mt-2 text-sm text-gray-600">Upload your photo (Max 50MB) <span className="text-red-500">*</span></p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -143,15 +146,17 @@ export default function EmergencyForm({
       <div className="grid md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            Blood Type
+            Blood Type <span className="text-red-500">*</span>
           </label>
           <select
             name="bloodType"
             value={emergencyInfo.bloodType}
             onChange={onChange}
+            required
+            aria-required="true"
             className="mt-1 block w-full px-4 py-2 border rounded-md focus:ring-orange-500 focus:border-orange-500"
           >
-            <option value="">Select Blood Type</option>
+            <option value="" disabled>Select Blood Type</option>
             {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((type) => (
               <option key={type} value={type}>
                 {type}
@@ -245,6 +250,7 @@ export default function EmergencyForm({
                       className="w-full px-3 py-2 border rounded-md text-sm focus:ring-orange-500 focus:border-orange-500"
                       placeholder="+91 98765 43210"
                       required
+                      aria-required="true"
                     />
                   </div>
                 </div>
