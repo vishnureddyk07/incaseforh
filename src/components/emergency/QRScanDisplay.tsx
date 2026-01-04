@@ -92,14 +92,23 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
               </div>
             </div>
 
-            {/* Emergency Contact */}
-            {emergencyData.emergencyContact && (
+            {/* Emergency Contacts */}
+            {emergencyData.emergencyContacts && Array.isArray(emergencyData.emergencyContacts) && emergencyData.emergencyContacts.length > 0 && (
               <div className="p-6 bg-red-50 border-l-4 border-red-500">
-                <h3 className="text-lg font-semibold text-red-800 mb-2 flex items-center">
+                <h3 className="text-lg font-semibold text-red-800 mb-3 flex items-center">
                   <Phone className="h-5 w-5 mr-2" />
-                  Emergency Contact
+                  Emergency Contacts
                 </h3>
-                <p className="text-red-700 text-lg font-medium">{emergencyData.emergencyContact}</p>
+                <div className="space-y-2">
+                  {emergencyData.emergencyContacts.map((contact, idx) => (
+                    <div key={idx} className="bg-white rounded p-3">
+                      <p className="text-red-700 font-medium">{contact.name}</p>
+                      <a href={`tel:${contact.phone}`} className="text-red-600 hover:underline">
+                        {contact.phone}
+                      </a>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

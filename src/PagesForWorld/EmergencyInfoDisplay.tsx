@@ -196,11 +196,24 @@ export default function EmergencyInfoDisplay() {
             <p className="text-sm text-gray-600">Medical Conditions</p>
             <p className="text-lg font-medium">{info.medicalConditions || "—"}</p>
           </div>
+
+          {/* Emergency Contacts */}
+          {info.emergencyContacts && Array.isArray(info.emergencyContacts) && info.emergencyContacts.length > 0 && (
+            <div className="border-t pt-3">
+              <p className="text-sm text-gray-600 font-semibold mb-2">Emergency Contacts</p>
+              {info.emergencyContacts.map((contact, idx) => (
+                <div key={idx} className="mb-2 pl-4 border-l-2 border-orange-300">
+                  <p className="text-sm"><span className="font-medium">{contact.name}</span></p>
+                  <p className="text-sm text-blue-600"><a href={`tel:${contact.phone}`}>{contact.phone}</a></p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Emergency Contact Numbers */}
         <div className="mt-8 pt-6 border-t">
-          <h2 className="text-xl font-bold text-red-600 mb-4 text-center">Emergency Contact Numbers</h2>
+          <h2 className="text-xl font-bold text-red-600 mb-4 text-center">Emergency Services</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
             <div className="bg-red-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Ambulance</p>

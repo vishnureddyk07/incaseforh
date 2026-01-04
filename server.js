@@ -408,7 +408,7 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
       fullName: safeString(fullName),
       email: safeString(req.body.email) || null,
       bloodType: safeString(req.body.bloodType),
-      emergencyContact: safeString(req.body.emergencyContact),
+      emergencyContacts: req.body.emergencyContacts ? JSON.parse(req.body.emergencyContacts) : [],
       allergies: safeString(req.body.allergies),
       medications: safeString(req.body.medications),
       medicalConditions: safeString(req.body.medicalConditions),

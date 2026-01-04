@@ -4,7 +4,10 @@ const emergencyInfoSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   email: { type: String, index: true }, // Email no longer required
   bloodType: { type: String },
-  emergencyContact: { type: String },
+  emergencyContacts: [{
+    name: { type: String },
+    phone: { type: String }
+  }],
   allergies: { type: String },
   medications: { type: String },
   medicalConditions: { type: String },
