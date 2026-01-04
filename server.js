@@ -136,6 +136,21 @@ app.delete('/api/admin/emergency/clear-all', requireAuth, requireAdmin, async (r
   }
 });
 
+// Admin: delete a single emergency record by id
+app.delete('/api/admin/emergency/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await EmergencyInfo.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+    res.json({ message: 'Deleted', id });
+  } catch (error) {
+    console.error('Error deleting emergency record:', error);
+    res.status(500).json({ error: 'Failed to delete emergency record' });
+  }
+});
+
 // ===== COMMENTED OUT: Medical Info Extraction Function (Will be implemented later) =====
 /* OCR extraction disabled intentionally. */
 // ===== END COMMENTED OUT CODE =====
@@ -402,6 +417,13 @@ app.post('/api/emergency', upload.single('photo'), async (req, res) => {
       const mime = req.file.mimetype || 'application/octet-stream';
       const base64 = req.file.buffer.toString('base64');
       photoDataUrl = `data:${mime};base64,${base64}`;
+    }
+
+    // Prevent duplicate phoneNumber records (they cause wrong data to show when scanning)
+    const existingByPhone = await EmergencyInfo.findOne({ phoneNumber: safeString(phoneNumber) });
+    if (existingByPhone) {
+      console.error('❌ VALIDATION FAILED: duplicate phoneNumber found');
+      return res.status(409).json({ error: 'An entry with this phone number already exists. Use a unique phone number.' });
     }
 
     const emergencyData = {

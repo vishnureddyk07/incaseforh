@@ -2,12 +2,18 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
+type EmergencyContact = {
+  name?: string;
+  phone?: string;
+};
+
 type EmergencyInfo = {
   fullName: string;
   email?: string;
   qrCode?: string;
   bloodType?: string;
-  emergencyContact?: string;
+  emergencyContact?: string; // legacy single-contact field
+  emergencyContacts?: EmergencyContact[]; // current array field
   allergies?: string;
   medications?: string;
   medicalConditions?: string;
@@ -61,7 +67,7 @@ export default function EmergencyInfoDisplay() {
         console.log("   fullName:", data.fullName);
         console.log("   email:", data.email);
         console.log("   bloodType:", data.bloodType);
-        console.log("   emergencyContact:", data.emergencyContact);
+        console.log("   emergencyContacts (array):", data.emergencyContacts);
         console.log("   phoneNumber:", data.phoneNumber);
         console.log("   alternateNumber1:", data.alternateNumber1);
         console.log("   alternateNumber2:", data.alternateNumber2);
@@ -165,11 +171,6 @@ export default function EmergencyInfoDisplay() {
           <div className="border-b pb-3">
             <p className="text-sm text-gray-600">Blood Type</p>
             <p className="text-lg font-medium">{info.bloodType || "—"}</p>
-          </div>
-
-          <div className="border-b pb-3">
-            <p className="text-sm text-gray-600">Emergency Contact</p>
-            <p className="text-lg font-medium">{info.emergencyContact || "—"}</p>
           </div>
 
           <div className="border-b pb-3">

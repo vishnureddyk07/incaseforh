@@ -40,6 +40,8 @@ export default function QRList() {
   const { isAuthenticated, token, user } = useAuth();
   const navigate = useNavigate();
 
+  const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+
   useEffect(() => {
     if (!isAuthenticated || !token || user?.role !== 'admin') {
       setLoading(false);
@@ -332,6 +334,30 @@ export default function QRList() {
     }
   };
 
+  const handleDelete = async (record: EmergencyInfo) => {
+    if (!token) return;
+    const confirmed = window.confirm(`Delete record for ${record.fullName}? This cannot be undone.`);
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/emergency/${record._id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to delete record');
+      }
+      setQrs((prev) => prev.filter((r) => r._id !== record._id));
+      setFilteredQrs((prev) => prev.filter((r) => r._id !== record._id));
+      setSelectedIds(new Set());
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Failed to delete record');
+    }
+  };
+
   const handleEdit = (e: React.MouseEvent, record: EmergencyInfo) => {
     e.stopPropagation();
     setEditingRecord(record);
@@ -347,8 +373,8 @@ export default function QRList() {
       }
       const isEmail = identifier.includes('@');
       const url = isEmail
-        ? `https://incaseforh.onrender.com/api/emergency/${identifier}`
-        : `https://incaseforh.onrender.com/api/emergency/phone/${identifier}`;
+        ? `${API_BASE}/api/emergency/${identifier}`
+        : `${API_BASE}/api/emergency/phone/${identifier}`;
       const res = await fetch(url, {
         method: 'PUT',
         headers: {
@@ -359,7 +385,7 @@ export default function QRList() {
       });
       if (!res.ok) throw new Error('Failed to update');
       // Refresh list
-      const listRes = await fetch('https://incaseforh.onrender.com/api/emergency', {
+      const listRes = await fetch(`${API_BASE}/api/emergency`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await listRes.json();
@@ -500,6 +526,12 @@ export default function QRList() {
                 className="text-sm bg-orange-100 hover:bg-orange-200 px-3 py-1 rounded"
               >
                 Download QR
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleDelete(qr); }}
+                className="text-sm bg-red-100 hover:bg-red-200 px-3 py-1 rounded text-red-700"
+              >
+                Delete
               </button>
             </div>
           </div>
