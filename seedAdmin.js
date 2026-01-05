@@ -22,7 +22,7 @@ async function seedAdmin() {
     });
     console.log('✅ Connected to MongoDB');
 
-    const adminEmail = 'vishnureddy__7';
+    const adminEmail = 'vishnureddy.au07@gmail.com';
     const adminPassword = 'Idontknow#7';
 
     // Check if admin already exists
