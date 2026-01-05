@@ -9,6 +9,15 @@ interface UserRow {
   createdAt?: string;
 }
 
+interface LogEntry {
+  id: string;
+  actorEmail: string;
+  actorRole: string;
+  action: string;
+  details?: Record<string, unknown>;
+  createdAt?: string;
+}
+
 export default function AdminDashboard() {
   const { isAuthenticated, user, token } = useAuth();
   const navigate = useNavigate();
@@ -18,6 +27,8 @@ export default function AdminDashboard() {
   const [managerEmail, setManagerEmail] = useState('');
   const [managerPassword, setManagerPassword] = useState('');
   const [creating, setCreating] = useState(false);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'admin') {
@@ -41,8 +52,24 @@ export default function AdminDashboard() {
       .finally(() => setLoading(false));
   };
 
+  const fetchLogs = () => {
+    if (!token) return;
+    setLogsLoading(true);
+    fetch('https://incaseforh.onrender.com/api/admin/logs', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error('Failed to fetch logs');
+        return r.json();
+      })
+      .then((data) => setLogs(data))
+      .catch((e) => setError(e.message))
+      .finally(() => setLogsLoading(false));
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -146,6 +173,44 @@ export default function AdminDashboard() {
                           <button onClick={() => deleteUser(u.id)} className="text-sm text-red-600 hover:underline">Delete</button>
                         )}
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Manager/Admin activity log */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Manager Activity Log</h2>
+            <button onClick={fetchLogs} className="text-sm px-3 py-1 border rounded hover:bg-gray-100">Refresh</button>
+          </div>
+          {logsLoading ? (
+            <p>Loading...</p>
+          ) : logs.length === 0 ? (
+            <p className="text-sm text-gray-600">No recent actions.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="text-gray-600">
+                    <th className="py-2">When</th>
+                    <th className="py-2">Actor</th>
+                    <th className="py-2">Role</th>
+                    <th className="py-2">Action</th>
+                    <th className="py-2">Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map((log) => (
+                    <tr key={log.id} className="border-t">
+                      <td className="py-2">{log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}</td>
+                      <td className="py-2">{log.actorEmail}</td>
+                      <td className="py-2 capitalize">{log.actorRole}</td>
+                      <td className="py-2 font-medium">{log.action}</td>
+                      <td className="py-2 text-gray-600">{log.details ? JSON.stringify(log.details) : '—'}</td>
                     </tr>
                   ))}
                 </tbody>

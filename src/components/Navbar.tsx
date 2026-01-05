@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Shield, Menu, X, LogOut } from 'lucide-react';
+import { Shield, Menu, X, LogOut, ChevronDown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [isAccessOpen, setIsAccessOpen] = useState(false);
 
   const navItems = [
     { label: 'Home', href: '#home' },
@@ -32,13 +33,23 @@ export default function Navbar() {
                 {item.label}
               </a>
             ))}
-            <a
-              href="/admin"
-              className="text-gray-700 hover:text-orange-500 border px-3 py-1 rounded-full text-sm"
-              title="Admin login"
-            >
-              Admin
-            </a>
+            <div className="relative">
+              <button
+                onClick={() => setIsAccessOpen((prev) => !prev)}
+                className="text-gray-700 hover:text-orange-500 border px-3 py-1 rounded-full text-sm inline-flex items-center gap-1"
+                title="Access portal"
+              >
+                Access
+                <ChevronDown className="h-4 w-4" />
+              </button>
+              {isAccessOpen && (
+                <div className="absolute right-0 mt-2 w-40 bg-white border rounded shadow-md z-30">
+                  <a href="/admin" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setIsAccessOpen(false)}>Admin</a>
+                  <a href="/manager" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setIsAccessOpen(false)}>Manager</a>
+                  <a href="/employee" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setIsAccessOpen(false)}>Employee</a>
+                </div>
+              )}
+            </div>
             <a
               href="#emergency-info"
               className="bg-orange-500 text-white px-6 py-2 rounded-full hover:bg-orange-600 transition-colors"
@@ -87,13 +98,12 @@ export default function Navbar() {
             >
               Create QR Code
             </a>
-            <a
-              href="/admin"
-              onClick={closeMenu}
-              className="block text-gray-700 hover:text-orange-500"
-            >
-              Admin
-            </a>
+            <div className="border rounded-lg">
+              <div className="px-4 py-2 text-sm font-semibold text-gray-700">Access</div>
+              <a href="/admin" onClick={closeMenu} className="block px-4 py-2 text-gray-700 hover:bg-gray-100">Admin</a>
+              <a href="/manager" onClick={closeMenu} className="block px-4 py-2 text-gray-700 hover:bg-gray-100">Manager</a>
+              <a href="/employee" onClick={closeMenu} className="block px-4 py-2 text-gray-700 hover:bg-gray-100">Employee</a>
+            </div>
             {user && (
               <button
                 onClick={() => {

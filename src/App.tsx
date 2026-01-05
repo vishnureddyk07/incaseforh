@@ -13,6 +13,9 @@ import QRList from './components/QRList';
 import AdminLogin from './components/auth/AdminLogin';
 import AdminDashboard from './components/admin/AdminDashboard';
 import ChangePassword from './components/auth/ChangePassword';
+import ManagerLogin from './components/auth/ManagerLogin';
+import ManagerDashboard from './components/manager/ManagerDashboard';
+import EmployeeLogin from './components/auth/EmployeeLogin';
 
 function MainContent() {
   return (
@@ -65,6 +68,9 @@ function AppContent() {
       <Route path="/qrs" element={<QRList />} />
       <Route path="/admin" element={<AdminLogin />} />
       <Route path="/admin/dashboard" element={<AdminDashboard />} />
+      <Route path="/manager" element={<ManagerLogin />} />
+      <Route path="/manager/dashboard" element={<ManagerDashboard />} />
+      <Route path="/employee" element={<EmployeeLogin />} />
       <Route path="/change-password" element={<ChangePassword />} />
       <Route path="/emer" element={<div>hi</div>} />
     </Routes>

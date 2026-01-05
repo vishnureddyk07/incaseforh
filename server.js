@@ -6,6 +6,7 @@ import EmergencyInfo from './models/EmergencyInfo.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
+import ActionLog from './models/ActionLog.js';
 import Tesseract from 'tesseract.js';
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
@@ -83,6 +84,30 @@ const requireAdmin = (req, res, next) => {
     return res.status(403).json({ error: 'Forbidden' });
   }
   next();
+};
+
+// Middleware: allow admin or manager
+const requireManagerOrAdmin = (req, res, next) => {
+  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'manager')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+};
+
+// Helper: record manager/admin actions for audit
+const logAction = async ({ actor, action, details = {} }) => {
+  if (!actor) return;
+  try {
+    await ActionLog.create({
+      actorId: actor.sub || actor.id || '',
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      action,
+      details,
+    });
+  } catch (err) {
+    console.error('Failed to write action log', err.message);
+  }
 };
 
 // Helper: Convert old file paths to base64 data URLs by fetching from production
@@ -241,7 +266,14 @@ app.post('/api/auth/login', async (req, res) => {
       { expiresIn: '1d' }
     );
 
-    res.json({ token, user: sanitizeUser(user) });
+    const safeUser = sanitizeUser(user);
+
+    // Log manager authentications for admin visibility
+    if (user.role === 'manager') {
+      logAction({ actor: safeUser, action: 'manager_login', details: { email: user.email } });
+    }
+
+    res.json({ token, user: safeUser });
   } catch (error) {
     console.error('Error in login:', error);
     res.status(500).json({ error: 'Failed to login' });
@@ -299,10 +331,42 @@ app.post('/api/admin/users/manager', requireAuth, requireAdmin, async (req, res)
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({ email: normalizedEmail, passwordHash, role: 'manager' });
+
+    logAction({ actor: req.user, action: 'create_manager', details: { email: normalizedEmail } });
+
     res.status(201).json({ user: sanitizeUser(user) });
   } catch (error) {
     console.error('Error creating manager:', error);
     res.status(500).json({ error: 'Failed to create manager' });
+  }
+});
+
+// Manager/Admin: create employee credentials (role: user)
+app.post('/api/manager/users', requireAuth, requireManagerOrAdmin, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({ email: normalizedEmail, passwordHash, role: 'user' });
+
+    await logAction({ actor: req.user, action: 'create_employee', details: { email: normalizedEmail } });
+
+    res.status(201).json({ user: sanitizeUser(user) });
+  } catch (error) {
+    console.error('Error creating employee user:', error);
+    res.status(500).json({ error: 'Failed to create employee user' });
   }
 });
 
@@ -605,8 +669,8 @@ app.put('/api/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (r
   }
 });
 
-// GET all emergency records (admin-only)
-app.get('/api/emergency', requireAuth, requireAdmin, async (req, res) => {
+// GET all emergency records (admin/manager)
+app.get('/api/emergency', requireAuth, requireManagerOrAdmin, async (req, res) => {
   try {
     console.log('Fetching all emergency records...');
     const allEmergencies = await EmergencyInfo.find({}).select('fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact');
@@ -667,9 +731,31 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) =
       return res.status(403).json({ error: 'Cannot delete admin accounts' });
     }
     await User.deleteOne({ _id: id });
+    await logAction({ actor: req.user, action: 'delete_user', details: { id, email: user.email, role: user.role } });
     res.json({ message: 'User deleted' });
   } catch (error) {
     console.error('Error deleting user:', error);
     res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// Admin: view recent manager/admin action logs
+app.get('/api/admin/logs', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 200);
+    const logs = await ActionLog.find({}).sort({ createdAt: -1 }).limit(limit);
+    res.json(
+      logs.map((log) => ({
+        id: log._id.toString(),
+        actorEmail: log.actorEmail,
+        actorRole: log.actorRole,
+        action: log.action,
+        details: log.details,
+        createdAt: log.createdAt,
+      }))
+    );
+  } catch (error) {
+    console.error('Error listing logs:', error);
+    res.status(500).json({ error: 'Failed to list logs' });
   }
 });
