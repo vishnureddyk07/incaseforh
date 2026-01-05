@@ -241,6 +241,17 @@ app.post('/api/auth/register-admin', async (req, res) => {
   }
 });
 
+// Auth: check if admin exists (for setup detection)
+app.get('/api/admin/check', async (req, res) => {
+  try {
+    const adminExists = await User.exists({ role: 'admin' });
+    res.json({ exists: !!adminExists });
+  } catch (error) {
+    console.error('Error checking admin:', error);
+    res.status(500).json({ error: 'Failed to check admin status' });
+  }
+});
+
 // Auth: login for admin/manager
 app.post('/api/auth/login', async (req, res) => {
   try {
