@@ -39,6 +39,7 @@ export default function EmergencyInfoDisplay() {
   const { email: identifierParam } = useParams();
   const [info, setInfo] = useState<EmergencyInfo | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationName, setLocationName] = useState<string | null>(null);
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +47,31 @@ export default function EmergencyInfoDisplay() {
   const [sosTriggered, setSosTriggered] = useState(false);
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
+
+  const reverseGeocode = async (lat: number, lng: number) => {
+    try {
+      console.log('🔄 Reverse geocoding location...');
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+      );
+      const data = await response.json();
+      const address = data.address;
+      
+      // Build location name from address components
+      const locationParts = [
+        address.neighbourhood || address.suburb,
+        address.city || address.town || address.village,
+        address.state,
+      ].filter(Boolean);
+      
+      const displayName = locationParts.join(', ') || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      console.log('✅ Location name:', displayName);
+      setLocationName(displayName);
+    } catch (err) {
+      console.error('Error reverse geocoding:', err);
+      setLocationName(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    }
+  };
 
   useEffect(() => {
     const fetchEmergencyInfo = async () => {
@@ -85,6 +111,7 @@ export default function EmergencyInfoDisplay() {
             console.log('✅ GPS location obtained:', latitude, longitude);
             setLocation({ lat: latitude, lng: longitude });
             setLocationError(null);
+            reverseGeocode(latitude, longitude);
             fetchNearbyHospitals(latitude, longitude);
           },
           (err) => {
@@ -99,6 +126,7 @@ export default function EmergencyInfoDisplay() {
             const mockLat = 17.3850;
             const mockLng = 78.4867;
             setLocation({ lat: mockLat, lng: mockLng });
+            reverseGeocode(mockLat, mockLng);
             fetchNearbyHospitals(mockLat, mockLng);
           },
           { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 }
@@ -109,6 +137,7 @@ export default function EmergencyInfoDisplay() {
         const mockLat = 17.3850;
         const mockLng = 78.4867;
         setLocation({ lat: mockLat, lng: mockLng });
+        reverseGeocode(mockLat, mockLng);
         fetchNearbyHospitals(mockLat, mockLng);
       }
     };
@@ -344,8 +373,11 @@ export default function EmergencyInfoDisplay() {
               <MapPin className="h-6 w-6 mt-1 flex-shrink-0" />
               <div className="flex-1">
                 <p className="font-bold text-lg mb-1">📍 Live Location</p>
-                <p className="text-sm opacity-90">
-                  <span className="font-mono font-bold">{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</span>
+                <p className="text-sm font-semibold mb-1">
+                  {locationName || 'Fetching location...'}
+                </p>
+                <p className="text-xs opacity-90">
+                  <span className="font-mono">{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</span>
                 </p>
                 {locationError && <p className="text-sm mt-2 text-yellow-100">⚠️ {locationError}</p>}
               </div>
