@@ -21,6 +21,7 @@ interface LogEntry {
 export default function AdminDashboard() {
   const { isAuthenticated, user, token } = useAuth();
   const navigate = useNavigate();
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +41,7 @@ export default function AdminDashboard() {
   const fetchUsers = () => {
     if (!token) return;
     setLoading(true);
-    fetch('https://incaseforh.onrender.com/api/admin/users', {
+    fetch(`${apiBase}/api/admin/users`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => {
@@ -55,7 +56,7 @@ export default function AdminDashboard() {
   const fetchLogs = () => {
     if (!token) return;
     setLogsLoading(true);
-    fetch('https://incaseforh.onrender.com/api/admin/logs', {
+    fetch(`${apiBase}/api/admin/logs`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => {
@@ -79,7 +80,7 @@ export default function AdminDashboard() {
     setCreating(true);
     setError(null);
     try {
-      const res = await fetch('https://incaseforh.onrender.com/api/admin/users/manager', {
+      const res = await fetch(`${apiBase}/api/admin/users/manager`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ email: managerEmail, password: managerPassword }),
@@ -102,7 +103,7 @@ export default function AdminDashboard() {
   const deleteUser = async (id: string) => {
     if (!confirm('Delete this user?')) return;
     try {
-      const res = await fetch(`https://incaseforh.onrender.com/api/admin/users/${id}`, {
+      const res = await fetch(`${apiBase}/api/admin/users/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -209,8 +210,19 @@ export default function AdminDashboard() {
                       <td className="py-2">{log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}</td>
                       <td className="py-2">{log.actorEmail}</td>
                       <td className="py-2 capitalize">{log.actorRole}</td>
-                      <td className="py-2 font-medium">{log.action}</td>
-                      <td className="py-2 text-gray-600">{log.details ? JSON.stringify(log.details) : '—'}</td>
+                      <td className="py-2 font-medium">
+                        {log.action === 'qr_scan' ? '🔍 QR Scanned' : log.action}
+                      </td>
+                      <td className="py-2 text-gray-600 text-xs">
+                        {log.details ? (
+                          <div className="space-y-1">
+                            {log.details.victimName && <div><strong>Victim:</strong> {log.details.victimName as string}</div>}
+                            {log.details.scannerIP && <div><strong>Scanner IP:</strong> {log.details.scannerIP as string}</div>}
+                            {log.details.scannedAt && <div><strong>Scanned:</strong> {new Date(log.details.scannedAt as string).toLocaleString()}</div>}
+                            {log.details.userAgent && <div className="truncate max-w-xs" title={log.details.userAgent as string}><strong>Device:</strong> {(log.details.userAgent as string).substring(0, 50)}...</div>}
+                          </div>
+                        ) : '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

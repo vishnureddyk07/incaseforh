@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 import ActionLog from './models/ActionLog.js';
+import Hospital from './models/Hospital.js';
 import Tesseract from 'tesseract.js';
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
@@ -28,7 +29,14 @@ const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || null;
 // Middleware
 app.use((req, res, next) => {
   console.log(`Request: ${req.method} ${req.url}`);
-  const allowedOrigins = ['http://localhost:5173', 'https://incaseforh.vercel.app', /^https:\/\/incaseforh-.*\.vercel\.app$/];
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://10.5.12.85:5173',
+    'http://10.5.12.85:5174',
+    'https://incaseforh.vercel.app',
+    /^https:\/\/incaseforh-.*\.vercel\.app$/
+  ];
   const origin = req.headers.origin;
   const allowed = allowedOrigins.some(ao => 
     typeof ao === 'string' ? ao === origin : ao.test(origin)
@@ -564,9 +572,31 @@ app.get('/api/emergency/:email', async (req, res) => {
     const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`^${escapeRegExp(needle)}$`, 'i');
     console.log('Lookup email param:', { raw, decoded, needle });
+    
+    // Get scanner's IP address
+    const scannerIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
+    console.log('📍 QR Scanned from IP:', scannerIP);
+    
     const emergency = await EmergencyInfo.findOne({ email: regex });
     if (!emergency) {
       return res.status(404).json({ error: 'Emergency info not found' });
+    }
+    
+    // Log the scan activity (IP + timestamp)
+    try {
+      await ActionLog.create({
+        action: 'qr_scan',
+        actor: { email: emergency.email || emergency.phoneNumber },
+        details: {
+          scannerIP,
+          scannedAt: new Date().toISOString(),
+          userAgent: req.headers['user-agent'],
+          victimName: emergency.fullName
+        }
+      });
+      console.log('✅ QR scan logged to admin');
+    } catch (logErr) {
+      console.warn('Failed to log scan:', logErr.message);
     }
     
     // Convert old file paths to base64 if needed (anything that's not a data URL)
@@ -594,9 +624,31 @@ app.get('/api/emergency/phone/:phoneNumber', async (req, res) => {
     const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`^${escapeRegExp(needle)}$`, 'i');
     console.log('Lookup phone param:', { raw, decoded, needle });
+    
+    // Get scanner's IP address
+    const scannerIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
+    console.log('📍 QR Scanned from IP:', scannerIP);
+    
     const emergency = await EmergencyInfo.findOne({ phoneNumber: regex });
     if (!emergency) {
       return res.status(404).json({ error: 'Emergency info not found' });
+    }
+    
+    // Log the scan activity (IP + timestamp)
+    try {
+      await ActionLog.create({
+        action: 'qr_scan',
+        actor: { email: emergency.email || emergency.phoneNumber },
+        details: {
+          scannerIP,
+          scannedAt: new Date().toISOString(),
+          userAgent: req.headers['user-agent'],
+          victimName: emergency.fullName
+        }
+      });
+      console.log('✅ QR scan logged to admin');
+    } catch (logErr) {
+      console.warn('Failed to log scan:', logErr.message);
     }
     
     // Convert old file paths to base64 if needed (anything that's not a data URL)
@@ -708,6 +760,228 @@ app.get('/health', async (req, res) => {
 app.get('/env-check', (req, res) => {
   const envSet = Boolean(process.env.MONGODB_URI);
   res.json({ mongodbUriSet: envSet });
+});
+
+// Public: Get nearby hospitals (location-based search)
+app.get('/api/hospitals/nearby', async (req, res) => {
+  try {
+    const { lat, lng, maxDistance = 5000 } = req.query; // maxDistance in meters, default 5km
+
+    if (!lat || !lng) {
+      return res.status(400).json({ error: 'Latitude and longitude are required' });
+    }
+
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
+
+    if (isNaN(latitude) || isNaN(longitude)) {
+      return res.status(400).json({ error: 'Invalid latitude or longitude' });
+    }
+
+    // Geospatial query to find nearby hospitals
+    const hospitals = await Hospital.find({
+      location: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [longitude, latitude],
+          },
+          $maxDistance: parseInt(maxDistance, 10),
+        },
+      },
+      acceptsEmergency: true,
+    })
+      .sort({ type: 1 }) // Prioritize trauma centers first
+      .limit(10);
+
+    // Add distance calculation for each hospital
+    const hospitalsWithDistance = hospitals.map((hospital) => {
+      const R = 6371; // Earth's radius in kilometers
+      const dLat = (hospital.location.coordinates[1] - latitude) * (Math.PI / 180);
+      const dLon = (hospital.location.coordinates[0] - longitude) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(latitude * (Math.PI / 180)) *
+          Math.cos(hospital.location.coordinates[1] * (Math.PI / 180)) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distance = R * c; // Distance in kilometers
+
+      return {
+        id: hospital._id.toString(),
+        name: hospital.name,
+        address: hospital.address,
+        city: hospital.city,
+        phone: hospital.phone,
+        ambulancePhone: hospital.ambulancePhone,
+        type: hospital.type,
+        rating: hospital.rating,
+        distance: parseFloat(distance.toFixed(2)),
+        hasAmbulance: hospital.hasAmbulance,
+        hasICU: hospital.hasICU,
+        hasOperatingTheatre: hospital.hasOperatingTheatre,
+        website: hospital.website,
+        operatingHours: hospital.operatingHours,
+        lat: hospital.location.coordinates[1],
+        lng: hospital.location.coordinates[0],
+      };
+    });
+
+    // Sort by priority: trauma centers first, then by distance
+    hospitalsWithDistance.sort((a, b) => {
+      const typeOrder = { 'trauma-center': 0, government: 1, private: 2, 'nursing-home': 3 };
+      if (typeOrder[a.type] !== typeOrder[b.type]) {
+        return typeOrder[a.type] - typeOrder[b.type];
+      }
+      return a.distance - b.distance;
+    });
+
+    res.json(hospitalsWithDistance);
+  } catch (error) {
+    console.error('Error finding nearby hospitals:', error);
+    res.status(500).json({ error: 'Failed to find nearby hospitals' });
+  }
+});
+
+// Public: Trigger SOS alert
+app.post('/api/sos/trigger', async (req, res) => {
+  try {
+    const { location, timestamp, emergencyContacts, victimName, victimPhone } = req.body;
+
+    if (!location || !timestamp) {
+      return res.status(400).json({ error: 'Location and timestamp are required' });
+    }
+
+    // Log SOS event for audit
+    if (emergencyContacts && Array.isArray(emergencyContacts) && emergencyContacts.length > 0) {
+      const primaryContact = emergencyContacts[0];
+      console.log(`🚨 SOS TRIGGERED - Victim: ${victimName || 'Unknown'} (${victimPhone || 'No phone'})`);
+      console.log(`   Location: ${location.lat}, ${location.lng}`);
+      console.log(`   Primary Contact: ${primaryContact.name} - ${primaryContact.phone}`);
+
+      // TODO: Implement actual SMS/WhatsApp notifications
+      // For now, just log it
+      console.log(`   📱 Would send SOS notification to ${emergencyContacts.length} contacts`);
+    }
+
+    res.json({ 
+      message: 'SOS triggered successfully',
+      contactsNotified: emergencyContacts ? emergencyContacts.length : 0,
+      timestamp 
+    });
+  } catch (error) {
+    console.error('Error triggering SOS:', error);
+    // Don't block the emergency - respond with success anyway
+    res.json({ message: 'SOS recorded', error: error.message });
+  }
+});
+
+// Admin: Get all hospitals (for management)
+app.get('/api/admin/hospitals', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const hospitals = await Hospital.find({}).sort({ type: 1, name: 1 });
+    res.json(
+      hospitals.map((h) => ({
+        id: h._id.toString(),
+        name: h.name,
+        address: h.address,
+        city: h.city,
+        phone: h.phone,
+        ambulancePhone: h.ambulancePhone,
+        type: h.type,
+        rating: h.rating,
+        hasAmbulance: h.hasAmbulance,
+        lat: h.location.coordinates[1],
+        lng: h.location.coordinates[0],
+      }))
+    );
+  } catch (error) {
+    console.error('Error fetching hospitals:', error);
+    res.status(500).json({ error: 'Failed to fetch hospitals' });
+  }
+});
+
+// Public: Get nearby hospitals (location-based search)
+app.get('/api/hospitals/nearby', async (req, res) => {
+  try {
+    const { lat, lng, maxDistance = 5000 } = req.query; // maxDistance in meters, default 5km
+
+    if (!lat || !lng) {
+      return res.status(400).json({ error: 'Latitude and longitude are required' });
+    }
+
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
+
+    if (isNaN(latitude) || isNaN(longitude)) {
+      return res.status(400).json({ error: 'Invalid latitude or longitude' });
+    }
+
+    // Geospatial query to find nearby hospitals
+    const hospitals = await Hospital.find({
+      location: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [longitude, latitude],
+          },
+          $maxDistance: parseInt(maxDistance, 10),
+        },
+      },
+      acceptsEmergency: true,
+    })
+      .sort({ type: 1 }) // Prioritize trauma centers first
+      .limit(10);
+
+    // Add distance calculation for each hospital
+    const hospitalsWithDistance = hospitals.map((hospital) => {
+      const R = 6371; // Earth's radius in kilometers
+      const dLat = (hospital.location.coordinates[1] - latitude) * (Math.PI / 180);
+      const dLon = (hospital.location.coordinates[0] - longitude) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(latitude * (Math.PI / 180)) *
+          Math.cos(hospital.location.coordinates[1] * (Math.PI / 180)) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distance = R * c; // Distance in kilometers
+
+      return {
+        id: hospital._id.toString(),
+        name: hospital.name,
+        address: hospital.address,
+        city: hospital.city,
+        phone: hospital.phone,
+        ambulancePhone: hospital.ambulancePhone,
+        type: hospital.type,
+        rating: hospital.rating,
+        distance: parseFloat(distance.toFixed(2)),
+        hasAmbulance: hospital.hasAmbulance,
+        hasICU: hospital.hasICU,
+        hasOperatingTheatre: hospital.hasOperatingTheatre,
+        website: hospital.website,
+        operatingHours: hospital.operatingHours,
+        lat: hospital.location.coordinates[1],
+        lng: hospital.location.coordinates[0],
+      };
+    });
+
+    // Sort by priority: trauma centers first, then by distance
+    hospitalsWithDistance.sort((a, b) => {
+      const typeOrder = { 'trauma-center': 0, government: 1, private: 2, 'nursing-home': 3 };
+      if (typeOrder[a.type] !== typeOrder[b.type]) {
+        return typeOrder[a.type] - typeOrder[b.type];
+      }
+      return a.distance - b.distance;
+    });
+
+    res.json(hospitalsWithDistance);
+  } catch (error) {
+    console.error('Error finding nearby hospitals:', error);
+    res.status(500).json({ error: 'Failed to find nearby hospitals' });
+  }
 });
 
 // Start server

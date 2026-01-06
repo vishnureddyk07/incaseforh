@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 export default function AdminLogin() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +19,8 @@ export default function AdminLogin() {
   useEffect(() => {
     const checkAdminExists = async () => {
       try {
-        const res = await fetch('https://incaseforh.onrender.com/api/admin/check', {
+        console.log('AdminLogin using API base:', apiBase);
+        const res = await fetch(`${apiBase}/api/admin/check`, {
           method: 'GET',
         });
         const data = await res.json().catch(() => ({ exists: false }));
@@ -32,7 +34,7 @@ export default function AdminLogin() {
     };
 
     checkAdminExists();
-  }, []);
+  }, [apiBase]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +42,7 @@ export default function AdminLogin() {
     setLoading(true);
 
     try {
-      const res = await fetch('https://incaseforh.onrender.com/api/auth/login', {
+      const res = await fetch(`${apiBase}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -83,7 +85,7 @@ export default function AdminLogin() {
     setLoading(true);
 
     try {
-      const res = await fetch('https://incaseforh.onrender.com/api/auth/register-admin', {
+      const res = await fetch(`${apiBase}/api/auth/register-admin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, setupKey: setupKey || undefined }),
@@ -96,7 +98,7 @@ export default function AdminLogin() {
 
       const data = await res.json();
       // After registration, log in automatically
-      const loginRes = await fetch('https://incaseforh.onrender.com/api/auth/login', {
+      const loginRes = await fetch(`${apiBase}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),

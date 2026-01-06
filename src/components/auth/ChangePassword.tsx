@@ -8,6 +8,7 @@ export default function ChangePassword() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -28,7 +29,7 @@ export default function ChangePassword() {
     setLoading(true);
 
     try {
-      const res = await fetch('https://incaseforh.onrender.com/api/auth/change-password', {
+      const res = await fetch(`${apiBase}/api/auth/change-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

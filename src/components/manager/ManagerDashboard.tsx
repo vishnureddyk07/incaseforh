@@ -14,6 +14,7 @@ interface EmergencyInfo {
 export default function ManagerDashboard() {
   const { isAuthenticated, user, token } = useAuth();
   const navigate = useNavigate();
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   const [records, setRecords] = useState<EmergencyInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +36,7 @@ export default function ManagerDashboard() {
   const fetchRecords = () => {
     if (!token) return;
     setLoading(true);
-    fetch('https://incaseforh.onrender.com/api/emergency', {
+    fetch(`${apiBase}/api/emergency`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
@@ -66,7 +67,7 @@ export default function ManagerDashboard() {
     setCreating(true);
     setError(null);
     try {
-      const res = await fetch('https://incaseforh.onrender.com/api/manager/users', {
+      const res = await fetch(`${apiBase}/api/manager/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ email: empEmail, password: empPassword }),

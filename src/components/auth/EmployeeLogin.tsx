@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 export default function EmployeeLogin() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -16,7 +17,7 @@ export default function EmployeeLogin() {
     setLoading(true);
 
     try {
-      const res = await fetch('https://incaseforh.onrender.com/api/auth/login', {
+      const res = await fetch(`${apiBase}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),

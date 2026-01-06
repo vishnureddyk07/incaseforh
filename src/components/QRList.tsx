@@ -40,34 +40,44 @@ export default function QRList() {
   const { isAuthenticated, token, user } = useAuth();
   const navigate = useNavigate();
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
   useEffect(() => {
-    if (!isAuthenticated || !token || user?.role !== 'admin') {
-      setLoading(false);
-      return;
-    }
+    const fetchQrs = async () => {
+      if (!isAuthenticated || !token || user?.role !== 'admin') {
+        setLoading(false);
+        setError('Admin login required to view QR list.');
+        return;
+      }
 
-    fetch('https://incaseforh.onrender.com/api/emergency', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then(res => {
-        if (!res.ok) throw new Error('Failed to fetch QR list');
-        return res.json();
-      })
-      .then(data => {
+      try {
+        const res = await fetch(`${API_BASE}/api/emergency`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          const message = res.status === 401 || res.status === 403
+            ? 'You are not authorized to view QR codes. Please log in as an admin.'
+            : text || 'Failed to fetch QR list';
+          throw new Error(message);
+        }
+
+        const data = await res.json();
         setQrs(data);
         setFilteredQrs(data);
         setLoading(false);
-      })
-      .catch(err => {
+      } catch (err) {
         console.error(err);
-        setError(err.message);
+        setError(err instanceof Error ? err.message : 'Failed to fetch QR list');
         setLoading(false);
-      });
-  }, [isAuthenticated, token, user]);
+      }
+    };
+
+    fetchQrs();
+  }, [API_BASE, isAuthenticated, token, user?.role]);
 
   // Resolve authenticated photo URLs into stable object URLs (or keep data URLs)
   useEffect(() => {
@@ -80,7 +90,7 @@ export default function QRList() {
         return trimmed;
       }
       // Treat as backend-relative path - use env var or production default
-      const base = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+      const base = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       return trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`;
     };
 

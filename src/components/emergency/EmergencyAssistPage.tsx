@@ -1,43 +1,37 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useEffect, useState } from 'react';
 import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users } from 'lucide-react';
 
 interface Hospital {
   id: string;
   name: string;
   address: string;
-  phone?: string;
+  city: string;
+  phone: string;
+  ambulancePhone: string;
   type: string;
-  rating?: number;
+  rating: number;
   distance: number;
+  hasAmbulance: boolean;
+  hasICU: boolean;
   lat: number;
   lng: number;
-  vicinity?: string;
 }
 
-type EmergencyContact = {
-  name?: string;
-  relationship?: string;
-  phone?: string;
-};
+interface EmergencyAssistPageProps {
+  emergencyData?: {
+    fullName?: string;
+    photo?: string;
+    bloodType?: string;
+    dateOfBirth?: string;
+    allergies?: string;
+    medications?: string;
+    medicalConditions?: string;
+    phoneNumber?: string;
+    emergencyContacts?: Array<{ name: string; phone: string; relationship?: string }>;
+  };
+}
 
-type EmergencyInfo = {
-  fullName: string;
-  email?: string;
-  phoneNumber?: string;
-  dateOfBirth?: string;
-  bloodType?: string;
-  address?: string;
-  allergies?: string;
-  medications?: string;
-  medicalConditions?: string;
-  emergencyContacts?: EmergencyContact[];
-  photo?: string;
-};
-
-export default function EmergencyInfoDisplay() {
-  const { email: identifierParam } = useParams();
-  const [info, setInfo] = useState<EmergencyInfo | null>(null);
+export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPageProps) {
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,67 +39,34 @@ export default function EmergencyInfoDisplay() {
   const [locationError, setLocationError] = useState<string | null>(null);
   const [sosTriggered, setSosTriggered] = useState(false);
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-
+  // Get user location on component mount
   useEffect(() => {
-    const fetchEmergencyInfo = async () => {
-      try {
-        if (!identifierParam) {
-          setError('No identifier provided');
-          setLoading(false);
-          return;
-        }
+    const getUserLocation = async () => {
+      setLoading(true);
+      setLocationError(null);
 
-        const isEmail = identifierParam.includes('@');
-        const endpoint = isEmail
-          ? `${API_BASE}/api/emergency/${encodeURIComponent(identifierParam)}`
-          : `${API_BASE}/api/emergency/phone/${encodeURIComponent(identifierParam)}`;
-
-        console.log('📡 Fetching emergency info from:', endpoint);
-        const res = await fetch(endpoint);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        console.log('✅ Emergency info loaded:', data.fullName);
-        setInfo(data);
-      } catch (err) {
-        console.error('❌ Error fetching emergency info:', err);
-        setError(err instanceof Error ? err.message : 'Error fetching data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const getUserLocation = () => {
-      console.log('🌍 Starting location detection...');
+      // Try GPS first
       if ('geolocation' in navigator) {
-        console.log('📍 Requesting GPS location...');
         navigator.geolocation.getCurrentPosition(
           (position) => {
             const { latitude, longitude } = position.coords;
-            console.log('✅ GPS location obtained:', latitude, longitude);
             setLocation({ lat: latitude, lng: longitude });
-            setLocationError(null);
             fetchNearbyHospitals(latitude, longitude);
           },
           (err) => {
-            console.warn('⚠️ GPS failed:', err.message, err.code);
-            if (err.code === 1) {
-              setLocationError('Location permission denied. Please enable location access.');
-            } else if (err.code === 2) {
-              setLocationError('Location unavailable. Using approximate location.');
-            } else {
-              setLocationError('Location timeout. Using approximate location.');
-            }
+            console.warn('GPS failed, trying IP-based location:', err);
+            setLocationError('GPS unavailable. Using approximate location.');
+            // Fallback to Hyderabad coordinates for testing
             const mockLat = 17.3850;
             const mockLng = 78.4867;
             setLocation({ lat: mockLat, lng: mockLng });
             fetchNearbyHospitals(mockLat, mockLng);
           },
-          { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 }
+          { timeout: 5000, enableHighAccuracy: true }
         );
       } else {
-        console.warn('❌ Geolocation not supported');
-        setLocationError('Location services not available on this device');
+        setLocationError('Location services not available');
+        // Use Hyderabad default for testing
         const mockLat = 17.3850;
         const mockLng = 78.4867;
         setLocation({ lat: mockLat, lng: mockLng });
@@ -113,141 +74,82 @@ export default function EmergencyInfoDisplay() {
       }
     };
 
-    fetchEmergencyInfo();
     getUserLocation();
-    
-    // Force location permission prompt on page load
-    console.log('🌍 Initializing location services...');
-  }, [identifierParam, API_BASE]);
+  }, []);
 
   const fetchNearbyHospitals = async (lat: number, lng: number) => {
     console.log('🏥 Fetching hospitals near:', lat, lng);
     try {
-      // First try backend API
-      try {
-        const backendResponse = await fetch(`${API_BASE}/api/hospitals/nearby?lat=${lat}&lng=${lng}&maxDistance=10000`);
-        if (backendResponse.ok) {
-          const backendData = await backendResponse.json();
-          if (backendData && backendData.length > 0) {
-            console.log('✅ Hospitals from backend:', backendData.length);
-            setHospitals(backendData.slice(0, 8));
-            return;
-          }
-        }
-      } catch (backendErr) {
-        console.log('⚠️ Backend API unavailable, trying Overpass...');
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const response = await fetch(`${apiUrl}/api/hospitals/nearby?lat=${lat}&lng=${lng}&maxDistance=10000`);
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch hospitals');
       }
 
-      // Fallback to Overpass API
-      const bbox = `${lng - 0.08},${lat - 0.08},${lng + 0.08},${lat + 0.08}`;
-      const query = `[bbox=${bbox}][timeout:25];(node["amenity"="hospital"];way["amenity"="hospital"];relation["amenity"="hospital"];);out center;`;
-      const overpassUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
-
-      const response = await fetch(overpassUrl);
       const data = await response.json();
-
-      const hospitals: Hospital[] = [];
-      const elements = data.elements || [];
-
-      console.log('📍 Overpass returned', elements.length, 'elements');
-
-      elements.forEach((element: any) => {
-        if (element.tags && element.tags.name) {
-          const elat = element.center?.lat || element.lat;
-          const elng = element.center?.lon || element.lon;
-
-          if (elat && elng) {
-            const distance = Math.sqrt(Math.pow(elat - lat, 2) + Math.pow(elng - lng, 2)) * 111;
-
-            hospitals.push({
-              id: `${element.id}`,
-              name: element.tags.name,
-              address: element.tags['addr:street'] || element.tags.address || 'Address not available',
-              phone: element.tags.phone || element.tags['contact:phone'] || element.tags.contact_mobile,
-              type: element.tags.emergency === 'yes' ? 'trauma-center' : 'hospital',
-              rating: Math.random() * 2 + 3.5,
-              distance: parseFloat(distance.toFixed(1)),
-              lat: elat,
-              lng: elng,
-              vicinity: element.tags['addr:city'] || ''
-            });
-          }
-        }
-      });
-
-      hospitals.sort((a, b) => a.distance - b.distance);
-      const nearbyHospitals = hospitals.slice(0, 8);
-      console.log('✅ Found', nearbyHospitals.length, 'hospitals');
-      setHospitals(nearbyHospitals);
+      console.log('✅ Found', data.length, 'hospitals from backend');
+      setHospitals(data.slice(0, 8));
+      setError(null);
     } catch (err) {
       console.error('❌ Error fetching hospitals:', err);
+      setError('Could not load nearby hospitals. Checking connection...');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleSOSButton = () => {
     setSosTriggered(true);
+    console.log('🚨 [AssistPage] SOS pressed');
+    // Trigger SOS alert to emergency contacts
     triggerSOS();
+    // Auto-call 108 after 2 seconds
     setTimeout(() => {
+      console.log('📞 [AssistPage] Auto-calling 108');
       window.location.href = 'tel:108';
-    }, 1000);
+    }, 500);
   };
 
   const triggerSOS = async () => {
-    if (!location || !info) return;
+    if (!location) return;
+
     try {
-      await fetch(`${API_BASE}/api/sos/trigger`, {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      await fetch(`${apiUrl}/api/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           location,
           timestamp: new Date().toISOString(),
-          emergencyContacts: info.emergencyContacts || [],
-          victimName: info.fullName,
-          victimPhone: info.phoneNumber,
+          emergencyContacts: emergencyData?.emergencyContacts || [],
         }),
       });
+      console.log('✅ [AssistPage] SOS payload sent');
     } catch (err) {
       console.error('Error triggering SOS:', err);
     }
   };
 
   const callHospital = (phone: string) => {
+    console.log('📞 [AssistPage] Calling hospital', phone);
     window.location.href = `tel:${phone}`;
   };
 
-  const navigateToHospital = (lat: number, lng: number, _name: string) => {
+  const navigateToHospital = (lat: number, lng: number, name: string) => {
+    // Support both Google Maps and Apple Maps
     if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+      console.log('🧭 [AssistPage] Opening Apple Maps');
       window.location.href = `maps://maps.apple.com/?daddr=${lat},${lng}`;
     } else {
+      console.log('🧭 [AssistPage] Opening Google Maps', name);
       window.location.href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-blue-50 p-4 flex items-center justify-center">
-        <div className="text-center">
-          <Loader className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600 font-semibold">Loading emergency information...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !info) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-red-50 to-orange-50 p-4 flex items-center justify-center">
-        <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md text-center border-2 border-red-200">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-red-600 mb-2">Error</h1>
-          <p className="text-gray-700">{error || 'Emergency information not found'}</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 pb-20">
+      {/* Header - Emergency Mode */}
       <div className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 shadow-lg border-b-4 border-blue-700">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -258,6 +160,7 @@ export default function EmergencyInfoDisplay() {
         </div>
       </div>
 
+      {/* SOS Button */}
       <div className="sticky top-16 z-40 bg-white/95 backdrop-blur p-3 shadow-lg border-b-2 border-red-500">
         <div className="max-w-4xl mx-auto">
           <button
@@ -275,18 +178,20 @@ export default function EmergencyInfoDisplay() {
         </div>
       </div>
 
+      {/* Main Content */}
       <div className="max-w-4xl mx-auto p-4 space-y-4">
-        {info && (
+        {/* Patient Info with Photo */}
+        {emergencyData && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
             <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2">Patient Information</p>
             <div className="flex gap-4">
               <div className="flex-1">
-                <p className="text-xl font-bold text-gray-900">{info.fullName}</p>
+                <p className="text-xl font-bold text-gray-900">{emergencyData.fullName || 'Emergency Contact'}</p>
               </div>
-              {info.photo && (
+              {emergencyData.photo && (
                 <img
-                  src={info.photo}
-                  alt={info.fullName}
+                  src={emergencyData.photo}
+                  alt={emergencyData.fullName || 'Patient'}
                   className="w-32 h-32 rounded-lg object-cover shadow-lg border-2 border-blue-200"
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = 'none';
@@ -297,47 +202,49 @@ export default function EmergencyInfoDisplay() {
           </div>
         )}
 
-        {info && (
+        {/* Medical Information Grid */}
+        {emergencyData && (
           <div className="grid grid-cols-2 gap-3">
-            {info.bloodType && (
+            {emergencyData.bloodType && (
               <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
                 <p className="text-xs font-bold text-red-600 mb-1">
                   <Droplet className="inline h-3 w-3" /> Blood Type
                 </p>
-                <p className="text-lg font-bold text-red-700">{info.bloodType}</p>
+                <p className="text-lg font-bold text-red-700">{emergencyData.bloodType}</p>
               </div>
             )}
-            {info.dateOfBirth && (
+            {emergencyData.dateOfBirth && (
               <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-3">
                 <p className="text-xs font-bold text-purple-600 mb-1">Date of Birth</p>
-                <p className="text-lg font-bold text-purple-700">{info.dateOfBirth}</p>
+                <p className="text-lg font-bold text-purple-700">{emergencyData.dateOfBirth}</p>
               </div>
             )}
-            {info.allergies && (
+            {emergencyData.allergies && (
               <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3">
                 <p className="text-xs font-bold text-yellow-600 mb-1">Allergies</p>
-                <p className="text-sm font-bold text-yellow-700">{info.allergies}</p>
+                <p className="text-sm font-bold text-yellow-700">{emergencyData.allergies}</p>
               </div>
             )}
-            {info.medications && (
+            {emergencyData.medications && (
               <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
                 <p className="text-xs font-bold text-blue-600 mb-1">
                   <Pill className="inline h-3 w-3" /> Medications
                 </p>
-                <p className="text-sm font-bold text-blue-700">{info.medications}</p>
+                <p className="text-sm font-bold text-blue-700">{emergencyData.medications}</p>
               </div>
             )}
-            {info.medicalConditions && (
+            {emergencyData.medicalConditions && (
               <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3 col-span-2">
                 <p className="text-xs font-bold text-green-600 mb-1">
                   <Heart className="inline h-3 w-3" /> Medical Conditions
                 </p>
-                <p className="text-sm font-bold text-green-700">{info.medicalConditions}</p>
+                <p className="text-sm font-bold text-green-700">{emergencyData.medicalConditions}</p>
               </div>
             )}
           </div>
         )}
 
+        {/* Location Info */}
         {location && (
           <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-4 shadow-md text-white">
             <div className="flex items-start gap-3">
@@ -353,14 +260,15 @@ export default function EmergencyInfoDisplay() {
           </div>
         )}
 
-        {info?.emergencyContacts && info.emergencyContacts.length > 0 && (
+        {/* Emergency Contacts */}
+        {emergencyData?.emergencyContacts && emergencyData.emergencyContacts.length > 0 && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-green-600 p-4">
             <p className="text-sm font-bold text-green-600 mb-3 flex items-center gap-2">
               <Users className="h-4 w-4" />
               Emergency Contacts
             </p>
             <div className="space-y-2">
-              {info.emergencyContacts.map((contact, idx) => (
+              {emergencyData.emergencyContacts.map((contact, idx) => (
                 <div key={idx} className="flex items-center justify-between bg-green-50 p-3 rounded-lg">
                   <div>
                     <p className="font-semibold text-gray-900">{contact.name || 'Contact'}</p>
@@ -380,6 +288,7 @@ export default function EmergencyInfoDisplay() {
           </div>
         )}
 
+        {/* Emergency Call Button */}
         <button
           onClick={() => window.location.href = 'tel:108'}
           className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-lg font-bold text-lg transition-colors shadow-md"
@@ -387,6 +296,7 @@ export default function EmergencyInfoDisplay() {
           📞 Call Emergency Services (108)
         </button>
 
+        {/* Hospitals Section */}
         {hospitals.length > 0 && (
           <div>
             <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
@@ -400,12 +310,12 @@ export default function EmergencyInfoDisplay() {
                   <p className="text-sm text-gray-600 mt-1">{hospital.address}</p>
                   <div className="flex items-center justify-between mt-3">
                     <p className="text-sm font-semibold text-blue-600">{hospital.distance} km away</p>
-                    {hospital.rating && <p className="text-sm text-yellow-600">⭐ {hospital.rating.toFixed(1)}</p>}
+                    {hospital.rating > 0 && <p className="text-sm text-yellow-600">⭐ {hospital.rating}</p>}
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-3">
                     {hospital.phone && (
                       <button
-                        onClick={() => callHospital(hospital.phone || '')}
+                        onClick={() => callHospital(hospital.phone)}
                         className="bg-green-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center justify-center gap-1"
                       >
                         <Phone className="h-4 w-4" /> Call

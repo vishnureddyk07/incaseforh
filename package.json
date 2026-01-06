@@ -11,7 +11,8 @@
     "server": "node server.js",
     "test": "vitest --run",
     "test:watch": "vitest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "seed:hospitals": "node seedHospitals.js"
   },
   "dependencies": {
     "@types/react-router-dom": "^5.3.3",

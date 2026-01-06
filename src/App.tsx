@@ -8,6 +8,7 @@ const SafetyTips = lazy(() => import('./components/SafetyTips'));
 const EmergencyContacts = lazy(() => import('./components/EmergencyContacts'));
 import EmergencyQRCode from './components/emergency/EmergencyQRCode';
 import QRScanDisplay from './components/emergency/QRScanDisplay';
+import EmergencyAssistPage from './components/emergency/EmergencyAssistPage';
 import EmergencyInfoDisplay from './PagesForWorld/EmergencyInfoDisplay';
 import QRList from './components/QRList';
 import AdminLogin from './components/auth/AdminLogin';
@@ -55,7 +56,8 @@ function AppContent() {
   if (qrData) {
     try {
       const emergencyData = JSON.parse(decodeURIComponent(qrData));
-      return <QRScanDisplay emergencyData={emergencyData} />;
+      // Render the new assist experience for QR scans (privacy-first)
+      return <EmergencyAssistPage emergencyData={emergencyData} />;
     } catch (error) {
       console.error('Invalid QR data', error);
     }
@@ -73,6 +75,7 @@ function AppContent() {
       <Route path="/employee" element={<EmployeeLogin />} />
       <Route path="/change-password" element={<ChangePassword />} />
       <Route path="/emer" element={<div>hi</div>} />
+      <Route path="/assist" element={<EmergencyAssistPage />} />
     </Routes>
   );
 }
