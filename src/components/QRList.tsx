@@ -40,7 +40,7 @@ export default function QRList() {
   const { isAuthenticated, token, user } = useAuth();
   const navigate = useNavigate();
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
 
   useEffect(() => {
     const fetchQrs = async () => {
@@ -90,7 +90,7 @@ export default function QRList() {
         return trimmed;
       }
       // Treat as backend-relative path - use env var or production default
-      const base = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const base = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
       return trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`;
     };
 

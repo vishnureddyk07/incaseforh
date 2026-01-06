@@ -45,7 +45,7 @@ export default function EmergencyInfoDisplay() {
   const [locationError, setLocationError] = useState<string | null>(null);
   const [sosTriggered, setSosTriggered] = useState(false);
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
 
   useEffect(() => {
     const fetchEmergencyInfo = async () => {

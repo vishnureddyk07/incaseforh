@@ -69,7 +69,7 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
 
   const fetchNearbyHospitals = async (lat: number, lng: number) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
       const response = await fetch(`${apiUrl}/api/hospitals/nearby?lat=${lat}&lng=${lng}&maxDistance=10000`);
 
       if (!response.ok) {
@@ -103,7 +103,7 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
     if (!location || !emergencyData) return;
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
       await fetch(`${apiUrl}/api/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

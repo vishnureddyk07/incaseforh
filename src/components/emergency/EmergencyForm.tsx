@@ -45,7 +45,7 @@ export default function EmergencyForm({
                 typeof emergencyInfo.photo === "string"
                   ? (emergencyInfo.photo.startsWith('http') || emergencyInfo.photo.startsWith('data:'))
                     ? emergencyInfo.photo
-                    : `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${emergencyInfo.photo.startsWith('/') ? '' : '/'}${emergencyInfo.photo}`
+                    : `${import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app'}${emergencyInfo.photo.startsWith('/') ? '' : '/'}${emergencyInfo.photo}`
                   : URL.createObjectURL(emergencyInfo.photo)
               }
               alt="Profile"

@@ -79,7 +79,7 @@ export default function EmergencyQRCode() {
       const formData = new FormData();
       formData.append('document', file);
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/extract-medical-info`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app'}/api/extract-medical-info`, {
         method: 'POST',
         body: formData,
       });
@@ -172,7 +172,7 @@ export default function EmergencyQRCode() {
       console.log('  - photo:', emergencyInfo.photo instanceof File ? 'File uploaded' : 'No file');
 
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/emergency`,
+        `${import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app'}/api/emergency`,
         {
           method: "POST",
           body: formData,

@@ -14,7 +14,7 @@ interface EmergencyInfo {
 export default function ManagerDashboard() {
   const { isAuthenticated, user, token } = useAuth();
   const navigate = useNavigate();
-  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const apiBase = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
   const [records, setRecords] = useState<EmergencyInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
