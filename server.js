@@ -984,10 +984,15 @@ app.get('/api/hospitals/nearby', async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Start server (only in non-Vercel environments)
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+// Export for Vercel serverless
+export default app;
 
 // Admin: list users (optionally filter by role)
 app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
