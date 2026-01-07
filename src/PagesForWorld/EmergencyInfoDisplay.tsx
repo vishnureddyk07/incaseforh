@@ -104,15 +104,49 @@ export default function EmergencyInfoDisplay() {
     const getUserLocation = () => {
       console.log('🌍 Starting location detection...');
       if ('geolocation' in navigator) {
-        console.log('📍 Requesting GPS location...');
+        console.log('📍 Requesting high-accuracy GPS location...');
+        
+        // Try to get the most accurate location possible
         navigator.geolocation.getCurrentPosition(
           (position) => {
-            const { latitude, longitude } = position.coords;
-            console.log('✅ GPS location obtained:', latitude, longitude);
+            const { latitude, longitude, accuracy } = position.coords;
+            console.log('✅ GPS location obtained:', {
+              lat: latitude,
+              lng: longitude,
+              accuracy: `${accuracy.toFixed(0)}m`,
+              timestamp: new Date(position.timestamp).toLocaleTimeString()
+            });
+            
             setLocation({ lat: latitude, lng: longitude });
-            setLocationError(null);
+            setLocationError(accuracy > 100 ? `Location accuracy: ±${accuracy.toFixed(0)}m` : null);
             reverseGeocode(latitude, longitude);
             fetchNearbyHospitals(latitude, longitude);
+            
+            // Watch for better accuracy
+            if (accuracy > 50) {
+              console.log('⏳ Waiting for better GPS accuracy...');
+              const watchId = navigator.geolocation.watchPosition(
+                (newPos) => {
+                  const newAccuracy = newPos.coords.accuracy;
+                  if (newAccuracy < accuracy) {
+                    console.log('✨ GPS accuracy improved:', `${newAccuracy.toFixed(0)}m`);
+                    setLocation({ lat: newPos.coords.latitude, lng: newPos.coords.longitude });
+                    setLocationError(newAccuracy > 100 ? `Location accuracy: ±${newAccuracy.toFixed(0)}m` : null);
+                    reverseGeocode(newPos.coords.latitude, newPos.coords.longitude);
+                    fetchNearbyHospitals(newPos.coords.latitude, newPos.coords.longitude);
+                    
+                    if (newAccuracy < 50) {
+                      navigator.geolocation.clearWatch(watchId);
+                    }
+                  }
+                },
+                null,
+                { enableHighAccuracy: true, maximumAge: 0 }
+              );
+              
+              // Stop watching after 30 seconds
+              setTimeout(() => navigator.geolocation.clearWatch(watchId), 30000);
+            }
           },
           (err) => {
             console.warn('⚠️ GPS failed:', err.message, err.code);
@@ -121,7 +155,30 @@ export default function EmergencyInfoDisplay() {
             } else if (err.code === 2) {
               setLocationError('Location unavailable. Using approximate location.');
             } else {
-              setLocationError('Location timeout. Using approximate location.');
+              setLocationError('Location timeout. Retrying...');
+              
+              // Retry with lower accuracy requirements
+              navigator.geolocation.getCurrentPosition(
+                (position) => {
+                  const { latitude, longitude, accuracy } = position.coords;
+                  console.log('✅ GPS location obtained (retry):', latitude, longitude, `±${accuracy.toFixed(0)}m`);
+                  setLocation({ lat: latitude, lng: longitude });
+                  setLocationError(`Location accuracy: ±${accuracy.toFixed(0)}m`);
+                  reverseGeocode(latitude, longitude);
+                  fetchNearbyHospitals(latitude, longitude);
+                },
+                () => {
+                  console.error('❌ GPS retry failed, using fallback');
+                  const mockLat = 17.3850;
+                  const mockLng = 78.4867;
+                  setLocation({ lat: mockLat, lng: mockLng });
+                  setLocationError('Using approximate location (Hyderabad)');
+                  reverseGeocode(mockLat, mockLng);
+                  fetchNearbyHospitals(mockLat, mockLng);
+                },
+                { timeout: 30000, enableHighAccuracy: false, maximumAge: 60000 }
+              );
+              return;
             }
             const mockLat = 17.3850;
             const mockLng = 78.4867;
@@ -129,7 +186,7 @@ export default function EmergencyInfoDisplay() {
             reverseGeocode(mockLat, mockLng);
             fetchNearbyHospitals(mockLat, mockLng);
           },
-          { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 }
+          { timeout: 20000, enableHighAccuracy: true, maximumAge: 0 }
         );
       } else {
         console.warn('❌ Geolocation not supported');
