@@ -20,7 +20,7 @@ export default function AdminLogin() {
     const checkAdminExists = async () => {
       try {
         console.log('AdminLogin using API base:', apiBase);
-        const res = await fetch(`${apiBase}/api/admin/check`, {
+        const res = await fetch(`${apiBase}/api/v1/admin/check`, {
           method: 'GET',
         });
         const data = await res.json().catch(() => ({ exists: false }));
@@ -42,7 +42,7 @@ export default function AdminLogin() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${apiBase}/api/auth/login`, {
+      const res = await fetch(`${apiBase}/api/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -85,7 +85,7 @@ export default function AdminLogin() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${apiBase}/api/auth/register-admin`, {
+      const res = await fetch(`${apiBase}/api/v1/auth/register-admin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, setupKey: setupKey || undefined }),
@@ -98,7 +98,7 @@ export default function AdminLogin() {
 
       const data = await res.json();
       // After registration, log in automatically
-      const loginRes = await fetch(`${apiBase}/api/auth/login`, {
+      const loginRes = await fetch(`${apiBase}/api/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),

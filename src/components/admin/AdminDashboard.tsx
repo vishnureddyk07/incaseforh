@@ -21,15 +21,15 @@ interface LogEntry {
 export default function AdminDashboard() {
   const { isAuthenticated, user, token } = useAuth();
   const navigate = useNavigate();
-  const apiBase = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [managerEmail, setManagerEmail] = useState('');
-  const [managerPassword, setManagerPassword] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [logsLoading, setLogsLoading] = useState(false);
+  const backendApiBaseUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
+  const [systemUsersList, setSystemUsersList] = useState<UserRow[]>([]);
+  const [isFetchingUsers, setIsFetchingUsers] = useState(true);
+  const [adminDashboardError, setAdminDashboardError] = useState<string | null>(null);
+  const [newManagerEmail, setNewManagerEmail] = useState('');
+  const [newManagerPassword, setNewManagerPassword] = useState('');
+  const [isCreatingManager, setIsCreatingManager] = useState(false);
+  const [systemActionLogs, setSystemActionLogs] = useState<LogEntry[]>([]);
+  const [isFetchingActivityLogs, setIsFetchingActivityLogs] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'admin') {
@@ -40,32 +40,32 @@ export default function AdminDashboard() {
 
   const fetchUsers = () => {
     if (!token) return;
-    setLoading(true);
-    fetch(`${apiBase}/api/admin/users`, {
+    setIsFetchingUsers(true);
+    fetch(`${backendApiBaseUrl}/api/v1/admin/users`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => {
         if (!r.ok) throw new Error('Failed to fetch users');
         return r.json();
       })
-      .then((data) => setUsers(data))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .then((data) => setSystemUsersList(data))
+      .catch((e) => setAdminDashboardError(e.message))
+      .finally(() => setIsFetchingUsers(false));
   };
 
   const fetchLogs = () => {
     if (!token) return;
-    setLogsLoading(true);
-    fetch(`${apiBase}/api/admin/logs`, {
+    setIsFetchingActivityLogs(true);
+    fetch(`${backendApiBaseUrl}/api/v1/admin/logs`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => {
         if (!r.ok) throw new Error('Failed to fetch logs');
         return r.json();
       })
-      .then((data) => setLogs(data))
-      .catch((e) => setError(e.message))
-      .finally(() => setLogsLoading(false));
+      .then((data) => setSystemActionLogs(data))
+      .catch((e) => setAdminDashboardError(e.message))
+      .finally(() => setIsFetchingActivityLogs(false));
   };
 
   useEffect(() => {
@@ -76,34 +76,34 @@ export default function AdminDashboard() {
 
   const createManager = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!managerEmail || !managerPassword) return;
-    setCreating(true);
-    setError(null);
+    if (!newManagerEmail || !newManagerPassword) return;
+    setIsCreatingManager(true);
+    setAdminDashboardError(null);
     try {
-      const res = await fetch(`${apiBase}/api/admin/users/manager`, {
+      const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/users/manager`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ email: managerEmail, password: managerPassword }),
+        body: JSON.stringify({ email: newManagerEmail, password: newManagerPassword }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || 'Failed to create manager');
       }
-      setManagerEmail('');
-      setManagerPassword('');
+      setNewManagerEmail('');
+      setNewManagerPassword('');
       fetchUsers();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to create manager';
-      setError(msg);
+      setAdminDashboardError(msg);
     } finally {
-      setCreating(false);
+      setIsCreatingManager(false);
     }
   };
 
-  const deleteUser = async (id: string) => {
+  const deleteUser = async (userId: string) => {
     if (!confirm('Delete this user?')) return;
     try {
-      const res = await fetch(`${apiBase}/api/admin/users/${id}`, {
+      const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/users/${userId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -114,7 +114,7 @@ export default function AdminDashboard() {
       fetchUsers();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to delete user';
-      setError(msg);
+      setAdminDashboardError(msg);
     }
   };
 
@@ -135,13 +135,13 @@ export default function AdminDashboard() {
           <form onSubmit={createManager} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div>
               <label className="block text-sm font-medium text-gray-700">Manager Email</label>
-              <input value={managerEmail} onChange={(e) => setManagerEmail(e.target.value)} className="mt-1 block w-full rounded border px-3 py-2" placeholder="manager@example.com" />
+              <input value={newManagerEmail} onChange={(e) => setNewManagerEmail(e.target.value)} className="mt-1 block w-full rounded border px-3 py-2" placeholder="manager@example.com" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Temporary Password</label>
-              <input value={managerPassword} onChange={(e) => setManagerPassword(e.target.value)} className="mt-1 block w-full rounded border px-3 py-2" placeholder="min 6 chars" />
+              <input value={newManagerPassword} onChange={(e) => setNewManagerPassword(e.target.value)} className="mt-1 block w-full rounded border px-3 py-2" placeholder="min 6 chars" />
             </div>
-            <button disabled={creating} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{creating ? 'Creating...' : 'Create'}</button>
+            <button disabled={isCreatingManager} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{isCreatingManager ? 'Creating...' : 'Create'}</button>
           </form>
         </div>
 
@@ -151,8 +151,8 @@ export default function AdminDashboard() {
             <h2 className="text-lg font-semibold">Users</h2>
             <button onClick={fetchUsers} className="text-sm px-3 py-1 border rounded hover:bg-gray-100">Refresh</button>
           </div>
-          {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
-          {loading ? (
+          {adminDashboardError && <p className="text-sm text-red-600 mb-3">{adminDashboardError}</p>}
+          {isFetchingUsers ? (
             <p>Loading...</p>
           ) : (
             <div className="overflow-x-auto">
@@ -165,13 +165,13 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
-                    <tr key={u.id} className="border-t">
-                      <td className="py-2">{u.email}</td>
-                      <td className="py-2 capitalize">{u.role}</td>
+                  {systemUsersList.map((userAccount) => (
+                    <tr key={userAccount.id} className="border-t">
+                      <td className="py-2">{userAccount.email}</td>
+                      <td className="py-2 capitalize">{userAccount.role}</td>
                       <td className="py-2">
-                        {u.role !== 'admin' && (
-                          <button onClick={() => deleteUser(u.id)} className="text-sm text-red-600 hover:underline">Delete</button>
+                        {userAccount.role !== 'admin' && (
+                          <button onClick={() => deleteUser(userAccount.id)} className="text-sm text-red-600 hover:underline">Delete</button>
                         )}
                       </td>
                     </tr>
@@ -188,9 +188,9 @@ export default function AdminDashboard() {
             <h2 className="text-lg font-semibold">Manager Activity Log</h2>
             <button onClick={fetchLogs} className="text-sm px-3 py-1 border rounded hover:bg-gray-100">Refresh</button>
           </div>
-          {logsLoading ? (
+          {isFetchingActivityLogs ? (
             <p>Loading...</p>
-          ) : logs.length === 0 ? (
+          ) : systemActionLogs.length === 0 ? (
             <p className="text-sm text-gray-600">No recent actions.</p>
           ) : (
             <div className="overflow-x-auto">
@@ -205,21 +205,21 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {logs.map((log) => (
-                    <tr key={log.id} className="border-t">
-                      <td className="py-2">{log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}</td>
-                      <td className="py-2">{log.actorEmail}</td>
-                      <td className="py-2 capitalize">{log.actorRole}</td>
+                  {systemActionLogs.map((activityLog) => (
+                    <tr key={activityLog.id} className="border-t">
+                      <td className="py-2">{activityLog.createdAt ? new Date(activityLog.createdAt).toLocaleString() : '—'}</td>
+                      <td className="py-2">{activityLog.actorEmail}</td>
+                      <td className="py-2 capitalize">{activityLog.actorRole}</td>
                       <td className="py-2 font-medium">
-                        {log.action === 'qr_scan' ? '🔍 QR Scanned' : log.action}
+                        {activityLog.action === 'qr_scan' ? '🔍 QR Scanned' : activityLog.action}
                       </td>
                       <td className="py-2 text-gray-600 text-xs">
-                        {log.details ? (
+                        {activityLog.details ? (
                           <div className="space-y-1">
-                            {log.details.victimName && <div><strong>Victim:</strong> {log.details.victimName as string}</div>}
-                            {log.details.scannerIP && <div><strong>Scanner IP:</strong> {log.details.scannerIP as string}</div>}
-                            {log.details.scannedAt && <div><strong>Scanned:</strong> {new Date(log.details.scannedAt as string).toLocaleString()}</div>}
-                            {log.details.userAgent && <div className="truncate max-w-xs" title={log.details.userAgent as string}><strong>Device:</strong> {(log.details.userAgent as string).substring(0, 50)}...</div>}
+                            {activityLog.details.victimName && <div><strong>Victim:</strong> {activityLog.details.victimName as string}</div>}
+                            {activityLog.details.scannerIP && <div><strong>Scanner IP:</strong> {activityLog.details.scannerIP as string}</div>}
+                            {activityLog.details.scannedAt && <div><strong>Scanned:</strong> {new Date(activityLog.details.scannedAt as string).toLocaleString()}</div>}
+                            {activityLog.details.userAgent && <div className="truncate max-w-xs" title={activityLog.details.userAgent as string}><strong>Device:</strong> {(activityLog.details.userAgent as string).substring(0, 50)}...</div>}
                           </div>
                         ) : '—'}
                       </td>

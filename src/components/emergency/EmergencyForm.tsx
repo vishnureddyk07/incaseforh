@@ -23,12 +23,12 @@ export default function EmergencyForm({
   onRemoveEmergencyContact,
   onEmergencyContactChange,
 }: EmergencyFormProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const profilePhotoInputRef = useRef<HTMLInputElement>(null);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onPhotoChange(file);
+  const handleRiderPhotoUpload = (photoUploadEvent: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedPhotoFile = photoUploadEvent.target.files?.[0];
+    if (selectedPhotoFile) {
+      onPhotoChange(selectedPhotoFile);
     }
   };
 
@@ -62,20 +62,20 @@ export default function EmergencyForm({
           )}
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => profilePhotoInputRef.current?.click()}
             className="absolute -bottom-2 -right-2 bg-orange-500 text-white p-2 rounded-full hover:bg-orange-600 transition-colors"
           >
             <Upload className="h-4 w-4" />
           </button>
         </div>
         <input
-          ref={fileInputRef}
+          ref={profilePhotoInputRef}
           type="file"
           accept="image/*"
-          onChange={handlePhotoUpload}
+          onChange={handleRiderPhotoUpload}
           className="hidden"
         />
-        <p className="mt-2 text-sm text-gray-600">Upload your photo (Max 50MB) <span className="text-red-500">*</span></p>
+        <p className="mt-2 text-sm text-gray-600">Upload your photo (Max 10MB) <span className="text-red-500">*</span></p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">

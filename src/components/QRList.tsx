@@ -51,7 +51,7 @@ export default function QRList() {
       }
 
       try {
-        const res = await fetch(`${API_BASE}/api/emergency`, {
+        const res = await fetch(`${API_BASE}/api/v1/emergency`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -349,7 +349,7 @@ export default function QRList() {
     const confirmed = window.confirm(`Delete record for ${record.fullName}? This cannot be undone.`);
     if (!confirmed) return;
     try {
-      const res = await fetch(`${API_BASE}/api/admin/emergency/${record._id}`, {
+      const res = await fetch(`${API_BASE}/api/v1/admin/emergency/${record._id}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -383,8 +383,8 @@ export default function QRList() {
       }
       const isEmail = identifier.includes('@');
       const url = isEmail
-        ? `${API_BASE}/api/emergency/${identifier}`
-        : `${API_BASE}/api/emergency/phone/${identifier}`;
+        ? `${API_BASE}/api/v1/emergency/${identifier}`
+        : `${API_BASE}/api/v1/emergency/phone/${identifier}`;
       const res = await fetch(url, {
         method: 'PUT',
         headers: {
@@ -395,7 +395,7 @@ export default function QRList() {
       });
       if (!res.ok) throw new Error('Failed to update');
       // Refresh list
-      const listRes = await fetch(`${API_BASE}/api/emergency`, {
+      const listRes = await fetch(`${API_BASE}/api/v1/emergency`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await listRes.json();

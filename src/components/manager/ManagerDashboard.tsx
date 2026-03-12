@@ -36,7 +36,7 @@ export default function ManagerDashboard() {
   const fetchRecords = () => {
     if (!token) return;
     setLoading(true);
-    fetch(`${apiBase}/api/emergency`, {
+    fetch(`${apiBase}/api/v1/emergency`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
@@ -67,7 +67,7 @@ export default function ManagerDashboard() {
     setCreating(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBase}/api/manager/users`, {
+      const res = await fetch(`${apiBase}/api/v1/manager/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ email: empEmail, password: empPassword }),

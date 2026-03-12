@@ -29,7 +29,7 @@ export default function ChangePassword() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${apiBase}/api/auth/change-password`, {
+      const res = await fetch(`${apiBase}/api/v1/auth/change-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

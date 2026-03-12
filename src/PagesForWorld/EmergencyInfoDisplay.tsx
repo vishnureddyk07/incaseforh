@@ -84,8 +84,8 @@ export default function EmergencyInfoDisplay() {
 
         const isEmail = identifierParam.includes('@');
         const endpoint = isEmail
-          ? `${API_BASE}/api/emergency/${encodeURIComponent(identifierParam)}`
-          : `${API_BASE}/api/emergency/phone/${encodeURIComponent(identifierParam)}`;
+          ? `${API_BASE}/api/v1/emergency/${encodeURIComponent(identifierParam)}`
+          : `${API_BASE}/api/v1/emergency/phone/${encodeURIComponent(identifierParam)}`;
 
         console.log('📡 Fetching emergency info from:', endpoint);
         const res = await fetch(endpoint);
@@ -209,68 +209,18 @@ export default function EmergencyInfoDisplay() {
   const fetchNearbyHospitals = async (lat: number, lng: number) => {
     console.log('🏥 Fetching hospitals near:', lat, lng);
     try {
-      // First try backend API
-      try {
-        const backendResponse = await fetch(`${API_BASE}/api/hospitals/nearby?lat=${lat}&lng=${lng}&maxDistance=10000`);
-        if (backendResponse.ok) {
-          const backendData = await backendResponse.json();
-          if (backendData && backendData.length > 0) {
-            console.log('✅ Hospitals from backend:', backendData.length);
-            setHospitals(backendData.slice(0, 8));
-            return;
-          }
-        }
-      } catch (backendErr) {
-        console.log('⚠️ Backend API unavailable, trying GeoNames...');
+      // Backend handles all fallbacks (including GeoNames via server env vars)
+      const response = await fetch(`${API_BASE}/api/v1/hospitals/nearby?lat=${lat}&lng=${lng}&maxDistance=10000`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch nearby hospitals');
       }
 
-      // Fallback to GeoNames API (free, accurate hospital database)
-      const geoNamesUrl = `https://api.geonames.org/findNearbyJSON?lat=${lat}&lng=${lng}&featureClass=S&featureCode=HSPT&maxRows=15&username=demo`;
-      
-      const response = await fetch(geoNamesUrl);
-      const data = await response.json();
-
-      const hospitals: Hospital[] = [];
-      const geonames = data.geonames || [];
-
-      console.log('📍 GeoNames returned', geonames.length, 'hospitals');
-
-      geonames.forEach((place: any) => {
-        const distance = calculateDistance(lat, lng, place.lat, place.lng);
-        
-        hospitals.push({
-          id: place.geonameId.toString(),
-          name: place.name,
-          address: place.adminName1 || 'Hospital',
-          phone: undefined,
-          type: 'hospital',
-          rating: 4.0 + Math.random() * 0.9,
-          distance: parseFloat(distance.toFixed(1)),
-          lat: place.lat,
-          lng: place.lng,
-          vicinity: place.countryName || ''
-        });
-      });
-
-      hospitals.sort((a, b) => a.distance - b.distance);
-      const nearbyHospitals = hospitals.slice(0, 8);
-      console.log('✅ Found', nearbyHospitals.length, 'hospitals');
-      setHospitals(nearbyHospitals);
+      const hospitalList = await response.json();
+      console.log('✅ Hospitals from backend:', hospitalList?.length || 0);
+      setHospitals((hospitalList || []).slice(0, 8));
     } catch (err) {
       console.error('❌ Error fetching hospitals:', err);
     }
-  };
-
-  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-    const R = 6371; // Earth's radius in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
   };
 
   const handleSOSButton = () => {
@@ -284,7 +234,7 @@ export default function EmergencyInfoDisplay() {
   const triggerSOS = async () => {
     if (!location || !info) return;
     try {
-      await fetch(`${API_BASE}/api/sos/trigger`, {
+      await fetch(`${API_BASE}/api/v1/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -81,7 +81,7 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
     console.log('🏥 Fetching hospitals near:', lat, lng);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
-      const response = await fetch(`${apiUrl}/api/hospitals/nearby?lat=${lat}&lng=${lng}&maxDistance=10000`);
+      const response = await fetch(`${apiUrl}/api/v1/hospitals/nearby?lat=${lat}&lng=${lng}&maxDistance=10000`);
 
       if (!response.ok) {
         throw new Error('Failed to fetch hospitals');
@@ -116,7 +116,7 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
-      await fetch(`${apiUrl}/api/sos/trigger`, {
+      await fetch(`${apiUrl}/api/v1/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

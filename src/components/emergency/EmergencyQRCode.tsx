@@ -5,6 +5,7 @@ import type { EmergencyInfo, EmergencyContact } from "../../types/emergency";
 import EmergencyForm from "./EmergencyForm";
 
 export default function EmergencyQRCode() {
+  const MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024;
   // Fresh state every load (no localStorage persistence)
   const [emergencyInfo, setEmergencyInfo] = useState<EmergencyInfo>({
     fullName: "",
@@ -20,10 +21,10 @@ export default function EmergencyQRCode() {
     phoneNumber: "",
   });
   const [showSuccess, setShowSuccess] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [extracting, setExtracting] = useState(false);
-  const [reportDate, setReportDate] = useState("");
-  const [consentChecked, setConsentChecked] = useState(false);
+  const [isSubmittingQRData, setIsSubmittingQRData] = useState(false);
+  const [isExtractingMedicalInfo, setIsExtractingMedicalInfo] = useState(false);
+  const [medicalReportDate, setMedicalReportDate] = useState("");
+  const [userConsentAgreed, setUserConsentAgreed] = useState(false);
 
 
   const handleAddEmergencyContact = () => {
@@ -67,6 +68,10 @@ export default function EmergencyQRCode() {
   };
 
   const handlePhotoChange = (photoFile: File) => {
+    if (photoFile.size > MAX_PHOTO_SIZE_BYTES) {
+      alert('Photo is too large. Please upload an image smaller than 10MB.');
+      return;
+    }
     setEmergencyInfo((prev) => ({ ...prev, photo: photoFile }));
   };
 
@@ -74,12 +79,12 @@ export default function EmergencyQRCode() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setExtracting(true);
+    setIsExtractingMedicalInfo(true);
     try {
       const formData = new FormData();
       formData.append('document', file);
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app'}/api/extract-medical-info`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app'}/api/v1/extract-medical-info`, {
         method: 'POST',
         body: formData,
       });
@@ -105,7 +110,7 @@ export default function EmergencyQRCode() {
       }));
 
       if (data.dateOfReport) {
-        setReportDate(data.dateOfReport);
+        setMedicalReportDate(data.dateOfReport);
       }
 
       alert('Medical information extracted successfully! Please review and update if needed.');
@@ -113,13 +118,13 @@ export default function EmergencyQRCode() {
       console.error(err);
       alert(err instanceof Error ? err.message : 'Failed to extract medical information');
     } finally {
-      setExtracting(false);
+      setIsExtractingMedicalInfo(false);
       e.target.value = ''; // Reset file input
     }
   };
 
   const handleSubmit = async () => {
-    if (!consentChecked) {
+    if (!userConsentAgreed) {
       alert("Please confirm your consent before submitting.");
       return;
     }
@@ -140,7 +145,7 @@ export default function EmergencyQRCode() {
       return;
     }
 
-    setSubmitting(true);
+    setIsSubmittingQRData(true);
     try {
       const formData = new FormData();
 
@@ -172,7 +177,7 @@ export default function EmergencyQRCode() {
       console.log('  - photo:', emergencyInfo.photo instanceof File ? 'File uploaded' : 'No file');
 
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app'}/api/emergency`,
+        `${import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app'}/api/v1/emergency`,
         {
           method: "POST",
           body: formData,
@@ -225,7 +230,7 @@ export default function EmergencyQRCode() {
       const errorMessage = err instanceof Error ? err.message : 'Something went wrong while saving data.';
       alert(`Error: ${errorMessage}\n\nPlease check the console for more details.`);
     } finally {
-      setSubmitting(false);
+      setIsSubmittingQRData(false);
     }
   };
 
@@ -326,8 +331,8 @@ export default function EmergencyQRCode() {
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={consentChecked}
-                  onChange={(e) => setConsentChecked(e.target.checked)}
+                  checked={userConsentAgreed}
+                  onChange={(e) => setUserConsentAgreed(e.target.checked)}
                   className="mt-1 w-5 h-5 accent-orange-500"
                 />
                 <span className="text-sm text-gray-700">
@@ -337,10 +342,10 @@ export default function EmergencyQRCode() {
             </div>
             <button
               onClick={handleSubmit}
-              disabled={submitting || !consentChecked}
+              disabled={isSubmittingQRData || !userConsentAgreed}
               className="w-full bg-orange-500 text-white px-8 py-3 rounded-full hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg font-semibold"
             >
-              {submitting ? "Submitting..." : "Submit Information"}
+              {isSubmittingQRData ? "Submitting..." : "Submit Information"}
             </button>
           </div>
         </div>
