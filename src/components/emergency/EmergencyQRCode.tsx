@@ -172,16 +172,43 @@ export default function EmergencyQRCode() {
       console.log('  - emergencyContacts:', emergencyInfo.emergencyContacts.length, 'contacts');
       console.log('  - photo:', emergencyInfo.photo instanceof File ? 'File uploaded' : 'No file');
 
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com'}/api/v1/emergency`,
-        {
-          method: "POST",
-          body: formData,
-          headers: {
-            'Accept': 'application/json',
-          }
-        }
+      const configuredBase = import.meta.env.VITE_API_URL?.trim();
+      const fallbackBase = 'https://incaseforh.onrender.com';
+      const baseCandidates = Array.from(
+        new Set([configuredBase, fallbackBase].filter(Boolean) as string[])
       );
+
+      let res: Response | null = null;
+      let lastFetchError: unknown = null;
+
+      for (const base of baseCandidates) {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 25000);
+        try {
+          res = await fetch(`${base}/api/v1/emergency`, {
+            method: "POST",
+            body: formData,
+            headers: {
+              'Accept': 'application/json',
+            },
+            signal: controller.signal,
+          });
+          window.clearTimeout(timeoutId);
+
+          // For 4xx, stop immediately because request reached backend and needs user action.
+          if (res.ok || res.status < 500) {
+            break;
+          }
+        } catch (fetchErr) {
+          window.clearTimeout(timeoutId);
+          lastFetchError = fetchErr;
+          console.warn(`Submit failed against ${base}`, fetchErr);
+        }
+      }
+
+      if (!res) {
+        throw new Error(lastFetchError instanceof Error ? lastFetchError.message : 'Unable to reach backend server.');
+      }
 
       if (!res.ok) {
         // Get the error details from backend
