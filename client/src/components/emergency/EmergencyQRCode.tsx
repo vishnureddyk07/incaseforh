@@ -124,19 +124,37 @@ export default function EmergencyQRCode() {
   };
 
   const handleSubmit = async () => {
+    // Read live input values so browser autofill/manual edits are respected even if state is stale.
+    const getLatestFieldValue = (fieldName: string, fallback: string) => {
+      const field = document.querySelector<HTMLInputElement>(`[name="${fieldName}"]`);
+      const liveValue = field?.value ?? fallback;
+      return liveValue.trim();
+    };
+
+    const fullName = getLatestFieldValue("fullName", emergencyInfo.fullName || "");
+    const phoneNumber = getLatestFieldValue("phoneNumber", emergencyInfo.phoneNumber || "");
+    const dateOfBirth = getLatestFieldValue("dateOfBirth", emergencyInfo.dateOfBirth || "");
+
+    const currentEmergencyInfo: EmergencyInfo = {
+      ...emergencyInfo,
+      fullName,
+      phoneNumber,
+      dateOfBirth,
+    };
+
     if (!userConsentAgreed) {
       alert("Please confirm your consent before submitting.");
       return;
     }
-    if (!emergencyInfo.fullName || !emergencyInfo.phoneNumber || !emergencyInfo.dateOfBirth) {
+    if (!currentEmergencyInfo.fullName || !currentEmergencyInfo.phoneNumber || !currentEmergencyInfo.dateOfBirth) {
       alert("Please enter your full name, phone number, and date of birth before submitting.");
       return;
     }
-    if (!emergencyInfo.bloodType) {
+    if (!currentEmergencyInfo.bloodType) {
       alert("Please select your blood type before submitting.");
       return;
     }
-    if (emergencyInfo.emergencyContacts.length === 0 || emergencyInfo.emergencyContacts.some(c => !c.name || !c.phone)) {
+    if (currentEmergencyInfo.emergencyContacts.length === 0 || currentEmergencyInfo.emergencyContacts.some(c => !c.name || !c.phone)) {
       alert("Please add at least 1 emergency contact with both name and phone number.");
       return;
     }
@@ -148,29 +166,29 @@ export default function EmergencyQRCode() {
       // Generate QR code as PNG data URL
       const qrDataUrl = await generateQRPNG();
       
-      formData.append('fullName', emergencyInfo.fullName);
-      formData.append('email', emergencyInfo.email || '');
-      formData.append('bloodType', emergencyInfo.bloodType || '');
-      formData.append('emergencyContacts', JSON.stringify(emergencyInfo.emergencyContacts));
-      formData.append('allergies', emergencyInfo.allergies || '');
-      formData.append('medications', emergencyInfo.medications || '');
-      formData.append('medicalConditions', emergencyInfo.medicalConditions || '');
-      formData.append('dateOfBirth', emergencyInfo.dateOfBirth);
-      formData.append('address', emergencyInfo.address || '');
-      formData.append('phoneNumber', emergencyInfo.phoneNumber);
+      formData.append('fullName', currentEmergencyInfo.fullName);
+      formData.append('email', currentEmergencyInfo.email || '');
+      formData.append('bloodType', currentEmergencyInfo.bloodType || '');
+      formData.append('emergencyContacts', JSON.stringify(currentEmergencyInfo.emergencyContacts));
+      formData.append('allergies', currentEmergencyInfo.allergies || '');
+      formData.append('medications', currentEmergencyInfo.medications || '');
+      formData.append('medicalConditions', currentEmergencyInfo.medicalConditions || '');
+      formData.append('dateOfBirth', currentEmergencyInfo.dateOfBirth);
+      formData.append('address', currentEmergencyInfo.address || '');
+      formData.append('phoneNumber', currentEmergencyInfo.phoneNumber);
       formData.append('qrCode', qrDataUrl);
-      if (emergencyInfo.photo instanceof File) {
-        formData.append('photo', emergencyInfo.photo);
+      if (currentEmergencyInfo.photo instanceof File) {
+        formData.append('photo', currentEmergencyInfo.photo);
       }
 
       // Log what we're sending (for debugging)
       console.log('📤 Sending to backend:');
-      console.log('  - fullName:', emergencyInfo.fullName);
-      console.log('  - phoneNumber:', emergencyInfo.phoneNumber);
-      console.log('  - email:', emergencyInfo.email);
-      console.log('  - dateOfBirth:', emergencyInfo.dateOfBirth);
-      console.log('  - emergencyContacts:', emergencyInfo.emergencyContacts.length, 'contacts');
-      console.log('  - photo:', emergencyInfo.photo instanceof File ? 'File uploaded' : 'No file');
+      console.log('  - fullName:', currentEmergencyInfo.fullName);
+      console.log('  - phoneNumber:', currentEmergencyInfo.phoneNumber);
+      console.log('  - email:', currentEmergencyInfo.email);
+      console.log('  - dateOfBirth:', currentEmergencyInfo.dateOfBirth);
+      console.log('  - emergencyContacts:', currentEmergencyInfo.emergencyContacts.length, 'contacts');
+      console.log('  - photo:', currentEmergencyInfo.photo instanceof File ? 'File uploaded' : 'No file');
 
       const configuredBase = import.meta.env.VITE_API_URL?.trim();
       const fallbackBase = 'https://incaseforh.onrender.com';
