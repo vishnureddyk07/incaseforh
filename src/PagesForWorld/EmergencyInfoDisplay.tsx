@@ -46,7 +46,7 @@ export default function EmergencyInfoDisplay() {
   const [locationError, setLocationError] = useState<string | null>(null);
   const [sosTriggered, setSosTriggered] = useState(false);
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
+  const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
   const reverseGeocode = async (lat: number, lng: number) => {
     try {

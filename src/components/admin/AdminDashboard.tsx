@@ -21,7 +21,7 @@ interface LogEntry {
 export default function AdminDashboard() {
   const { isAuthenticated, user, token } = useAuth();
   const navigate = useNavigate();
-  const backendApiBaseUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app';
+  const backendApiBaseUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
   const [systemUsersList, setSystemUsersList] = useState<UserRow[]>([]);
   const [isFetchingUsers, setIsFetchingUsers] = useState(true);
   const [adminDashboardError, setAdminDashboardError] = useState<string | null>(null);

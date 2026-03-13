@@ -84,7 +84,7 @@ export default function EmergencyQRCode() {
       const formData = new FormData();
       formData.append('document', file);
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app'}/api/v1/extract-medical-info`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com'}/api/v1/extract-medical-info`, {
         method: 'POST',
         body: formData,
       });
@@ -173,7 +173,7 @@ export default function EmergencyQRCode() {
       console.log('  - photo:', emergencyInfo.photo instanceof File ? 'File uploaded' : 'No file');
 
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL || 'https://incaseforh.vercel.app'}/api/v1/emergency`,
+        `${import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com'}/api/v1/emergency`,
         {
           method: "POST",
           body: formData,
@@ -231,7 +231,7 @@ export default function EmergencyQRCode() {
   };
 
   const resolveBaseUrl = () => {
-    return 'https://incaseforh.vercel.app';
+    return 'https://incaseforh.onrender.com';
   };
 
   const generateQRData = () => {
