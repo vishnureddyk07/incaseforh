@@ -724,12 +724,9 @@ router.post('/emergency', createLimiter, upload.single('photo'), async (req, res
       photoDataUrl = `data:${mime};base64,${base64}`;
     }
 
-    // Prevent duplicate phoneNumber records (they cause wrong data to show when scanning)
-    const existingByPhone = await EmergencyInfo.findOne({ phoneNumber: safeString(phoneNumber) });
-    if (existingByPhone) {
-      console.error('❌ VALIDATION FAILED: duplicate phoneNumber found');
-      return res.status(409).json({ error: 'An entry with this phone number already exists. Use a unique phone number.' });
-    }
+    // If phone already exists, update that card instead of failing with duplicate error.
+    const normalizedPhoneNumber = safeString(phoneNumber);
+    const existingByPhone = await EmergencyInfo.findOne({ phoneNumber: normalizedPhoneNumber });
 
     const emergencyData = {
       fullName: safeString(fullName),
@@ -744,11 +741,31 @@ router.post('/emergency', createLimiter, upload.single('photo'), async (req, res
       photo: photoDataUrl,
       dateOfBirth: safeString(dateOfBirth),
       address: safeString(req.body.address),
-      phoneNumber: safeString(phoneNumber),
+      phoneNumber: normalizedPhoneNumber,
       qrCode: safeString(req.body.qrCode) ? (safeString(req.body.qrCode).substring(0, 500000)) : null,
     };
 
     console.log('✅ Fields converted:', JSON.stringify(emergencyData, null, 2));
+
+    if (existingByPhone) {
+      // Preserve existing photo when user does not upload a new one.
+      emergencyData.photo = photoDataUrl || existingByPhone.photo || null;
+
+      const updatedDoc = await EmergencyInfo.findByIdAndUpdate(
+        existingByPhone._id,
+        emergencyData,
+        { new: true, runValidators: true }
+      );
+
+      console.log('✅ UPDATED EXISTING RECORD:', updatedDoc?._id);
+      return res.status(200).json({
+        message: 'Emergency info updated successfully',
+        id: updatedDoc?._id,
+        phoneNumber: updatedDoc?.phoneNumber,
+        updated: true,
+        timestamp: new Date(),
+      });
+    }
 
     // STEP 3: CREATE MODEL
     console.log('STEP 3: Creating Mongoose document...');
@@ -809,8 +826,10 @@ router.get('/emergency/:email', readLimiter, async (req, res) => {
     // Log the scan activity (IP + timestamp)
     try {
       await ActionLog.create({
+        actorId: 'public-scan',
+        actorEmail: emergency.email || emergency.phoneNumber || 'unknown',
+        actorRole: 'manager',
         action: 'qr_scan',
-        actor: { email: emergency.email || emergency.phoneNumber },
         details: {
           scannerIP,
           scannedAt: new Date().toISOString(),
@@ -822,15 +841,9 @@ router.get('/emergency/:email', readLimiter, async (req, res) => {
     } catch (logErr) {
       console.warn('Failed to log scan:', logErr.message);
     }
-    
-    // Convert old file paths to base64 if needed (anything that's not a data URL)
-    if (emergency.photo && !emergency.photo.startsWith('data:')) {
-      const convertedPhoto = await convertPhotoToDataUrl(emergency.photo);
-      if (convertedPhoto) {
-        emergency.photo = convertedPhoto;
-        console.log('✅ Photo converted and returned as base64');
-      }
-    }
+
+    // Avoid blocking public response by converting legacy image paths on read.
+    // New records already persist photo as data URL at write time.
     
     res.json(emergency);
   } catch (error) {
@@ -860,8 +873,10 @@ router.get('/emergency/phone/:phoneNumber', readLimiter, async (req, res) => {
     // Log the scan activity (IP + timestamp)
     try {
       await ActionLog.create({
+        actorId: 'public-scan',
+        actorEmail: emergency.email || emergency.phoneNumber || 'unknown',
+        actorRole: 'manager',
         action: 'qr_scan',
-        actor: { email: emergency.email || emergency.phoneNumber },
         details: {
           scannerIP,
           scannedAt: new Date().toISOString(),
@@ -873,15 +888,9 @@ router.get('/emergency/phone/:phoneNumber', readLimiter, async (req, res) => {
     } catch (logErr) {
       console.warn('Failed to log scan:', logErr.message);
     }
-    
-    // Convert old file paths to base64 if needed (anything that's not a data URL)
-    if (emergency.photo && !emergency.photo.startsWith('data:')) {
-      const convertedPhoto = await convertPhotoToDataUrl(emergency.photo);
-      if (convertedPhoto) {
-        emergency.photo = convertedPhoto;
-        console.log('✅ Photo converted and returned as base64');
-      }
-    }
+
+    // Avoid blocking public response by converting legacy image paths on read.
+    // New records already persist photo as data URL at write time.
     
     res.json(emergency);
   } catch (error) {
@@ -959,7 +968,10 @@ router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (re
 router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) => {
   try {
     console.log('Fetching all emergency records...');
-    const allEmergencies = await EmergencyInfo.find({}).select('fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact');
+    const allEmergencies = await EmergencyInfo.find({})
+      .sort({ createdAt: -1 })
+      .select('fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact')
+      .lean();
     console.log(`Found ${allEmergencies.length} records`);
     console.log('Sample photo URLs:', allEmergencies.slice(0, 2).map(e => ({ name: e.fullName, photo: e.photo })));
     res.json(allEmergencies);

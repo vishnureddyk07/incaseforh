@@ -82,6 +82,7 @@ export default function QRList() {
   useEffect(() => {
     let isActive = true;
     const aborters: AbortController[] = [];
+    const createdBlobUrls: string[] = [];
 
     const resolveSrc = (src: string): string => {
       const trimmed = src.trim();
@@ -96,40 +97,54 @@ export default function QRList() {
     const resolvePhotos = async () => {
       if (!isAuthenticated || !token) return;
 
-      // Fetch all photos in parallel instead of sequentially
-      const entries = await Promise.all(
-        qrs.map(async (rec): Promise<[string, string] | null> => {
-          if (!rec.photo) return null;
-          const resolved = resolveSrc(rec.photo.trim());
-          const id = rec._id;
+      const recordsWithPhotos = qrs.filter((rec) => Boolean(rec.photo));
+      const entries: Array<[string, string] | null> = [];
+      const CHUNK_SIZE = 8;
 
-          if (resolved.startsWith('data:')) return [id, resolved];
+      for (let i = 0; i < recordsWithPhotos.length; i += CHUNK_SIZE) {
+        const chunk = recordsWithPhotos.slice(i, i + CHUNK_SIZE);
+        const chunkEntries = await Promise.all(
+          chunk.map(async (rec): Promise<[string, string] | null> => {
+            if (!rec.photo) return null;
+            const resolved = resolveSrc(rec.photo.trim());
+            const id = rec._id;
 
-          try {
-            const controller = new AbortController();
-            aborters.push(controller);
-            const res = await fetch(resolved, {
-              headers: { Authorization: `Bearer ${token}` },
-              signal: controller.signal,
-            });
-            if (!res.ok) {
-              console.warn(`Photo fetch failed (${res.status}) for`, id, resolved);
+            if (resolved.startsWith('data:')) return [id, resolved];
+
+            try {
+              const controller = new AbortController();
+              aborters.push(controller);
+              const res = await fetch(resolved, {
+                headers: { Authorization: `Bearer ${token}` },
+                signal: controller.signal,
+              });
+              if (!res.ok) {
+                console.warn(`Photo fetch failed (${res.status}) for`, id, resolved);
+                return [id, PLACEHOLDER];
+              }
+              const blob = await res.blob();
+              const blobUrl = URL.createObjectURL(blob);
+              createdBlobUrls.push(blobUrl);
+              return [id, blobUrl];
+            } catch (e) {
+              console.warn('Photo resolve error for', id, e);
               return [id, PLACEHOLDER];
             }
-            const blob = await res.blob();
-            return [id, URL.createObjectURL(blob)];
-          } catch (e) {
-            console.warn('Photo resolve error for', id, e);
-            return [id, PLACEHOLDER];
-          }
-        })
-      );
+          })
+        );
+        entries.push(...chunkEntries);
+      }
 
       if (isActive) {
         const nextMap = new Map<string, string>(
           entries.filter((e): e is [string, string] => e !== null)
         );
-        setPhotoUrls(nextMap);
+        setPhotoUrls((prev) => {
+          prev.forEach((url) => {
+            if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+          });
+          return nextMap;
+        });
       }
     };
 
@@ -138,7 +153,7 @@ export default function QRList() {
     return () => {
       isActive = false;
       aborters.forEach((c) => c.abort());
-      // Note: do not revoke object URLs here to preserve image visibility across re-opens.
+      createdBlobUrls.forEach((url) => URL.revokeObjectURL(url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qrs, isAuthenticated, token]);
@@ -458,8 +473,9 @@ export default function QRList() {
           className="w-full px-4 py-2 border rounded-md"
         />
         <div className="flex gap-3 items-center">
-          <label className="text-sm font-medium text-gray-700">Sort by:</label>
+          <label htmlFor="qr-sort" className="text-sm font-medium text-gray-700">Sort by:</label>
           <select
+            id="qr-sort"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
             className="px-3 py-1 border rounded-md"
@@ -532,6 +548,7 @@ export default function QRList() {
               </div>
               {selectionMode && (
                 <input
+                  aria-label={`Select ${qr.fullName}`}
                   type="checkbox"
                   checked={selectedIds.has(qr._id)}
                   onChange={() => toggleSelect(qr._id)}
@@ -612,54 +629,54 @@ function EditRecordModal({ record, onClose, onSave }: {
         <p className="text-sm text-yellow-600 mb-4">⚠️ QR code will remain unchanged</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium">Full Name</label>
-            <input value={formData.fullName} onChange={(e) => setFormData({...formData, fullName: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" required />
+            <label htmlFor="edit-full-name" className="block text-sm font-medium">Full Name</label>
+            <input id="edit-full-name" value={formData.fullName} onChange={(e) => setFormData({...formData, fullName: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" required />
           </div>
           <div>
-            <label className="block text-sm font-medium">Email (optional)</label>
-            <input value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" type="email" />
+            <label htmlFor="edit-email" className="block text-sm font-medium">Email (optional)</label>
+            <input id="edit-email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" type="email" />
           </div>
           <div>
-            <label className="block text-sm font-medium">Blood Type</label>
-            <input value={formData.bloodType} onChange={(e) => setFormData({...formData, bloodType: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
+            <label htmlFor="edit-blood-type" className="block text-sm font-medium">Blood Type</label>
+            <input id="edit-blood-type" value={formData.bloodType} onChange={(e) => setFormData({...formData, bloodType: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
           </div>
           <div>
-            <label className="block text-sm font-medium">Emergency Contact</label>
-            <input value={formData.emergencyContact} onChange={(e) => setFormData({...formData, emergencyContact: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
+            <label htmlFor="edit-emergency-contact" className="block text-sm font-medium">Emergency Contact</label>
+            <input id="edit-emergency-contact" value={formData.emergencyContact} onChange={(e) => setFormData({...formData, emergencyContact: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
           </div>
           <div>
-            <label className="block text-sm font-medium">Phone Number</label>
-            <input value={formData.phoneNumber} onChange={(e) => setFormData({...formData, phoneNumber: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
+            <label htmlFor="edit-phone" className="block text-sm font-medium">Phone Number</label>
+            <input id="edit-phone" value={formData.phoneNumber} onChange={(e) => setFormData({...formData, phoneNumber: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium">Alternate Number 1</label>
-              <input value={formData.alternateNumber1} onChange={(e) => setFormData({...formData, alternateNumber1: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
+              <label htmlFor="edit-alt-1" className="block text-sm font-medium">Alternate Number 1</label>
+              <input id="edit-alt-1" value={formData.alternateNumber1} onChange={(e) => setFormData({...formData, alternateNumber1: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
             </div>
             <div>
-              <label className="block text-sm font-medium">Alternate Number 2</label>
-              <input value={formData.alternateNumber2} onChange={(e) => setFormData({...formData, alternateNumber2: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
+              <label htmlFor="edit-alt-2" className="block text-sm font-medium">Alternate Number 2</label>
+              <input id="edit-alt-2" value={formData.alternateNumber2} onChange={(e) => setFormData({...formData, alternateNumber2: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium">Date of Birth</label>
-            <input type="date" value={formData.dateOfBirth} onChange={(e) => setFormData({...formData, dateOfBirth: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
+            <label htmlFor="edit-dob" className="block text-sm font-medium">Date of Birth</label>
+            <input id="edit-dob" type="date" value={formData.dateOfBirth} onChange={(e) => setFormData({...formData, dateOfBirth: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
           </div>
           <div>
-            <label className="block text-sm font-medium">Address</label>
-            <input value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
+            <label htmlFor="edit-address" className="block text-sm font-medium">Address</label>
+            <input id="edit-address" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
           </div>
           <div>
-            <label className="block text-sm font-medium">Allergies</label>
-            <textarea value={formData.allergies} onChange={(e) => setFormData({...formData, allergies: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
+            <label htmlFor="edit-allergies" className="block text-sm font-medium">Allergies</label>
+            <textarea id="edit-allergies" value={formData.allergies} onChange={(e) => setFormData({...formData, allergies: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
           </div>
           <div>
-            <label className="block text-sm font-medium">Medications</label>
-            <textarea value={formData.medications} onChange={(e) => setFormData({...formData, medications: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
+            <label htmlFor="edit-medications" className="block text-sm font-medium">Medications</label>
+            <textarea id="edit-medications" value={formData.medications} onChange={(e) => setFormData({...formData, medications: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
           </div>
           <div>
-            <label className="block text-sm font-medium">Medical Conditions</label>
-            <textarea value={formData.medicalConditions} onChange={(e) => setFormData({...formData, medicalConditions: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
+            <label htmlFor="edit-medical-conditions" className="block text-sm font-medium">Medical Conditions</label>
+            <textarea id="edit-medical-conditions" value={formData.medicalConditions} onChange={(e) => setFormData({...formData, medicalConditions: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
           </div>
           <div className="flex gap-3 justify-end">
             <button type="button" onClick={onClose} className="px-4 py-2 border rounded hover:bg-gray-100">Cancel</button>
