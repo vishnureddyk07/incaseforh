@@ -335,32 +335,6 @@ const convertPhotoToDataUrl = async (photo) => {
   }
 };
 
-// Admin: clear all emergency records (for testing/resetting)
-router.delete('/admin/emergency/clear-all', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const result = await EmergencyInfo.deleteMany({});
-    res.json({ message: `Cleared ${result.deletedCount} emergency records` });
-  } catch (error) {
-    console.error('Error clearing emergency records:', error);
-    res.status(500).json({ error: 'Failed to clear emergency records' });
-  }
-});
-
-// Admin: delete a single emergency record by id
-router.delete('/admin/emergency/:id', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const deleted = await EmergencyInfo.findByIdAndDelete(id);
-    if (!deleted) {
-      return res.status(404).json({ error: 'Record not found' });
-    }
-    res.json({ message: 'Deleted', id });
-  } catch (error) {
-    console.error('Error deleting emergency record:', error);
-    res.status(500).json({ error: 'Failed to delete emergency record' });
-  }
-});
-
 // ===== COMMENTED OUT: Medical Info Extraction Function (Will be implemented later) =====
 /* OCR extraction disabled intentionally. */
 // ===== END COMMENTED OUT CODE =====
@@ -512,6 +486,32 @@ router.post('/auth/change-password', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error changing password:', error);
     res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
+// Admin: clear all emergency records (for testing/resetting)
+router.delete('/admin/emergency/clear-all', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await EmergencyInfo.deleteMany({});
+    res.json({ message: `Cleared ${result.deletedCount} emergency records` });
+  } catch (error) {
+    console.error('Error clearing emergency records:', error);
+    res.status(500).json({ error: 'Failed to clear emergency records' });
+  }
+});
+
+// Admin: delete a single emergency record by id
+router.delete('/admin/emergency/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await EmergencyInfo.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+    res.json({ message: 'Deleted', id });
+  } catch (error) {
+    console.error('Error deleting emergency record:', error);
+    res.status(500).json({ error: 'Failed to delete emergency record' });
   }
 });
 
