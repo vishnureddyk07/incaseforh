@@ -342,12 +342,19 @@ const convertPhotoToDataUrl = async (photo) => {
 
 
 // Connect to MongoDB
-const MONGODB_URI = process.env.MONGODB_URI;
+const mongoUriEnvKey = process.env.MONGODB_URI
+  ? 'MONGODB_URI'
+  : process.env.MONGO_URI
+    ? 'MONGO_URI'
+    : process.env.DATABASE_URL
+      ? 'DATABASE_URL'
+      : null;
+const MONGODB_URI = mongoUriEnvKey ? process.env[mongoUriEnvKey] : null;
 if (!MONGODB_URI) {
-  console.error('FATAL: MONGODB_URI environment variable is not set');
+  console.error('FATAL: MongoDB URI environment variable is not set. Define one of: MONGODB_URI, MONGO_URI, DATABASE_URL');
   process.exit(1);
 }
-console.log('MongoDB URI: loaded from environment');
+console.log(`MongoDB URI: loaded from ${mongoUriEnvKey}`);
 
 mongoose.connect(MONGODB_URI, { 
   serverSelectionTimeoutMS: 30000,
@@ -944,8 +951,8 @@ app.get('/health', async (req, res) => {
 
 // Environment check endpoint (does not leak secrets)
 app.get('/env-check', (req, res) => {
-  const envSet = Boolean(process.env.MONGODB_URI);
-  res.json({ mongodbUriSet: envSet });
+  const envSet = Boolean(process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL);
+  res.json({ mongodbUriSet: envSet, acceptedKeys: ['MONGODB_URI', 'MONGO_URI', 'DATABASE_URL'] });
 });
 
 // Public: Get nearby hospitals (location-based search)
