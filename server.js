@@ -354,16 +354,43 @@ const mongoUriEnvKey = process.env.MONGODB_URI
       ? 'DATABASE_URL'
       : null;
 const MONGODB_URI = mongoUriEnvKey ? process.env[mongoUriEnvKey] : null;
+let isMongoConnecting = false;
+let lastMongoConnectError = null;
+
+const connectMongoWithRetry = async () => {
+  if (!MONGODB_URI || isMongoConnecting || mongoose.connection.readyState === 1) {
+    return;
+  }
+
+  isMongoConnecting = true;
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 30000,
+      connectTimeoutMS: 30000,
+    });
+    lastMongoConnectError = null;
+    console.log('MongoDB connected successfully');
+  } catch (err) {
+    lastMongoConnectError = err instanceof Error ? err.message : String(err);
+    console.error('MongoDB connection error:', lastMongoConnectError);
+    setTimeout(() => {
+      void connectMongoWithRetry();
+    }, 5000);
+  } finally {
+    isMongoConnecting = false;
+  }
+};
+
 if (!MONGODB_URI) {
   console.error('MongoDB URI is not set. Running in degraded mode. Define one of: MONGODB_URI, MONGO_URI, MONGODB_URL, MONGO_URL, DATABASE_URL');
 } else {
   console.log(`MongoDB URI: loaded from ${mongoUriEnvKey}`);
-  mongoose.connect(MONGODB_URI, {
-    serverSelectionTimeoutMS: 30000,
-    connectTimeoutMS: 30000,
-  })
-  .then(() => console.log('MongoDB connected successfully'))
-  .catch(err => console.error('MongoDB connection error:', err.message));
+  void connectMongoWithRetry();
+
+  mongoose.connection.on('disconnected', () => {
+    console.warn('MongoDB disconnected. Retrying connection...');
+    void connectMongoWithRetry();
+  });
 }
 
 // Basic route
@@ -1192,9 +1219,19 @@ app.use('/api/v1', (req, res, next) => {
     });
   }
   if (mongoose.connection.readyState !== 1) {
+    const mongoStateMap = {
+      0: 'disconnected',
+      1: 'connected',
+      2: 'connecting',
+      3: 'disconnecting',
+    };
+    const mongoState = mongoStateMap[mongoose.connection.readyState] || 'unknown';
     return res.status(503).json({
       error: 'Database is not connected yet. Please try again shortly.',
       code: 'DB_NOT_CONNECTED',
+      state: mongoState,
+      retrying: isMongoConnecting,
+      lastError: lastMongoConnectError,
     });
   }
   return next();
