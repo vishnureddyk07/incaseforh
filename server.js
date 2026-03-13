@@ -346,12 +346,16 @@ const mongoUriEnvKey = process.env.MONGODB_URI
   ? 'MONGODB_URI'
   : process.env.MONGO_URI
     ? 'MONGO_URI'
+    : process.env.MONGODB_URL
+      ? 'MONGODB_URL'
+      : process.env.MONGO_URL
+        ? 'MONGO_URL'
     : process.env.DATABASE_URL
       ? 'DATABASE_URL'
       : null;
 const MONGODB_URI = mongoUriEnvKey ? process.env[mongoUriEnvKey] : null;
 if (!MONGODB_URI) {
-  console.error('MongoDB URI is not set. Running in degraded mode. Define one of: MONGODB_URI, MONGO_URI, DATABASE_URL');
+  console.error('MongoDB URI is not set. Running in degraded mode. Define one of: MONGODB_URI, MONGO_URI, MONGODB_URL, MONGO_URL, DATABASE_URL');
 } else {
   console.log(`MongoDB URI: loaded from ${mongoUriEnvKey}`);
   mongoose.connect(MONGODB_URI, {
@@ -958,8 +962,8 @@ app.get('/health', async (req, res) => {
 
 // Environment check endpoint (does not leak secrets)
 app.get('/env-check', (req, res) => {
-  const envSet = Boolean(process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL);
-  res.json({ mongodbUriSet: envSet, acceptedKeys: ['MONGODB_URI', 'MONGO_URI', 'DATABASE_URL'] });
+  const envSet = Boolean(process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGODB_URL || process.env.MONGO_URL || process.env.DATABASE_URL);
+  res.json({ mongodbUriSet: envSet, acceptedKeys: ['MONGODB_URI', 'MONGO_URI', 'MONGODB_URL', 'MONGO_URL', 'DATABASE_URL'] });
 });
 
 // Public: Get nearby hospitals (location-based search)
@@ -1183,7 +1187,7 @@ router.get('/admin/logs', requireAuth, requireAdmin, async (req, res) => {
 app.use('/api/v1', (req, res, next) => {
   if (!MONGODB_URI) {
     return res.status(503).json({
-      error: 'Database is not configured on this server. Please set MONGODB_URI, MONGO_URI, or DATABASE_URL.',
+      error: 'Database is not configured on this server. Please set MONGODB_URI, MONGO_URI, MONGODB_URL, MONGO_URL, or DATABASE_URL.',
       code: 'DB_NOT_CONFIGURED',
     });
   }

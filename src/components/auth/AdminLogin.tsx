@@ -23,11 +23,24 @@ export default function AdminLogin() {
         const res = await fetch(`${apiBase}/api/v1/admin/check`, {
           method: 'GET',
         });
-        const data = await res.json().catch(() => ({ exists: false }));
-        setIsSetupMode(!data.exists);
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          setIsSetupMode(false);
+          setError((data as { error?: string }).error || 'Unable to verify admin status. Please try again shortly.');
+          return;
+        }
+
+        if (typeof (data as { exists?: unknown }).exists === 'boolean') {
+          setIsSetupMode(!(data as { exists: boolean }).exists);
+          return;
+        }
+
+        setIsSetupMode(false);
+        setError('Unexpected admin-check response from server.');
       } catch (err) {
-        // If endpoint doesn't exist, assume setup might be needed
-        console.log('Could not check admin status');
+        setIsSetupMode(false);
+        setError('Could not check admin status. Please try again shortly.');
       } finally {
         setCheckingSetup(false);
       }
