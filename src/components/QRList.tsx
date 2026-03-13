@@ -27,7 +27,7 @@ export default function QRList() {
   // Fallback placeholder if a photo is missing/404
   const PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><rect width="120" height="120" fill="%23f3f4f6"/><circle cx="60" cy="45" r="22" fill="%23d1d5db"/><rect x="25" y="75" width="70" height="30" rx="12" fill="%23d1d5db"/></svg>';
   const [qrs, setQrs] = useState<EmergencyInfo[]>([]);
-  const [filteredQrs, setFilteredQrs] = useState<EmergencyInfo[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -67,7 +67,6 @@ export default function QRList() {
 
         const data = await res.json();
         setQrs(data);
-        setFilteredQrs(data);
         setLoading(false);
       } catch (err) {
         console.error(err);
@@ -96,46 +95,42 @@ export default function QRList() {
 
     const resolvePhotos = async () => {
       if (!isAuthenticated || !token) return;
-      const nextMap = new Map<string, string>();
 
-      for (const rec of qrs) {
-        if (!rec.photo) continue;
-        const src = rec.photo.trim();
-        const id = rec._id;
+      // Fetch all photos in parallel instead of sequentially
+      const entries = await Promise.all(
+        qrs.map(async (rec): Promise<[string, string] | null> => {
+          if (!rec.photo) return null;
+          const resolved = resolveSrc(rec.photo.trim());
+          const id = rec._id;
 
-        // Skip if already resolved
-        const resolved = resolveSrc(src);
+          if (resolved.startsWith('data:')) return [id, resolved];
 
-        // Data URL: use as-is
-        if (resolved.startsWith('data:')) {
-          nextMap.set(id, resolved);
-          continue;
-        }
-
-        // Otherwise, fetch with auth and create object URL
-        try {
-          const controller = new AbortController();
-          aborters.push(controller);
-          const res = await fetch(resolved, {
-            headers: { Authorization: `Bearer ${token}` },
-            signal: controller.signal,
-          });
-          if (!res.ok) {
-            console.warn(`Photo fetch failed (${res.status}) for`, id, resolved);
-            nextMap.set(id, PLACEHOLDER);
-            continue;
+          try {
+            const controller = new AbortController();
+            aborters.push(controller);
+            const res = await fetch(resolved, {
+              headers: { Authorization: `Bearer ${token}` },
+              signal: controller.signal,
+            });
+            if (!res.ok) {
+              console.warn(`Photo fetch failed (${res.status}) for`, id, resolved);
+              return [id, PLACEHOLDER];
+            }
+            const blob = await res.blob();
+            return [id, URL.createObjectURL(blob)];
+          } catch (e) {
+            console.warn('Photo resolve error for', id, e);
+            return [id, PLACEHOLDER];
           }
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          nextMap.set(id, url);
-        } catch (e) {
-          console.warn('Photo resolve error for', id, e);
-          nextMap.set(id, PLACEHOLDER);
-          continue;
-        }
-      }
+        })
+      );
 
-      if (isActive) setPhotoUrls(nextMap);
+      if (isActive) {
+        const nextMap = new Map<string, string>(
+          entries.filter((e): e is [string, string] => e !== null)
+        );
+        setPhotoUrls(nextMap);
+      }
     };
 
     resolvePhotos();
@@ -157,21 +152,19 @@ export default function QRList() {
     navigate(`/emergencyinfo/${encodeURIComponent(identifier)}`);
   };
 
-  // Search and filter logic
-  useEffect(() => {
+  // Search and filter as derived value (no extra render cycle)
+  const filteredQrs = useMemo(() => {
     let filtered = [...qrs];
 
-    // Apply search
     if (searchTerm) {
       const needle = searchTerm.toLowerCase();
-      filtered = filtered.filter(q => 
+      filtered = filtered.filter(q =>
         q.fullName.toLowerCase().includes(needle) ||
         (q.email || '').toLowerCase().includes(needle) ||
         (q.phoneNumber || '').toLowerCase().includes(needle)
       );
     }
 
-    // Apply sort
     if (sortBy === 'newest') {
       filtered.sort((a, b) => {
         const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -188,8 +181,8 @@ export default function QRList() {
       filtered.sort((a, b) => a.fullName.localeCompare(b.fullName));
     }
 
-    setFilteredQrs(filtered);
-  }, [searchTerm, sortBy, qrs]);
+    return filtered;
+  }, [qrs, searchTerm, sortBy]);
 
   const filteredMap = useMemo(() => {
     const map = new Map<string, EmergencyInfo>();
@@ -360,7 +353,6 @@ export default function QRList() {
         throw new Error(body.error || 'Failed to delete record');
       }
       setQrs((prev) => prev.filter((r) => r._id !== record._id));
-      setFilteredQrs((prev) => prev.filter((r) => r._id !== record._id));
       setSelectedIds(new Set());
     } catch (err) {
       console.error(err);
@@ -400,7 +392,6 @@ export default function QRList() {
       });
       const data = await listRes.json();
       setQrs(data);
-      setFilteredQrs(data);
       setEditingRecord(null);
     } catch (err) {
       console.error(err);
@@ -417,7 +408,32 @@ export default function QRList() {
     );
   }
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return (
+    <div className="max-w-6xl mx-auto p-6">
+      <div className="flex justify-between items-center mb-6">
+        <div className="h-8 w-48 bg-gray-200 rounded animate-pulse" />
+        <div className="h-10 w-36 bg-gray-200 rounded animate-pulse" />
+      </div>
+      <div className="bg-white p-4 rounded-lg shadow mb-6 space-y-3">
+        <div className="h-10 bg-gray-200 rounded animate-pulse" />
+        <div className="h-8 w-64 bg-gray-200 rounded animate-pulse" />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="bg-white p-4 rounded-lg shadow">
+            <div className="flex gap-4">
+              <div className="w-20 h-20 rounded bg-gray-200 animate-pulse flex-shrink-0" />
+              <div className="flex-1 space-y-2 py-1">
+                <div className="h-5 bg-gray-200 rounded animate-pulse w-3/4" />
+                <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2" />
+                <div className="h-4 bg-gray-200 rounded animate-pulse w-2/3" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
   if (error) return <div className="max-w-2xl mx-auto p-6 text-red-600">{error}</div>;
 
   return (
