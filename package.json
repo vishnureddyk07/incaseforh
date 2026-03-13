@@ -4,15 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "server": "node server.js",
-    "test": "vitest --run",
-    "test:watch": "vitest",
+    "dev": "cd client && vite",
+    "build": "cd client && vite build",
+    "lint": "cd client && eslint .",
+    "preview": "cd client && vite preview",
+    "server": "node server/server.js",
+    "test": "cd client && vitest --run",
+    "test:watch": "cd client && vitest",
     "e2e": "playwright test",
-    "seed:hospitals": "node seedHospitals.js"
+    "seed:hospitals": "node server/seedHospitals.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
