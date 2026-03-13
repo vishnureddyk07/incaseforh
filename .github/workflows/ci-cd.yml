@@ -27,15 +27,19 @@ jobs:
 
       - name: Run npm ci
         run: npm ci
+        working-directory: .
 
-      - name: Run cd client && npm ci
-        run: cd client && npm ci
+      - name: Run npm ci in client
+        run: npm ci
+        working-directory: client
 
-      - name: Run npm run build
+      - name: Run npm run build in client
         run: npm run build
+        working-directory: client
 
-      - name: Run npm run test -- --run
-        run: npm run test -- --run
+      - name: Run npx vitest --run in client
+        run: npx vitest --run
+        working-directory: client
 
   post-commit-status:
     name: Post Commit Status
