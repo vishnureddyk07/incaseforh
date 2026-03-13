@@ -36,7 +36,7 @@ export default function EmergencyForm({
     <div className="space-y-6">
       <div className="text-center">
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Photo <span className="text-red-500">*</span>
+          Photo (Optional)
         </label>
         <div className="relative inline-block">
           {emergencyInfo.photo && typeof emergencyInfo.photo !== "undefined" ? (
@@ -75,7 +75,7 @@ export default function EmergencyForm({
           onChange={handleRiderPhotoUpload}
           className="hidden"
         />
-        <p className="mt-2 text-sm text-gray-600">Upload your photo (Max 10MB) <span className="text-red-500">*</span></p>
+        <p className="mt-2 text-sm text-gray-600">Upload your photo (Max 10MB)</p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">

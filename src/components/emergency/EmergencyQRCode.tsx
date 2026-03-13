@@ -136,10 +136,6 @@ export default function EmergencyQRCode() {
       alert("Please select your blood type before submitting.");
       return;
     }
-    if (!emergencyInfo.photo) {
-      alert("Please upload a photo before submitting.");
-      return;
-    }
     if (emergencyInfo.emergencyContacts.length === 0 || emergencyInfo.emergencyContacts.some(c => !c.name || !c.phone)) {
       alert("Please add at least 1 emergency contact with both name and phone number.");
       return;
