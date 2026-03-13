@@ -351,17 +351,16 @@ const mongoUriEnvKey = process.env.MONGODB_URI
       : null;
 const MONGODB_URI = mongoUriEnvKey ? process.env[mongoUriEnvKey] : null;
 if (!MONGODB_URI) {
-  console.error('FATAL: MongoDB URI environment variable is not set. Define one of: MONGODB_URI, MONGO_URI, DATABASE_URL');
-  process.exit(1);
+  console.error('MongoDB URI is not set. Running in degraded mode. Define one of: MONGODB_URI, MONGO_URI, DATABASE_URL');
+} else {
+  console.log(`MongoDB URI: loaded from ${mongoUriEnvKey}`);
+  mongoose.connect(MONGODB_URI, {
+    serverSelectionTimeoutMS: 30000,
+    connectTimeoutMS: 30000,
+  })
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch(err => console.error('MongoDB connection error:', err.message));
 }
-console.log(`MongoDB URI: loaded from ${mongoUriEnvKey}`);
-
-mongoose.connect(MONGODB_URI, { 
-  serverSelectionTimeoutMS: 30000,
-  connectTimeoutMS: 30000,
-})
-.then(() => console.log('MongoDB connected successfully'))
-.catch(err => console.error('MongoDB connection error:', err.message));
 
 // Basic route
 app.get('/', (req, res) => {
@@ -941,6 +940,14 @@ router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) =>
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
+  if (!MONGODB_URI) {
+    return res.status(503).json({
+      status: 'degraded',
+      mongodb: 'not-configured',
+      reason: 'Set MONGODB_URI, MONGO_URI, or DATABASE_URL in deployment environment',
+      timestamp: new Date(),
+    });
+  }
   try {
     await mongoose.connection.db.admin().ping();
     res.json({ status: 'healthy', mongodb: 'connected', timestamp: new Date() });
@@ -1173,7 +1180,21 @@ router.get('/admin/logs', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // ── Mount versioned router & backward-compat redirect ────────────────
-app.use('/api/v1', router);
+app.use('/api/v1', (req, res, next) => {
+  if (!MONGODB_URI) {
+    return res.status(503).json({
+      error: 'Database is not configured on this server. Please set MONGODB_URI, MONGO_URI, or DATABASE_URL.',
+      code: 'DB_NOT_CONFIGURED',
+    });
+  }
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      error: 'Database is not connected yet. Please try again shortly.',
+      code: 'DB_NOT_CONNECTED',
+    });
+  }
+  return next();
+}, router);
 
 // Backward compatibility: redirect /api/* → /api/v1/* so old clients still work
 app.use('/api', (req, res, next) => {
