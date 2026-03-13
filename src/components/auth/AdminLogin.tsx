@@ -58,6 +58,10 @@ export default function AdminLogin() {
         throw new Error('Invalid login response');
       }
 
+      if (data.user.role !== 'admin') {
+        throw new Error('Only admin accounts can sign in here.');
+      }
+
       login(data.user, data.token);
       navigate('/admin/dashboard');
     } catch (err) {
@@ -96,7 +100,7 @@ export default function AdminLogin() {
         throw new Error(body.error || 'Registration failed');
       }
 
-      const data = await res.json();
+      await res.json().catch(() => ({}));
       // After registration, log in automatically
       const loginRes = await fetch(`${apiBase}/api/v1/auth/login`, {
         method: 'POST',
@@ -109,6 +113,12 @@ export default function AdminLogin() {
       }
 
       const loginData = await loginRes.json();
+      if (!loginData.token || !loginData.user) {
+        throw new Error('Invalid login response after registration');
+      }
+      if (loginData.user.role !== 'admin') {
+        throw new Error('Registered account is not admin. Contact support.');
+      }
       login(loginData.user, loginData.token);
       navigate('/admin/dashboard');
     } catch (err) {
