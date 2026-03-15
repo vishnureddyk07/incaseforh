@@ -39,14 +39,53 @@ export default function EmergencyInfoDisplay() {
   const { email: identifierParam } = useParams();
   const [info, setInfo] = useState<EmergencyInfo | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isLocationConfirmed, setIsLocationConfirmed] = useState(false);
   const [locationName, setLocationName] = useState<string | null>(null);
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isPatientLoading, setIsPatientLoading] = useState(true);
+  const [isHospitalsLoading, setIsHospitalsLoading] = useState(false);
+  const [isWakingServer, setIsWakingServer] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [sosTriggered, setSosTriggered] = useState(false);
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const fetchWithRetry = async (
+    url: string,
+    options?: RequestInit,
+    retryConfig?: { retries?: number; retryDelayMs?: number; timeoutMs?: number; onRetry?: (attempt: number) => void }
+  ) => {
+    const retries = retryConfig?.retries ?? 3;
+    const retryDelayMs = retryConfig?.retryDelayMs ?? 2000;
+    const timeoutMs = retryConfig?.timeoutMs ?? 10000;
+
+    let lastError: unknown = null;
+
+    for (let attempt = 1; attempt <= retries; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const res = await fetch(url, { ...(options || {}), signal: controller.signal });
+        window.clearTimeout(timeoutId);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res;
+      } catch (err) {
+        window.clearTimeout(timeoutId);
+        lastError = err;
+        if (attempt < retries) {
+          retryConfig?.onRetry?.(attempt);
+          await sleep(retryDelayMs);
+          continue;
+        }
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error('Request failed after retries');
+  };
 
   const reverseGeocode = async (lat: number, lng: number) => {
     try {
@@ -73,12 +112,66 @@ export default function EmergencyInfoDisplay() {
     }
   };
 
+  const fetchNearbyHospitals = async (lat: number, lng: number) => {
+    console.log('🏥 Fetching hospitals near:', lat, lng);
+    setIsHospitalsLoading(true);
+    try {
+      const response = await fetchWithRetry(
+        `${API_BASE}/api/v1/hospitals/nearby?lat=${lat}&lng=${lng}&maxDistance=10000`,
+        undefined,
+        { retries: 3, retryDelayMs: 2000, timeoutMs: 10000 }
+      );
+      const hospitalList = await response.json();
+      console.log('✅ Hospitals from backend:', hospitalList?.length || 0);
+      setHospitals((hospitalList || []).slice(0, 8));
+    } catch (err) {
+      console.error('❌ Error fetching hospitals:', err);
+    } finally {
+      setIsHospitalsLoading(false);
+    }
+  };
+
+  const getUserLocationOnce = () => {
+    console.log('🌍 Getting one-time user location...');
+
+    if (!('geolocation' in navigator)) {
+      setLocationError('Location services not available on this device');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        console.log('✅ GPS location obtained:', { lat: latitude, lng: longitude, accuracy: `${accuracy.toFixed(0)}m` });
+        setLocation({ lat: latitude, lng: longitude });
+        setIsLocationConfirmed(true);
+        setLocationError(accuracy > 100 ? `Location accuracy: ±${accuracy.toFixed(0)}m` : null);
+        reverseGeocode(latitude, longitude);
+      },
+      (err) => {
+        console.warn('⚠️ GPS failed:', err.message, err.code);
+        if (err.code === 1) {
+          setLocationError('Location permission denied. Hospitals will appear after location is allowed.');
+        } else if (err.code === 3) {
+          setLocationError('Location request timed out. Please try again or enable GPS.');
+        } else {
+          setLocationError('Location unavailable. Please check device location settings.');
+        }
+      },
+      { timeout: 10000, enableHighAccuracy: true, maximumAge: 60000 }
+    );
+  };
+
   useEffect(() => {
     const fetchEmergencyInfo = async () => {
       try {
+        setIsPatientLoading(true);
+        setError(null);
+        setIsWakingServer(false);
+
         if (!identifierParam) {
           setError('No identifier provided');
-          setLoading(false);
+          setIsPatientLoading(false);
           return;
         }
 
@@ -88,140 +181,40 @@ export default function EmergencyInfoDisplay() {
           : `${API_BASE}/api/v1/emergency/phone/${encodeURIComponent(identifierParam)}`;
 
         console.log('📡 Fetching emergency info from:', endpoint);
-        const res = await fetch(endpoint);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const res = await fetchWithRetry(endpoint, undefined, {
+          retries: 3,
+          retryDelayMs: 2000,
+          timeoutMs: 10000,
+          onRetry: (attempt) => {
+            if (attempt === 1) {
+              setIsWakingServer(true);
+            }
+          },
+        });
         const data = await res.json();
         console.log('✅ Emergency info loaded:', data.fullName);
         setInfo(data);
+        setIsWakingServer(false);
+        setIsPatientLoading(false);
+
+        // Start location only after patient data is visible.
+        getUserLocationOnce();
       } catch (err) {
         console.error('❌ Error fetching emergency info:', err);
         setError(err instanceof Error ? err.message : 'Error fetching data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const getUserLocation = () => {
-      console.log('🌍 Starting location detection...');
-      if ('geolocation' in navigator) {
-        console.log('📍 Requesting high-accuracy GPS location...');
-        
-        // Try to get the most accurate location possible
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            const { latitude, longitude, accuracy } = position.coords;
-            console.log('✅ GPS location obtained:', {
-              lat: latitude,
-              lng: longitude,
-              accuracy: `${accuracy.toFixed(0)}m`,
-              timestamp: new Date(position.timestamp).toLocaleTimeString()
-            });
-            
-            setLocation({ lat: latitude, lng: longitude });
-            setLocationError(accuracy > 100 ? `Location accuracy: ±${accuracy.toFixed(0)}m` : null);
-            reverseGeocode(latitude, longitude);
-            fetchNearbyHospitals(latitude, longitude);
-            
-            // Watch for better accuracy
-            if (accuracy > 50) {
-              console.log('⏳ Waiting for better GPS accuracy...');
-              const watchId = navigator.geolocation.watchPosition(
-                (newPos) => {
-                  const newAccuracy = newPos.coords.accuracy;
-                  if (newAccuracy < accuracy) {
-                    console.log('✨ GPS accuracy improved:', `${newAccuracy.toFixed(0)}m`);
-                    setLocation({ lat: newPos.coords.latitude, lng: newPos.coords.longitude });
-                    setLocationError(newAccuracy > 100 ? `Location accuracy: ±${newAccuracy.toFixed(0)}m` : null);
-                    reverseGeocode(newPos.coords.latitude, newPos.coords.longitude);
-                    fetchNearbyHospitals(newPos.coords.latitude, newPos.coords.longitude);
-                    
-                    if (newAccuracy < 50) {
-                      navigator.geolocation.clearWatch(watchId);
-                    }
-                  }
-                },
-                null,
-                { enableHighAccuracy: true, maximumAge: 0 }
-              );
-              
-              // Stop watching after 30 seconds
-              setTimeout(() => navigator.geolocation.clearWatch(watchId), 30000);
-            }
-          },
-          (err) => {
-            console.warn('⚠️ GPS failed:', err.message, err.code);
-            if (err.code === 1) {
-              setLocationError('Location permission denied. Please enable location access.');
-            } else if (err.code === 2) {
-              setLocationError('Location unavailable. Using approximate location.');
-            } else {
-              setLocationError('Location timeout. Retrying...');
-              
-              // Retry with lower accuracy requirements
-              navigator.geolocation.getCurrentPosition(
-                (position) => {
-                  const { latitude, longitude, accuracy } = position.coords;
-                  console.log('✅ GPS location obtained (retry):', latitude, longitude, `±${accuracy.toFixed(0)}m`);
-                  setLocation({ lat: latitude, lng: longitude });
-                  setLocationError(`Location accuracy: ±${accuracy.toFixed(0)}m`);
-                  reverseGeocode(latitude, longitude);
-                  fetchNearbyHospitals(latitude, longitude);
-                },
-                () => {
-                  console.error('❌ GPS retry failed, using fallback');
-                  const mockLat = 17.3850;
-                  const mockLng = 78.4867;
-                  setLocation({ lat: mockLat, lng: mockLng });
-                  setLocationError('Using approximate location (Hyderabad)');
-                  reverseGeocode(mockLat, mockLng);
-                  fetchNearbyHospitals(mockLat, mockLng);
-                },
-                { timeout: 30000, enableHighAccuracy: false, maximumAge: 60000 }
-              );
-              return;
-            }
-            const mockLat = 17.3850;
-            const mockLng = 78.4867;
-            setLocation({ lat: mockLat, lng: mockLng });
-            reverseGeocode(mockLat, mockLng);
-            fetchNearbyHospitals(mockLat, mockLng);
-          },
-          { timeout: 20000, enableHighAccuracy: true, maximumAge: 0 }
-        );
-      } else {
-        console.warn('❌ Geolocation not supported');
-        setLocationError('Location services not available on this device');
-        const mockLat = 17.3850;
-        const mockLng = 78.4867;
-        setLocation({ lat: mockLat, lng: mockLng });
-        reverseGeocode(mockLat, mockLng);
-        fetchNearbyHospitals(mockLat, mockLng);
+        setIsWakingServer(false);
+        setIsPatientLoading(false);
       }
     };
 
     fetchEmergencyInfo();
-    getUserLocation();
-    
-    // Force location permission prompt on page load
-    console.log('🌍 Initializing location services...');
   }, [identifierParam, API_BASE]);
 
-  const fetchNearbyHospitals = async (lat: number, lng: number) => {
-    console.log('🏥 Fetching hospitals near:', lat, lng);
-    try {
-      // Backend handles all fallbacks (including GeoNames via server env vars)
-      const response = await fetch(`${API_BASE}/api/v1/hospitals/nearby?lat=${lat}&lng=${lng}&maxDistance=10000`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch nearby hospitals');
-      }
-
-      const hospitalList = await response.json();
-      console.log('✅ Hospitals from backend:', hospitalList?.length || 0);
-      setHospitals((hospitalList || []).slice(0, 8));
-    } catch (err) {
-      console.error('❌ Error fetching hospitals:', err);
-    }
-  };
+  useEffect(() => {
+    if (!info || !location || !isLocationConfirmed) return;
+    fetchNearbyHospitals(location.lat, location.lng);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [info, location, isLocationConfirmed]);
 
   const handleSOSButton = () => {
     setSosTriggered(true);
@@ -262,18 +255,7 @@ export default function EmergencyInfoDisplay() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-blue-50 p-4 flex items-center justify-center">
-        <div className="text-center">
-          <Loader className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600 font-semibold">Loading emergency information...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !info) {
+  if (error && !isPatientLoading && !info) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-red-50 to-orange-50 p-4 flex items-center justify-center">
         <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md text-center border-2 border-red-200">
@@ -315,7 +297,26 @@ export default function EmergencyInfoDisplay() {
       </div>
 
       <div className="max-w-4xl mx-auto p-4 space-y-4">
-        {info && (
+        {isWakingServer && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-amber-800 text-sm font-medium">
+            Waking up server... retrying request.
+          </div>
+        )}
+
+        {isPatientLoading && (
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-300 p-4 animate-pulse">
+            <div className="h-3 w-36 bg-blue-100 rounded mb-4" />
+            <div className="flex gap-4">
+              <div className="flex-1 space-y-3">
+                <div className="h-6 w-56 bg-gray-200 rounded" />
+                <div className="h-4 w-44 bg-gray-100 rounded" />
+              </div>
+              <div className="w-24 h-24 bg-gray-200 rounded-lg" />
+            </div>
+          </div>
+        )}
+
+        {!isPatientLoading && info && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
             <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2">Patient Information</p>
             <div className="flex gap-4">
@@ -336,7 +337,7 @@ export default function EmergencyInfoDisplay() {
           </div>
         )}
 
-        {info && (
+        {!isPatientLoading && info && (
           <div className="grid grid-cols-2 gap-3">
             {info.bloodType && (
               <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
@@ -377,7 +378,7 @@ export default function EmergencyInfoDisplay() {
           </div>
         )}
 
-        {location && (
+        {!isPatientLoading && location && isLocationConfirmed && (
           <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-4 shadow-md text-white">
             <div className="flex items-start gap-3">
               <MapPin className="h-6 w-6 mt-1 flex-shrink-0" />
@@ -395,7 +396,7 @@ export default function EmergencyInfoDisplay() {
           </div>
         )}
 
-        {info?.emergencyContacts && info.emergencyContacts.length > 0 && (
+        {!isPatientLoading && info?.emergencyContacts && info.emergencyContacts.length > 0 && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-green-600 p-4">
             <p className="text-sm font-bold text-green-600 mb-3 flex items-center gap-2">
               <Users className="h-4 w-4" />
@@ -429,7 +430,7 @@ export default function EmergencyInfoDisplay() {
           📞 Call Emergency Services (108)
         </button>
 
-        {hospitals.length > 0 && (
+        {!isPatientLoading && isLocationConfirmed && hospitals.length > 0 && (
           <div>
             <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
               <span className="bg-red-500 w-1 h-6 rounded-full"></span>
@@ -466,7 +467,7 @@ export default function EmergencyInfoDisplay() {
           </div>
         )}
 
-        {hospitals.length === 0 && !loading && (
+        {!isPatientLoading && isLocationConfirmed && isHospitalsLoading && (
           <div className="flex items-center justify-center py-8 bg-gray-50 rounded-lg">
             <Loader className="h-6 w-6 animate-spin text-blue-600 mr-2" />
             <span className="text-gray-600 font-medium">Searching for nearby hospitals...</span>
