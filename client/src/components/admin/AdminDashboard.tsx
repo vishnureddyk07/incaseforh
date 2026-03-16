@@ -34,6 +34,9 @@ export default function AdminDashboard() {
   const [totalEmergencyRecords, setTotalEmergencyRecords] = useState(0);
   const [isFetchingEmergencyCount, setIsFetchingEmergencyCount] = useState(false);
   const [expandedDetailsRows, setExpandedDetailsRows] = useState<Record<string, boolean>>({});
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [logSearchQuery, setLogSearchQuery] = useState('');
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'admin') {
@@ -41,6 +44,11 @@ export default function AdminDashboard() {
       return;
     }
   }, [isAuthenticated, user, navigate]);
+
+  const showToast = (message: string) => {
+    setSuccessToast(message);
+    setTimeout(() => setSuccessToast(null), 3000);
+  };
 
   const fetchUsers = () => {
     if (!token) return;
@@ -85,9 +93,7 @@ export default function AdminDashboard() {
       const res = await fetch(`${backendApiBaseUrl}/api/v1/emergency`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) {
-        throw new Error('Failed to fetch emergency records');
-      }
+      if (!res.ok) throw new Error('Failed to fetch emergency records');
       const data = await res.json();
       const records = Array.isArray(data) ? data : data?.records || data?.data || [];
       setTotalEmergencyRecords(Array.isArray(records) ? records.length : 0);
@@ -125,6 +131,7 @@ export default function AdminDashboard() {
       setNewManagerPassword('');
       fetchUsers();
       fetchLogs();
+      showToast('✅ Manager created successfully!');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to create manager';
       setAdminDashboardError(msg);
@@ -146,6 +153,7 @@ export default function AdminDashboard() {
       }
       fetchUsers();
       fetchLogs();
+      showToast('🗑️ User deleted successfully!');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to delete user';
       setAdminDashboardError(msg);
@@ -219,6 +227,25 @@ export default function AdminDashboard() {
     [systemUsersList]
   );
 
+  const filteredUsers = useMemo(() => {
+    if (!userSearchQuery.trim()) return systemUsersList;
+    const q = userSearchQuery.toLowerCase();
+    return systemUsersList.filter(
+      (u) => u.email.toLowerCase().includes(q) || u.role.toLowerCase().includes(q)
+    );
+  }, [systemUsersList, userSearchQuery]);
+
+  const filteredLogs = useMemo(() => {
+    if (!logSearchQuery.trim()) return systemActionLogs;
+    const q = logSearchQuery.toLowerCase();
+    return systemActionLogs.filter(
+      (log) =>
+        log.actorEmail.toLowerCase().includes(q) ||
+        log.action.toLowerCase().includes(q) ||
+        log.actorRole.toLowerCase().includes(q)
+    );
+  }, [systemActionLogs, logSearchQuery]);
+
   const toggleDetails = (logId: string) => {
     setExpandedDetailsRows((prev) => ({ ...prev, [logId]: !prev[logId] }));
   };
@@ -227,32 +254,89 @@ export default function AdminDashboard() {
     fetchUsers();
     fetchLogs();
     fetchEmergencyRecordsCount();
+    showToast('🔄 Data refreshed!');
   };
+
+  const statCards = [
+    {
+      label: 'Total Users',
+      value: systemUsersList.length,
+      icon: '👥',
+      color: 'bg-blue-50 border-blue-100',
+      textColor: 'text-blue-700',
+    },
+    {
+      label: 'Total Managers',
+      value: managerCount,
+      icon: '🛡️',
+      color: 'bg-purple-50 border-purple-100',
+      textColor: 'text-purple-700',
+    },
+    {
+      label: 'QR Records',
+      value: isFetchingEmergencyCount ? '...' : totalEmergencyRecords,
+      icon: '📋',
+      color: 'bg-green-50 border-green-100',
+      textColor: 'text-green-700',
+    },
+    {
+      label: 'Audit Logs',
+      value: systemActionLogs.length,
+      icon: '🔍',
+      color: 'bg-orange-50 border-orange-100',
+      textColor: 'text-orange-700',
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <div className="mx-auto flex max-w-[1600px]">
-        <aside className="sticky top-0 h-screen w-64 bg-gray-900 px-6 py-8 text-white shadow-xl">
-          <p className="text-xs uppercase tracking-widest text-gray-400">INcase Admin</p>
-          <h1 className="mt-2 text-2xl font-semibold">Control Center</h1>
+      {/* Success Toast */}
+      {successToast && (
+        <div className="fixed top-4 right-4 z-50 rounded-lg bg-gray-900 px-5 py-3 text-sm font-medium text-white shadow-lg">
+          {successToast}
+        </div>
+      )}
 
-          <nav className="mt-10 space-y-2 text-sm">
-            <a href="#dashboard" className="block rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">Dashboard</a>
-            <Link to="/qrs" className="block rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">Emergency Records</Link>
-            <a href="#users" className="block rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">Users</a>
-            <a href="#audit-logs" className="block rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">Audit Logs</a>
-            <Link to="/change-password" className="block rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">Change Password</Link>
+      <div className="mx-auto flex max-w-[1600px]">
+        {/* Sidebar */}
+        <aside className="sticky top-0 h-screen w-64 bg-gray-900 px-6 py-8 text-white shadow-xl flex flex-col">
+          <div>
+            <p className="text-xs uppercase tracking-widest text-gray-400">INcase Admin</p>
+            <h1 className="mt-2 text-2xl font-semibold">Control Center</h1>
+            {user?.email && (
+              <p className="mt-2 text-xs text-gray-400 truncate">Logged in as: {user.email}</p>
+            )}
+          </div>
+
+          <nav className="mt-10 space-y-1 text-sm flex-1">
+            <a href="#dashboard" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
+              <span>🏠</span> Dashboard
+            </a>
+            <Link to="/qrs" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
+              <span>📋</span> Emergency Records
+            </Link>
+            <a href="#users" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
+              <span>👥</span> Users
+            </a>
+            <a href="#audit-logs" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
+              <span>🔍</span> Audit Logs
+            </a>
+            <Link to="/change-password" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
+              <span>🔑</span> Change Password
+            </Link>
           </nav>
 
           <button
             onClick={quickRefresh}
-            className="mt-8 w-full rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20"
+            className="mt-4 w-full rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20"
           >
-            Refresh Data
+            🔄 Refresh Data
           </button>
         </aside>
 
+        {/* Main Content */}
         <main className="w-full p-6 md:p-10">
+          {/* Header */}
           <div id="dashboard" className="mb-8 flex flex-col gap-4 rounded-2xl bg-white p-6 shadow-sm md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-3xl font-semibold text-gray-900">Admin Dashboard</h2>
@@ -263,54 +347,51 @@ export default function AdminDashboard() {
                 onClick={exportUsersCsv}
                 className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
-                Export Users CSV
+                ⬇️ Export Users
               </button>
               <button
                 onClick={exportLogsCsv}
                 className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
               >
-                Export Audit Logs CSV
+                ⬇️ Export Logs
               </button>
             </div>
           </div>
 
+          {/* Error Banner */}
           {adminDashboardError && (
-            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {adminDashboardError}
+            <div className="mb-6 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <span>⚠️ {adminDashboardError}</span>
+              <button onClick={() => setAdminDashboardError(null)} className="ml-4 text-red-500 hover:text-red-700 font-bold">✕</button>
             </div>
           )}
 
+          {/* Stat Cards */}
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl bg-white p-5 shadow-sm">
-              <p className="text-sm text-gray-500">Total Users</p>
-              <p className="mt-2 text-3xl font-semibold text-gray-900">{systemUsersList.length}</p>
-            </div>
-            <div className="rounded-xl bg-white p-5 shadow-sm">
-              <p className="text-sm text-gray-500">Total Managers</p>
-              <p className="mt-2 text-3xl font-semibold text-gray-900">{managerCount}</p>
-            </div>
-            <div className="rounded-xl bg-white p-5 shadow-sm">
-              <p className="text-sm text-gray-500">Total QR Records</p>
-              <p className="mt-2 text-3xl font-semibold text-gray-900">
-                {isFetchingEmergencyCount ? '...' : totalEmergencyRecords}
-              </p>
-            </div>
-            <div className="rounded-xl bg-white p-5 shadow-sm">
-              <p className="text-sm text-gray-500">Total Audit Logs</p>
-              <p className="mt-2 text-3xl font-semibold text-gray-900">{systemActionLogs.length}</p>
-            </div>
+            {statCards.map((card) => (
+              <div key={card.label} className={`rounded-xl border p-5 shadow-sm ${card.color}`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-600">{card.label}</p>
+                  <span className="text-2xl">{card.icon}</span>
+                </div>
+                <p className={`mt-3 text-3xl font-bold ${card.textColor}`}>{card.value}</p>
+              </div>
+            ))}
           </section>
 
+          {/* Create Manager */}
           <section className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
-            <h3 className="text-lg font-semibold text-gray-900">Create Manager</h3>
+            <h3 className="text-lg font-semibold text-gray-900">➕ Create Manager Account</h3>
+            <p className="mt-1 text-sm text-gray-500">New managers can log in and manage emergency records.</p>
             <form onSubmit={createManager} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3 md:items-end">
               <div>
                 <label className="block text-sm font-medium text-gray-700">Manager Email</label>
                 <input
                   value={newManagerEmail}
                   onChange={(e) => setNewManagerEmail(e.target.value)}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"
+                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="manager@example.com"
+                  type="email"
                 />
               </div>
               <div>
@@ -318,55 +399,74 @@ export default function AdminDashboard() {
                 <input
                   value={newManagerPassword}
                   onChange={(e) => setNewManagerPassword(e.target.value)}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"
-                  placeholder="min 6 chars"
+                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="min 6 characters"
                   type="password"
                 />
               </div>
               <button
-                disabled={isCreatingManager}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                type="submit"
+                disabled={isCreatingManager || !newManagerEmail || !newManagerPassword}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 font-medium"
               >
-                {isCreatingManager ? 'Creating...' : 'Create Manager'}
+                {isCreatingManager ? 'Creating...' : '➕ Create Manager'}
               </button>
             </form>
           </section>
 
+          {/* Users Table */}
           <section id="users" className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Users</h3>
-              <button onClick={fetchUsers} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">Refresh</button>
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">👥 Users ({filteredUsers.length})</h3>
+              <div className="flex gap-2">
+                <input
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  placeholder="Search by email or role..."
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 w-56"
+                />
+                <button onClick={fetchUsers} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                  🔄
+                </button>
+              </div>
             </div>
+
             {isFetchingUsers ? (
-              <p className="text-sm text-gray-500">Loading users...</p>
+              <div className="flex items-center gap-2 text-sm text-gray-500 py-8 justify-center">
+                <span className="animate-spin">⏳</span> Loading users...
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="py-10 text-center text-sm text-gray-400">
+                {userSearchQuery ? '🔍 No users match your search.' : '👥 No users found.'}
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b text-gray-500">
-                      <th className="py-3">Email</th>
-                      <th className="py-3">Role</th>
-                      <th className="py-3">Created</th>
-                      <th className="py-3">Actions</th>
+                    <tr className="border-b bg-gray-50 text-gray-500">
+                      <th className="py-3 px-2 font-medium">Email</th>
+                      <th className="py-3 px-2 font-medium">Role</th>
+                      <th className="py-3 px-2 font-medium">Created</th>
+                      <th className="py-3 px-2 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {systemUsersList.map((userAccount) => (
-                      <tr key={userAccount.id} className="border-b border-gray-100">
-                        <td className="py-3 text-gray-900">{userAccount.email}</td>
-                        <td className="py-3">
+                    {filteredUsers.map((userAccount) => (
+                      <tr key={userAccount.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <td className="py-3 px-2 text-gray-900">{userAccount.email}</td>
+                        <td className="py-3 px-2">
                           <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getRoleBadgeClass(userAccount.role)}`}>
                             {userAccount.role}
                           </span>
                         </td>
-                        <td className="py-3 text-gray-600">{formatDateTime(userAccount.createdAt)}</td>
-                        <td className="py-3">
+                        <td className="py-3 px-2 text-gray-500 text-xs">{formatDateTime(userAccount.createdAt)}</td>
+                        <td className="py-3 px-2">
                           {userAccount.role !== 'admin' && (
                             <button
                               onClick={() => deleteUser(userAccount.id)}
-                              className="rounded-md bg-red-50 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-100"
+                              className="rounded-md bg-red-50 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-100 transition-colors"
                             >
-                              Delete
+                              🗑️ Delete
                             </button>
                           )}
                         </td>
@@ -378,57 +478,72 @@ export default function AdminDashboard() {
             )}
           </section>
 
-          <section id="audit-logs" className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Audit Logs</h3>
-              <button onClick={fetchLogs} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">Refresh</button>
+          {/* Audit Logs Table */}
+          <section id="audit-logs" className="mt-8 mb-10 rounded-2xl bg-white p-6 shadow-sm">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">🔍 Audit Logs ({filteredLogs.length})</h3>
+              <div className="flex gap-2">
+                <input
+                  value={logSearchQuery}
+                  onChange={(e) => setLogSearchQuery(e.target.value)}
+                  placeholder="Search by email or action..."
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 w-56"
+                />
+                <button onClick={fetchLogs} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                  🔄
+                </button>
+              </div>
             </div>
 
             {isFetchingActivityLogs ? (
-              <p className="text-sm text-gray-500">Loading logs...</p>
-            ) : systemActionLogs.length === 0 ? (
-              <p className="text-sm text-gray-500">No recent actions.</p>
+              <div className="flex items-center gap-2 text-sm text-gray-500 py-8 justify-center">
+                <span className="animate-spin">⏳</span> Loading logs...
+              </div>
+            ) : filteredLogs.length === 0 ? (
+              <div className="py-10 text-center text-sm text-gray-400">
+                {logSearchQuery ? '🔍 No logs match your search.' : '📋 No audit logs yet.'}
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b text-gray-500">
-                      <th className="py-3">When</th>
-                      <th className="py-3">Actor</th>
-                      <th className="py-3">Role</th>
-                      <th className="py-3">Action</th>
-                      <th className="py-3">Details</th>
+                    <tr className="border-b bg-gray-50 text-gray-500">
+                      <th className="py-3 px-2 font-medium">When</th>
+                      <th className="py-3 px-2 font-medium">Actor</th>
+                      <th className="py-3 px-2 font-medium">Role</th>
+                      <th className="py-3 px-2 font-medium">Action</th>
+                      <th className="py-3 px-2 font-medium">Details</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {systemActionLogs.map((activityLog) => {
+                    {filteredLogs.map((activityLog) => {
                       const detailsText = activityLog.details ? JSON.stringify(activityLog.details) : '—';
                       const isExpanded = Boolean(expandedDetailsRows[activityLog.id]);
                       const isLong = detailsText.length > 120;
                       const renderedDetails = isLong && !isExpanded ? `${detailsText.slice(0, 120)}...` : detailsText;
 
                       return (
-                        <tr key={activityLog.id} className="border-b border-gray-100 align-top">
-                          <td className="py-3 text-gray-700">{formatDateTime(activityLog.createdAt)}</td>
-                          <td className="py-3 text-gray-900">{activityLog.actorEmail}</td>
-                          <td className="py-3">
+                        <tr key={activityLog.id} className="border-b border-gray-100 align-top hover:bg-gray-50 transition-colors">
+                          <td className="py-3 px-2 text-gray-500 text-xs whitespace-nowrap">{formatDateTime(activityLog.createdAt)}</td>
+                          <td className="py-3 px-2 text-gray-900 text-xs">{activityLog.actorEmail}</td>
+                          <td className="py-3 px-2">
                             <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getRoleBadgeClass(activityLog.actorRole)}`}>
                               {activityLog.actorRole}
                             </span>
                           </td>
-                          <td className="py-3">
+                          <td className="py-3 px-2">
                             <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getActionBadgeClass(activityLog.action)}`}>
                               {activityLog.action}
                             </span>
                           </td>
-                          <td className="py-3">
+                          <td className="py-3 px-2">
                             <p className="max-w-lg whitespace-pre-wrap break-words text-xs text-gray-600">{renderedDetails}</p>
                             {isLong && (
                               <button
                                 onClick={() => toggleDetails(activityLog.id)}
                                 className="mt-1 text-xs font-medium text-blue-600 hover:underline"
                               >
-                                {isExpanded ? 'Show less' : 'Show more'}
+                                {isExpanded ? '▲ Show less' : '▼ Show more'}
                               </button>
                             )}
                           </td>
