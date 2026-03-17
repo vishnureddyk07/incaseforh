@@ -36,19 +36,31 @@ app.use((req, res, next) => {
     'http://10.5.12.85:5173',
     'http://10.5.12.85:5174',
     'https://incaseforh.vercel.app',
-    /^https:\/\/incaseforh-.*\.vercel\.app$/
+    /^https:\/\/incaseforh-[a-zA-Z0-9\-]+\.vercel\.app$/  // Match all Vercel preview/staging URLs
   ];
   const origin = req.headers.origin;
-  const allowed = allowedOrigins.some(ao => 
-    typeof ao === 'string' ? ao === origin : ao.test(origin)
-  );
+  console.log(`CORS check for origin: ${origin}`);
+  const allowed = allowedOrigins.some(ao => {
+    if (typeof ao === 'string') {
+      return ao === origin;
+    }
+    return ao.test(origin);
+  });
+  
   if (allowed) {
     res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    console.log(`✓ CORS allowed for: ${origin}`);
+  } else {
+    console.log(`✗ CORS denied for: ${origin}`);
   }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Authorization-Token');
+  res.header('Access-Control-Max-Age', '3600');
+  
   if (req.method === 'OPTIONS') {
-    console.log('Handling OPTIONS');
+    console.log('Handling OPTIONS preflight');
     res.sendStatus(200);
   } else {
     next();
@@ -964,17 +976,36 @@ router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (re
   }
 });
 
-// GET all emergency records (admin/manager)
+// GET all emergency records (admin/manager) with pagination
 router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) => {
   try {
-    console.log('Fetching all emergency records...');
-    const allEmergencies = await EmergencyInfo.find({})
+    console.log('Fetching emergency records with pagination...');
+    
+    // Get pagination params from query
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 20)); // Cap at 100 records per page
+    const skip = (page - 1) * limit;
+    
+    // Count total records
+    const total = await EmergencyInfo.countDocuments({});
+    
+    // Fetch paginated records
+    const records = await EmergencyInfo.find({})
       .sort({ createdAt: -1 })
-      .select('fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact')
+      .select('fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact allergies medications medicalConditions')
+      .skip(skip)
+      .limit(limit)
       .lean();
-    console.log(`Found ${allEmergencies.length} records`);
-    console.log('Sample photo URLs:', allEmergencies.slice(0, 2).map(e => ({ name: e.fullName, photo: e.photo })));
-    res.json(allEmergencies);
+    
+    console.log(`Fetched ${records.length} of ${total} records (page ${page}, limit ${limit})`);
+    
+    // Return pagination metadata
+    res.json({
+      total,
+      page,
+      limit,
+      records
+    });
   } catch (error) {
     console.error('Error fetching emergency records:', error);
     res.status(500).json({ error: 'Failed to fetch emergency records' });
