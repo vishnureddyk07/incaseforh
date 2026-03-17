@@ -1005,8 +1005,8 @@ router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) =>
     // Fast count for unfiltered listings
     const total = await EmergencyInfo.estimatedDocumentCount();
     const fields = includeQr
-      ? 'fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact allergies medications medicalConditions'
-      : 'fullName email photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact allergies medications medicalConditions';
+      ? 'fullName email qrCode createdAt phoneNumber dateOfBirth address bloodType emergencyContact allergies medications medicalConditions alternateNumber1 alternateNumber2'
+      : 'fullName email createdAt phoneNumber dateOfBirth address bloodType emergencyContact allergies medications medicalConditions alternateNumber1 alternateNumber2';
     
     // Fetch paginated records
     const records = await EmergencyInfo.find({})

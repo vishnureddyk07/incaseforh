@@ -24,8 +24,6 @@ interface EmergencyInfo {
 }
 
 export default function QRList() {
-  // Fallback placeholder if a photo is missing/404
-  const PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><rect width="120" height="120" fill="%23f3f4f6"/><circle cx="60" cy="45" r="22" fill="%23d1d5db"/><rect x="25" y="75" width="70" height="30" rx="12" fill="%23d1d5db"/></svg>';
   const [qrs, setQrs] = useState<EmergencyInfo[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
@@ -39,7 +37,6 @@ export default function QRList() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
-  const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
   const { isAuthenticated, token, user } = useAuth();
   const navigate = useNavigate();
 
@@ -82,86 +79,6 @@ export default function QRList() {
 
     fetchQrs();
   }, [API_BASE, isAuthenticated, token, user?.role, currentPage]);
-
-  // Resolve authenticated photo URLs into stable object URLs (or keep data URLs)
-  useEffect(() => {
-    let isActive = true;
-    const aborters: AbortController[] = [];
-    const createdBlobUrls: string[] = [];
-
-    const resolveSrc = (src: string): string => {
-      const trimmed = src.trim();
-      if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
-        return trimmed;
-      }
-      // Treat as backend-relative path - use env var or production default
-      const base = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
-      return trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`;
-    };
-
-    const resolvePhotos = async () => {
-      if (!isAuthenticated || !token) return;
-
-      const recordsWithPhotos = qrs.filter((rec) => Boolean(rec.photo));
-      const entries: Array<[string, string] | null> = [];
-      const CHUNK_SIZE = 8;
-
-      for (let i = 0; i < recordsWithPhotos.length; i += CHUNK_SIZE) {
-        const chunk = recordsWithPhotos.slice(i, i + CHUNK_SIZE);
-        const chunkEntries = await Promise.all(
-          chunk.map(async (rec): Promise<[string, string] | null> => {
-            if (!rec.photo) return null;
-            const resolved = resolveSrc(rec.photo.trim());
-            const id = rec._id;
-
-            if (resolved.startsWith('data:')) return [id, resolved];
-
-            try {
-              const controller = new AbortController();
-              aborters.push(controller);
-              const res = await fetch(resolved, {
-                headers: { Authorization: `Bearer ${token}` },
-                signal: controller.signal,
-              });
-              if (!res.ok) {
-                console.warn(`Photo fetch failed (${res.status}) for`, id, resolved);
-                return [id, PLACEHOLDER];
-              }
-              const blob = await res.blob();
-              const blobUrl = URL.createObjectURL(blob);
-              createdBlobUrls.push(blobUrl);
-              return [id, blobUrl];
-            } catch (e) {
-              console.warn('Photo resolve error for', id, e);
-              return [id, PLACEHOLDER];
-            }
-          })
-        );
-        entries.push(...chunkEntries);
-      }
-
-      if (isActive) {
-        const nextMap = new Map<string, string>(
-          entries.filter((e): e is [string, string] => e !== null)
-        );
-        setPhotoUrls((prev) => {
-          prev.forEach((url) => {
-            if (url.startsWith('blob:')) URL.revokeObjectURL(url);
-          });
-          return nextMap;
-        });
-      }
-    };
-
-    resolvePhotos();
-
-    return () => {
-      isActive = false;
-      aborters.forEach((c) => c.abort());
-      createdBlobUrls.forEach((url) => URL.revokeObjectURL(url));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qrs, isAuthenticated, token]);
 
   const handleOpen = (record: EmergencyInfo) => {
     const identifier = (record.email && record.email.trim()) || (record.phoneNumber && record.phoneNumber.trim());
@@ -550,11 +467,9 @@ export default function QRList() {
         {filteredQrs.map((qr) => (
           <div key={qr._id} className="bg-white p-4 rounded-lg shadow hover:shadow-md transition">
             <div className="flex gap-4 cursor-pointer" onClick={() => handleOpen(qr)}>
-              {qr.photo ? (
-                <img src={photoUrls.get(qr._id) || qr.photo} alt={qr.fullName} className="w-20 h-20 rounded object-cover border" />
-              ) : (
-                <div className="w-20 h-20 rounded bg-gray-100 grid place-items-center text-gray-500 text-xs">No Photo</div>
-              )}
+              <div className="w-20 h-20 rounded bg-gray-100 grid place-items-center text-gray-500 text-xs border">
+                No Photo
+              </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold">{qr.fullName}</h3>
                 <p className="text-sm text-gray-600">{qr.email || 'Email not provided'}</p>
