@@ -21,6 +21,9 @@ export default function ManagerDashboard() {
   const [empEmail, setEmpEmail] = useState('');
   const [empPassword, setEmpPassword] = useState('');
   const [creating, setCreating] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 20;
 
   useEffect(() => {
     if (!isAuthenticated || !token) return;
@@ -36,14 +39,17 @@ export default function ManagerDashboard() {
   const fetchRecords = () => {
     if (!token) return;
     setLoading(true);
-    fetch(`${apiBase}/api/v1/emergency`, {
+    fetch(`${apiBase}/api/v1/emergency?page=${page}&limit=${limit}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to load records');
         return res.json();
       })
-      .then((data) => setRecords(data))
+      .then((data) => {
+        setRecords(data.records || []);
+        setTotal(data.total || 0);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
@@ -51,7 +57,7 @@ export default function ManagerDashboard() {
   useEffect(() => {
     fetchRecords();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, page]);
 
   const sorted = useMemo(() => {
     return [...records].sort((a, b) => {

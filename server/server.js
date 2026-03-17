@@ -967,14 +967,26 @@ router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (re
 // GET all emergency records (admin/manager)
 router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) => {
   try {
-    console.log('Fetching all emergency records...');
-    const allEmergencies = await EmergencyInfo.find({})
+    const page = Math.max(1, Number.parseInt(String(req.query.page || '1'), 10) || 1);
+    const limit = Math.max(1, Number.parseInt(String(req.query.limit || '20'), 10) || 20);
+    const skip = (page - 1) * limit;
+
+    console.log(`Fetching emergency records page=${page}, limit=${limit}...`);
+
+    const total = await EmergencyInfo.countDocuments({});
+    const emergencyRecords = await EmergencyInfo.find({})
       .sort({ createdAt: -1 })
-      .select('fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact')
+      .skip(skip)
+      .limit(limit)
+      .select('fullName email createdAt phoneNumber dateOfBirth address bloodType emergencyContact emergencyContacts')
       .lean();
-    console.log(`Found ${allEmergencies.length} records`);
-    console.log('Sample photo URLs:', allEmergencies.slice(0, 2).map(e => ({ name: e.fullName, photo: e.photo })));
-    res.json(allEmergencies);
+
+    res.json({
+      total,
+      page,
+      limit,
+      records: emergencyRecords,
+    });
   } catch (error) {
     console.error('Error fetching emergency records:', error);
     res.status(500).json({ error: 'Failed to fetch emergency records' });

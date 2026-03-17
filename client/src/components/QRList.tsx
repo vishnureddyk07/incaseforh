@@ -27,6 +27,9 @@ export default function QRList() {
   // Fallback placeholder if a photo is missing/404
   const PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><rect width="120" height="120" fill="%23f3f4f6"/><circle cx="60" cy="45" r="22" fill="%23d1d5db"/><rect x="25" y="75" width="70" height="30" rx="12" fill="%23d1d5db"/></svg>';
   const [qrs, setQrs] = useState<EmergencyInfo[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 20;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +54,7 @@ export default function QRList() {
       }
 
       try {
-        const res = await fetch(`${API_BASE}/api/v1/emergency`, {
+        const res = await fetch(`${API_BASE}/api/v1/emergency?page=${page}&limit=${limit}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -66,7 +69,8 @@ export default function QRList() {
         }
 
         const data = await res.json();
-        setQrs(data);
+        setQrs(data.records || []);
+        setTotal(data.total || 0);
         setLoading(false);
       } catch (err) {
         console.error(err);
@@ -76,7 +80,7 @@ export default function QRList() {
     };
 
     fetchQrs();
-  }, [API_BASE, isAuthenticated, token, user?.role]);
+  }, [API_BASE, isAuthenticated, token, user?.role, page, limit]);
 
   // Resolve authenticated photo URLs into stable object URLs (or keep data URLs)
   useEffect(() => {
@@ -402,11 +406,12 @@ export default function QRList() {
       });
       if (!res.ok) throw new Error('Failed to update');
       // Refresh list
-      const listRes = await fetch(`${API_BASE}/api/v1/emergency`, {
+      const listRes = await fetch(`${API_BASE}/api/v1/emergency?page=${page}&limit=${limit}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await listRes.json();
-      setQrs(data);
+      setQrs(data.records || []);
+      setTotal(data.total || 0);
       setEditingRecord(null);
     } catch (err) {
       console.error(err);
@@ -484,7 +489,7 @@ export default function QRList() {
             <option value="oldest">Oldest First</option>
             <option value="name">Name (A-Z)</option>
           </select>
-          <span className="ml-auto text-sm text-gray-600">{filteredQrs.length} record(s)</span>
+          <span className="ml-auto text-sm text-gray-600">{filteredQrs.length} shown · {total} total</span>
           <div className="flex gap-2">
             <button
               type="button"
@@ -580,6 +585,31 @@ export default function QRList() {
           </div>
         ))}
       </div>
+
+      {/* Pagination */}
+      {total > limit && (
+        <div className="flex items-center justify-center gap-4 mt-8">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ← Previous
+          </button>
+          <span className="text-sm text-gray-700 font-medium">
+            Page {page} of {Math.ceil(total / limit)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(Math.ceil(total / limit), p + 1))}
+            disabled={page >= Math.ceil(total / limit)}
+            className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next →
+          </button>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {editingRecord && (
