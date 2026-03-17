@@ -27,6 +27,9 @@ export default function QRList() {
   // Fallback placeholder if a photo is missing/404
   const PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><rect width="120" height="120" fill="%23f3f4f6"/><circle cx="60" cy="45" r="22" fill="%23d1d5db"/><rect x="25" y="75" width="70" height="30" rx="12" fill="%23d1d5db"/></svg>';
   const [qrs, setQrs] = useState<EmergencyInfo[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const RECORDS_PER_PAGE = 20;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +54,7 @@ export default function QRList() {
       }
 
       try {
-        const res = await fetch(`${API_BASE}/api/v1/emergency`, {
+        const res = await fetch(`${API_BASE}/api/v1/emergency?page=${currentPage}&limit=${RECORDS_PER_PAGE}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -67,6 +70,7 @@ export default function QRList() {
 
         const data = await res.json();
         setQrs(data.records || []);
+        setTotalRecords(data.total || 0);
         setLoading(false);
       } catch (err) {
         console.error(err);
@@ -76,7 +80,7 @@ export default function QRList() {
     };
 
     fetchQrs();
-  }, [API_BASE, isAuthenticated, token, user?.role]);
+  }, [API_BASE, isAuthenticated, token, user?.role, currentPage]);
 
   // Resolve authenticated photo URLs into stable object URLs (or keep data URLs)
   useEffect(() => {
@@ -580,6 +584,30 @@ export default function QRList() {
           </div>
         ))}
       </div>
+
+      {/* Pagination Controls */}
+      {totalRecords > 0 && (
+        <div className="mt-8 flex flex-wrap justify-center gap-2 items-center">
+          <span className="text-sm text-gray-600">
+            Page <strong>{currentPage}</strong> | Total: <strong>{totalRecords}</strong> records
+          </span>
+          <div className="flex flex-wrap gap-1">
+            {Array.from({ length: Math.ceil(totalRecords / RECORDS_PER_PAGE) }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`px-3 py-1 rounded text-sm font-medium transition ${
+                  currentPage === page
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {editingRecord && (
