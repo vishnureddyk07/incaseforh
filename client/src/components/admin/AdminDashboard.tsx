@@ -90,15 +90,25 @@ export default function AdminDashboard() {
     if (!token) return;
     setIsFetchingEmergencyCount(true);
     try {
-      const res = await fetch(`${backendApiBaseUrl}/api/v1/emergency`, {
+      // Only fetch metadata (limit=1) to get the total count, not all records
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const res = await fetch(`${backendApiBaseUrl}/api/v1/emergency?limit=1`, {
         headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
+      
       if (!res.ok) throw new Error('Failed to fetch emergency records');
       const data = await res.json();
-      const records = Array.isArray(data) ? data : data?.records || data?.data || [];
-      setTotalEmergencyRecords(Array.isArray(records) ? records.length : 0);
+      // Correctly read the total from the pagination response
+      setTotalEmergencyRecords(data.total || 0);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to fetch emergency records';
+      const msg = err instanceof Error 
+        ? (err.name === 'AbortError' ? 'Request timeout - server took too long to respond' : err.message)
+        : 'Failed to fetch emergency records';
       setAdminDashboardError(msg);
     } finally {
       setIsFetchingEmergencyCount(false);

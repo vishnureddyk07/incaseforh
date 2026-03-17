@@ -66,7 +66,7 @@ export default function QRList() {
         }
 
         const data = await res.json();
-        setQrs(data);
+        setQrs(data.records || []);
         setLoading(false);
       } catch (err) {
         console.error(err);

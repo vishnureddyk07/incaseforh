@@ -43,7 +43,7 @@ export default function ManagerDashboard() {
         if (!res.ok) throw new Error('Failed to load records');
         return res.json();
       })
-      .then((data) => setRecords(data))
+      .then((data) => setRecords(data.records || []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
