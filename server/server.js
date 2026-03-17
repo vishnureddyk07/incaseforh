@@ -30,30 +30,35 @@ const GEONAMES_USERNAME = process.env.GEONAMES_USERNAME || '';
 // Middleware
 app.use((req, res, next) => {
   console.log(`Request: ${req.method} ${req.url}`);
-  const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://10.5.12.85:5173',
-    'http://10.5.12.85:5174',
-    'https://incaseforh.vercel.app',
-    /^https:\/\/incaseforh-.*\.vercel\.app$/
-  ];
-  const origin = req.headers.origin;
-  const allowed = allowedOrigins.some(ao => 
-    typeof ao === 'string' ? ao === origin : ao.test(origin)
-  );
-  if (allowed) {
-    res.header('Access-Control-Allow-Origin', origin);
-  }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  if (req.method === 'OPTIONS') {
-    console.log('Handling OPTIONS');
-    res.sendStatus(200);
-  } else {
-    next();
-  }
+  next();
 });
+
+const corsOriginPatterns = [
+  /^https:\/\/incaseforh\.vercel\.app$/,
+  /^https:\/\/incaseforh-.*\.vercel\.app$/,
+  /^http:\/\/localhost:5173$/,
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow tools like Postman/curl where Origin header is absent.
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      const isAllowed = corsOriginPatterns.some((pattern) => pattern.test(origin));
+      if (isAllowed) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Not allowed by CORS'));
+    },
+  })
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // FOR FormData PARSING
 
