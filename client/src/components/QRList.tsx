@@ -8,7 +8,7 @@ interface EmergencyInfo {
   _id: string;
   fullName: string;
   email?: string;
-  qrCode: string;
+  qrCode?: string;
   photo?: string;
   bloodType?: string;
   emergencyContact?: string;
@@ -54,7 +54,8 @@ export default function QRList() {
       }
 
       try {
-        const res = await fetch(`${API_BASE}/api/v1/emergency?page=${currentPage}&limit=${RECORDS_PER_PAGE}`, {
+        setLoading(true);
+        const res = await fetch(`${API_BASE}/api/v1/emergency?page=${currentPage}&limit=${RECORDS_PER_PAGE}&includeQr=false`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -286,13 +287,24 @@ export default function QRList() {
     }
   };
 
+  const fetchQrCodeById = async (recordId: string): Promise<string | null> => {
+    if (!token) return null;
+    const res = await fetch(`${API_BASE}/api/v1/admin/emergency/${recordId}/qrcode`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const payload = await res.json();
+    return typeof payload?.qrCode === 'string' ? payload.qrCode : null;
+  };
+
   const downloadSingle = async (record: EmergencyInfo) => {
-    if (!record.qrCode) {
-      alert('QR code not available for this record');
-      return;
-    }
     try {
-      const blob = dataUrlToBlob(record.qrCode);
+      const qrCodeData = record.qrCode || await fetchQrCodeById(record._id);
+      if (!qrCodeData) {
+        alert('QR code not available for this record');
+        return;
+      }
+      const blob = dataUrlToBlob(qrCodeData);
       const filename = `${(record.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_')}.png`;
       saveAs(blob, filename);
     } catch (err) {
@@ -322,12 +334,17 @@ export default function QRList() {
 
       for (const id of selectedIds) {
         const rec = filteredMap.get(id);
-        if (!rec || !rec.qrCode) {
+        if (!rec) {
           failCount++;
           continue;
         }
         try {
-          const blob = dataUrlToBlob(rec.qrCode);
+          const qrCodeData = rec.qrCode || await fetchQrCodeById(rec._id);
+          if (!qrCodeData) {
+            failCount++;
+            continue;
+          }
+          const blob = dataUrlToBlob(qrCodeData);
           const name = (rec.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_');
           zip.file(`${name}.png`, blob);
           successCount++;
@@ -406,11 +423,12 @@ export default function QRList() {
       });
       if (!res.ok) throw new Error('Failed to update');
       // Refresh list
-      const listRes = await fetch(`${API_BASE}/api/v1/emergency`, {
+      const listRes = await fetch(`${API_BASE}/api/v1/emergency?page=${currentPage}&limit=${RECORDS_PER_PAGE}&includeQr=false`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await listRes.json();
-      setQrs(data);
+      setQrs(data.records || []);
+      setTotalRecords(data.total || 0);
       setEditingRecord(null);
     } catch (err) {
       console.error(err);

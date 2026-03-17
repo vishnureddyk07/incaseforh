@@ -564,6 +564,21 @@ router.delete('/admin/emergency/:id', requireAuth, requireAdmin, async (req, res
   }
 });
 
+// Admin/Manager: fetch QR code payload for one record (used for lazy download)
+router.get('/admin/emergency/:id/qrcode', requireAuth, requireManagerOrAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = await EmergencyInfo.findById(id).select('qrCode fullName').lean();
+    if (!record) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+    res.json({ id, fullName: record.fullName, qrCode: record.qrCode || null });
+  } catch (error) {
+    console.error('Error fetching emergency QR code:', error);
+    res.status(500).json({ error: 'Failed to fetch QR code' });
+  }
+});
+
 // Admin: create manager credentials
 router.post('/admin/users/manager', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -985,16 +1000,21 @@ router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) =>
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 20)); // Cap at 100 records per page
     const skip = (page - 1) * limit;
+    const includeQr = String(req.query.includeQr || 'false').toLowerCase() === 'true';
     
-    // Count total records
-    const total = await EmergencyInfo.countDocuments({});
+    // Fast count for unfiltered listings
+    const total = await EmergencyInfo.estimatedDocumentCount();
+    const fields = includeQr
+      ? 'fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact allergies medications medicalConditions'
+      : 'fullName email photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact allergies medications medicalConditions';
     
     // Fetch paginated records
     const records = await EmergencyInfo.find({})
       .sort({ createdAt: -1 })
-      .select('fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact allergies medications medicalConditions')
+      .select(fields)
       .skip(skip)
       .limit(limit)
+      .maxTimeMS(15000)
       .lean();
     
     console.log(`Fetched ${records.length} of ${total} records (page ${page}, limit ${limit})`);
