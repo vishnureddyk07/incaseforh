@@ -8,7 +8,7 @@ interface EmergencyInfo {
   _id: string;
   fullName: string;
   email?: string;
-  qrCode?: string;
+  qrCode: string;
   photo?: string;
   bloodType?: string;
   emergencyContact?: string;
@@ -24,10 +24,12 @@ interface EmergencyInfo {
 }
 
 export default function QRList() {
+  // Fallback placeholder if a photo is missing/404
+  const PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><rect width="120" height="120" fill="%23f3f4f6"/><circle cx="60" cy="45" r="22" fill="%23d1d5db"/><rect x="25" y="75" width="70" height="30" rx="12" fill="%23d1d5db"/></svg>';
   const [qrs, setQrs] = useState<EmergencyInfo[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalRecords, setTotalRecords] = useState(0);
-  const RECORDS_PER_PAGE = 20;
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(20);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +39,7 @@ export default function QRList() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
+  const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
   const { isAuthenticated, token, user } = useAuth();
   const navigate = useNavigate();
 
@@ -51,8 +54,7 @@ export default function QRList() {
       }
 
       try {
-        setLoading(true);
-        const res = await fetch(`${API_BASE}/api/v1/emergency?page=${currentPage}&limit=${RECORDS_PER_PAGE}&includeQr=false`, {
+        const res = await fetch(`${API_BASE}/api/v1/emergency?page=${page}&limit=${limit}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -68,7 +70,7 @@ export default function QRList() {
 
         const data = await res.json();
         setQrs(data.records || []);
-        setTotalRecords(data.total || 0);
+        setTotal(data.total || 0);
         setLoading(false);
       } catch (err) {
         console.error(err);
@@ -78,7 +80,87 @@ export default function QRList() {
     };
 
     fetchQrs();
-  }, [API_BASE, isAuthenticated, token, user?.role, currentPage]);
+  }, [API_BASE, isAuthenticated, token, user?.role, page, limit]);
+
+  // Resolve authenticated photo URLs into stable object URLs (or keep data URLs)
+  useEffect(() => {
+    let isActive = true;
+    const aborters: AbortController[] = [];
+    const createdBlobUrls: string[] = [];
+
+    const resolveSrc = (src: string): string => {
+      const trimmed = src.trim();
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+        return trimmed;
+      }
+      // Treat as backend-relative path - use env var or production default
+      const base = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+      return trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`;
+    };
+
+    const resolvePhotos = async () => {
+      if (!isAuthenticated || !token) return;
+
+      const recordsWithPhotos = qrs.filter((rec) => Boolean(rec.photo));
+      const entries: Array<[string, string] | null> = [];
+      const CHUNK_SIZE = 8;
+
+      for (let i = 0; i < recordsWithPhotos.length; i += CHUNK_SIZE) {
+        const chunk = recordsWithPhotos.slice(i, i + CHUNK_SIZE);
+        const chunkEntries = await Promise.all(
+          chunk.map(async (rec): Promise<[string, string] | null> => {
+            if (!rec.photo) return null;
+            const resolved = resolveSrc(rec.photo.trim());
+            const id = rec._id;
+
+            if (resolved.startsWith('data:')) return [id, resolved];
+
+            try {
+              const controller = new AbortController();
+              aborters.push(controller);
+              const res = await fetch(resolved, {
+                headers: { Authorization: `Bearer ${token}` },
+                signal: controller.signal,
+              });
+              if (!res.ok) {
+                console.warn(`Photo fetch failed (${res.status}) for`, id, resolved);
+                return [id, PLACEHOLDER];
+              }
+              const blob = await res.blob();
+              const blobUrl = URL.createObjectURL(blob);
+              createdBlobUrls.push(blobUrl);
+              return [id, blobUrl];
+            } catch (e) {
+              console.warn('Photo resolve error for', id, e);
+              return [id, PLACEHOLDER];
+            }
+          })
+        );
+        entries.push(...chunkEntries);
+      }
+
+      if (isActive) {
+        const nextMap = new Map<string, string>(
+          entries.filter((e): e is [string, string] => e !== null)
+        );
+        setPhotoUrls((prev) => {
+          prev.forEach((url) => {
+            if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+          });
+          return nextMap;
+        });
+      }
+    };
+
+    resolvePhotos();
+
+    return () => {
+      isActive = false;
+      aborters.forEach((c) => c.abort());
+      createdBlobUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrs, isAuthenticated, token]);
 
   const handleOpen = (record: EmergencyInfo) => {
     const identifier = (record.email && record.email.trim()) || (record.phoneNumber && record.phoneNumber.trim());
@@ -204,24 +286,13 @@ export default function QRList() {
     }
   };
 
-  const fetchQrCodeById = async (recordId: string): Promise<string | null> => {
-    if (!token) return null;
-    const res = await fetch(`${API_BASE}/api/v1/admin/emergency/${recordId}/qrcode`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    const payload = await res.json();
-    return typeof payload?.qrCode === 'string' ? payload.qrCode : null;
-  };
-
   const downloadSingle = async (record: EmergencyInfo) => {
+    if (!record.qrCode) {
+      alert('QR code not available for this record');
+      return;
+    }
     try {
-      const qrCodeData = record.qrCode || await fetchQrCodeById(record._id);
-      if (!qrCodeData) {
-        alert('QR code not available for this record');
-        return;
-      }
-      const blob = dataUrlToBlob(qrCodeData);
+      const blob = dataUrlToBlob(record.qrCode);
       const filename = `${(record.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_')}.png`;
       saveAs(blob, filename);
     } catch (err) {
@@ -251,17 +322,12 @@ export default function QRList() {
 
       for (const id of selectedIds) {
         const rec = filteredMap.get(id);
-        if (!rec) {
+        if (!rec || !rec.qrCode) {
           failCount++;
           continue;
         }
         try {
-          const qrCodeData = rec.qrCode || await fetchQrCodeById(rec._id);
-          if (!qrCodeData) {
-            failCount++;
-            continue;
-          }
-          const blob = dataUrlToBlob(qrCodeData);
+          const blob = dataUrlToBlob(rec.qrCode);
           const name = (rec.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_');
           zip.file(`${name}.png`, blob);
           successCount++;
@@ -306,6 +372,7 @@ export default function QRList() {
         throw new Error(body.error || 'Failed to delete record');
       }
       setQrs((prev) => prev.filter((r) => r._id !== record._id));
+      setTotal((prev) => Math.max(0, prev - 1));
       setSelectedIds(new Set());
     } catch (err) {
       console.error(err);
@@ -340,12 +407,12 @@ export default function QRList() {
       });
       if (!res.ok) throw new Error('Failed to update');
       // Refresh list
-      const listRes = await fetch(`${API_BASE}/api/v1/emergency?page=${currentPage}&limit=${RECORDS_PER_PAGE}&includeQr=false`, {
+      const listRes = await fetch(`${API_BASE}/api/v1/emergency?page=${page}&limit=${limit}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await listRes.json();
       setQrs(data.records || []);
-      setTotalRecords(data.total || 0);
+      setTotal(data.total || 0);
       setEditingRecord(null);
     } catch (err) {
       console.error(err);
@@ -423,7 +490,7 @@ export default function QRList() {
             <option value="oldest">Oldest First</option>
             <option value="name">Name (A-Z)</option>
           </select>
-          <span className="ml-auto text-sm text-gray-600">{filteredQrs.length} record(s)</span>
+          <span className="ml-auto text-sm text-gray-600">{filteredQrs.length} shown • {total} total</span>
           <div className="flex gap-2">
             <button
               type="button"
@@ -467,9 +534,11 @@ export default function QRList() {
         {filteredQrs.map((qr) => (
           <div key={qr._id} className="bg-white p-4 rounded-lg shadow hover:shadow-md transition">
             <div className="flex gap-4 cursor-pointer" onClick={() => handleOpen(qr)}>
-              <div className="w-20 h-20 rounded bg-gray-100 grid place-items-center text-gray-500 text-xs border">
-                No Photo
-              </div>
+              {qr.photo ? (
+                <img src={photoUrls.get(qr._id) || qr.photo} alt={qr.fullName} className="w-20 h-20 rounded object-cover border" />
+              ) : (
+                <div className="w-20 h-20 rounded bg-gray-100 grid place-items-center text-gray-500 text-xs">No Photo</div>
+              )}
               <div className="flex-1">
                 <h3 className="text-lg font-semibold">{qr.fullName}</h3>
                 <p className="text-sm text-gray-600">{qr.email || 'Email not provided'}</p>
@@ -518,27 +587,27 @@ export default function QRList() {
         ))}
       </div>
 
-      {/* Pagination Controls */}
-      {totalRecords > 0 && (
-        <div className="mt-8 flex flex-wrap justify-center gap-2 items-center">
-          <span className="text-sm text-gray-600">
-            Page <strong>{currentPage}</strong> | Total: <strong>{totalRecords}</strong> records
+      {total > 0 && (
+        <div className="mt-8 flex items-center justify-center gap-4">
+          <button
+            type="button"
+            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+            disabled={page <= 1}
+            className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-gray-700 font-medium">
+            Page {page} of {Math.max(1, Math.ceil(total / limit))}
           </span>
-          <div className="flex flex-wrap gap-1">
-            {Array.from({ length: Math.ceil(totalRecords / RECORDS_PER_PAGE) }, (_, i) => i + 1).map((page) => (
-              <button
-                key={page}
-                onClick={() => setCurrentPage(page)}
-                className={`px-3 py-1 rounded text-sm font-medium transition ${
-                  currentPage === page
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-          </div>
+          <button
+            type="button"
+            onClick={() => setPage((prev) => Math.min(Math.ceil(total / limit), prev + 1))}
+            disabled={page >= Math.ceil(total / limit)}
+            className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
         </div>
       )}
 

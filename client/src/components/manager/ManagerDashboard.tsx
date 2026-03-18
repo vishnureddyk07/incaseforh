@@ -21,6 +21,9 @@ export default function ManagerDashboard() {
   const [empEmail, setEmpEmail] = useState('');
   const [empPassword, setEmpPassword] = useState('');
   const [creating, setCreating] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [limit] = useState(20);
 
   useEffect(() => {
     if (!isAuthenticated || !token) return;
@@ -36,14 +39,17 @@ export default function ManagerDashboard() {
   const fetchRecords = () => {
     if (!token) return;
     setLoading(true);
-    fetch(`${apiBase}/api/v1/emergency`, {
+    fetch(`${apiBase}/api/v1/emergency?page=${page}&limit=${limit}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to load records');
         return res.json();
       })
-      .then((data) => setRecords(data.records || []))
+      .then((data) => {
+        setRecords(data.records || []);
+        setTotal(data.total || 0);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
@@ -51,7 +57,7 @@ export default function ManagerDashboard() {
   useEffect(() => {
     fetchRecords();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, page]);
 
   const sorted = useMemo(() => {
     return [...records].sort((a, b) => {
@@ -131,38 +137,65 @@ export default function ManagerDashboard() {
 
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-lg font-semibold mb-4">Emergency Records (view-only)</h2>
+          <p className="text-sm text-gray-600 mb-2">{sorted.length} shown • {total} total</p>
           {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
           {loading ? (
             <p>Loading...</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="text-gray-600">
-                    <th className="py-2">Name</th>
-                    <th className="py-2">Email</th>
-                    <th className="py-2">Phone</th>
-                    <th className="py-2">Blood Type</th>
-                    <th className="py-2">Created</th>
-                    <th className="py-2">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.map((r) => (
-                    <tr key={r._id} className="border-t">
-                      <td className="py-2 font-medium">{r.fullName}</td>
-                      <td className="py-2">{r.email || '—'}</td>
-                      <td className="py-2">{r.phoneNumber || '—'}</td>
-                      <td className="py-2">{r.bloodType || '—'}</td>
-                      <td className="py-2">{r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</td>
-                      <td className="py-2">
-                        <button className="text-orange-600 hover:underline" onClick={() => handleOpen(r)}>Open</button>
-                      </td>
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="text-gray-600">
+                      <th className="py-2">Name</th>
+                      <th className="py-2">Email</th>
+                      <th className="py-2">Phone</th>
+                      <th className="py-2">Blood Type</th>
+                      <th className="py-2">Created</th>
+                      <th className="py-2">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {sorted.map((r) => (
+                      <tr key={r._id} className="border-t">
+                        <td className="py-2 font-medium">{r.fullName}</td>
+                        <td className="py-2">{r.email || '—'}</td>
+                        <td className="py-2">{r.phoneNumber || '—'}</td>
+                        <td className="py-2">{r.bloodType || '—'}</td>
+                        <td className="py-2">{r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</td>
+                        <td className="py-2">
+                          <button className="text-orange-600 hover:underline" onClick={() => handleOpen(r)}>Open</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {total > 0 && (
+                <div className="mt-6 flex items-center justify-center gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={page <= 1}
+                    className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-sm text-gray-700 font-medium">
+                    Page {page} of {Math.max(1, Math.ceil(total / limit))}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPage((prev) => Math.min(Math.ceil(total / limit), prev + 1))}
+                    disabled={page >= Math.ceil(total / limit)}
+                    className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
