@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
@@ -24,6 +24,8 @@ export default function ManagerDashboard() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [limit] = useState(20);
+  const [isPageLoading, setIsPageLoading] = useState(false);
+  const pageCacheRef = useRef<Map<number, { records: EmergencyInfo[]; total: number }>>(new Map());
 
   useEffect(() => {
     if (!isAuthenticated || !token) return;
@@ -38,7 +40,52 @@ export default function ManagerDashboard() {
 
   const fetchRecords = () => {
     if (!token) return;
-    setLoading(true);
+    const parsePaginatedData = (data: unknown, requestedPage: number) => {
+      if (Array.isArray(data)) {
+        const start = (requestedPage - 1) * limit;
+        return {
+          records: data.slice(start, start + limit) as EmergencyInfo[],
+          total: data.length,
+        };
+      }
+
+      const payload = data as { records?: EmergencyInfo[]; total?: number };
+      return {
+        records: payload.records || [],
+        total: payload.total || 0,
+      };
+    };
+
+    const prefetchPage = async (targetPage: number) => {
+      if (pageCacheRef.current.has(targetPage)) return;
+      try {
+        const prefetchRes = await fetch(`${apiBase}/api/v1/emergency?page=${targetPage}&limit=${limit}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!prefetchRes.ok) return;
+        const prefetchData = await prefetchRes.json();
+        const parsed = parsePaginatedData(prefetchData, targetPage);
+        pageCacheRef.current.set(targetPage, parsed);
+      } catch {
+        // Ignore prefetch errors to keep primary flow fast.
+      }
+    };
+
+    const cachedPage = pageCacheRef.current.get(page);
+    if (cachedPage) {
+      setRecords(cachedPage.records);
+      setTotal(cachedPage.total);
+      setLoading(false);
+      const totalPages = Math.max(1, Math.ceil(cachedPage.total / limit));
+      if (page < totalPages) {
+        void prefetchPage(page + 1);
+      }
+      return;
+    }
+
+    setIsPageLoading(true);
+    if (page === 1) setLoading(true);
+
     fetch(`${apiBase}/api/v1/emergency?page=${page}&limit=${limit}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -47,11 +94,20 @@ export default function ManagerDashboard() {
         return res.json();
       })
       .then((data) => {
-        setRecords(data.records || []);
-        setTotal(data.total || 0);
+        const parsed = parsePaginatedData(data, page);
+        setRecords(parsed.records);
+        setTotal(parsed.total);
+        pageCacheRef.current.set(page, parsed);
+        const totalPages = Math.max(1, Math.ceil(parsed.total / limit));
+        if (page < totalPages) {
+          void prefetchPage(page + 1);
+        }
       })
       .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setIsPageLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -177,18 +233,18 @@ export default function ManagerDashboard() {
                   <button
                     type="button"
                     onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                    disabled={page <= 1}
+                    disabled={page <= 1 || isPageLoading}
                     className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Previous
                   </button>
                   <span className="text-sm text-gray-700 font-medium">
-                    Page {page} of {Math.max(1, Math.ceil(total / limit))}
+                    Page {page} of {Math.max(1, Math.ceil(total / limit))}{isPageLoading ? ' • Loading...' : ''}
                   </span>
                   <button
                     type="button"
                     onClick={() => setPage((prev) => Math.min(Math.ceil(total / limit), prev + 1))}
-                    disabled={page >= Math.ceil(total / limit)}
+                    disabled={page >= Math.ceil(total / limit) || isPageLoading}
                     className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Next

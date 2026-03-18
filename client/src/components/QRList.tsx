@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
@@ -30,6 +30,8 @@ export default function QRList() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
+  const [isPageLoading, setIsPageLoading] = useState(false);
+  const pageCacheRef = useRef<Map<number, { records: EmergencyInfo[]; total: number }>>(new Map());
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,11 +48,61 @@ export default function QRList() {
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
   useEffect(() => {
+    const parsePaginatedData = (data: unknown, requestedPage: number) => {
+      if (Array.isArray(data)) {
+        const start = (requestedPage - 1) * limit;
+        return {
+          records: data.slice(start, start + limit) as EmergencyInfo[],
+          total: data.length,
+        };
+      }
+
+      const payload = data as { records?: EmergencyInfo[]; total?: number };
+      return {
+        records: payload.records || [],
+        total: payload.total || 0,
+      };
+    };
+
+    const prefetchPage = async (targetPage: number) => {
+      if (!isAuthenticated || !token || user?.role !== 'admin') return;
+      if (pageCacheRef.current.has(targetPage)) return;
+
+      try {
+        const prefetchRes = await fetch(`${API_BASE}/api/v1/emergency?page=${targetPage}&limit=${limit}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!prefetchRes.ok) return;
+        const prefetchData = await prefetchRes.json();
+        const parsed = parsePaginatedData(prefetchData, targetPage);
+        pageCacheRef.current.set(targetPage, parsed);
+      } catch {
+        // Ignore prefetch errors to keep primary flow fast.
+      }
+    };
+
     const fetchQrs = async () => {
       if (!isAuthenticated || !token || user?.role !== 'admin') {
         setLoading(false);
         setError('Admin login required to view QR list.');
         return;
+      }
+
+      const cachedPage = pageCacheRef.current.get(page);
+      if (cachedPage) {
+        setQrs(cachedPage.records);
+        setTotal(cachedPage.total);
+        setLoading(false);
+        const totalPages = Math.max(1, Math.ceil(cachedPage.total / limit));
+        if (page < totalPages) {
+          void prefetchPage(page + 1);
+        }
+        return;
+      }
+
+      setIsPageLoading(true);
+      if (page === 1) {
+        setLoading(true);
       }
 
       try {
@@ -69,13 +121,21 @@ export default function QRList() {
         }
 
         const data = await res.json();
-        setQrs(data.records || []);
-        setTotal(data.total || 0);
+        const parsed = parsePaginatedData(data, page);
+        setQrs(parsed.records);
+        setTotal(parsed.total);
+        pageCacheRef.current.set(page, parsed);
+        const totalPages = Math.max(1, Math.ceil(parsed.total / limit));
+        if (page < totalPages) {
+          void prefetchPage(page + 1);
+        }
         setLoading(false);
       } catch (err) {
         console.error(err);
         setError(err instanceof Error ? err.message : 'Failed to fetch QR list');
         setLoading(false);
+      } finally {
+        setIsPageLoading(false);
       }
     };
 
@@ -373,6 +433,7 @@ export default function QRList() {
       }
       setQrs((prev) => prev.filter((r) => r._id !== record._id));
       setTotal((prev) => Math.max(0, prev - 1));
+      pageCacheRef.current.clear();
       setSelectedIds(new Set());
     } catch (err) {
       console.error(err);
@@ -411,8 +472,13 @@ export default function QRList() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await listRes.json();
-      setQrs(data.records || []);
-      setTotal(data.total || 0);
+      const parsed = Array.isArray(data)
+        ? { records: data.slice((page - 1) * limit, (page - 1) * limit + limit), total: data.length }
+        : { records: data.records || [], total: data.total || 0 };
+      setQrs(parsed.records);
+      setTotal(parsed.total);
+      pageCacheRef.current.clear();
+      pageCacheRef.current.set(page, parsed);
       setEditingRecord(null);
     } catch (err) {
       console.error(err);
@@ -592,18 +658,18 @@ export default function QRList() {
           <button
             type="button"
             onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-            disabled={page <= 1}
+            disabled={page <= 1 || isPageLoading}
             className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Previous
           </button>
           <span className="text-sm text-gray-700 font-medium">
-            Page {page} of {Math.max(1, Math.ceil(total / limit))}
+            Page {page} of {Math.max(1, Math.ceil(total / limit))}{isPageLoading ? ' • Loading...' : ''}
           </span>
           <button
             type="button"
             onClick={() => setPage((prev) => Math.min(Math.ceil(total / limit), prev + 1))}
-            disabled={page >= Math.ceil(total / limit)}
+            disabled={page >= Math.ceil(total / limit) || isPageLoading}
             className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Next
