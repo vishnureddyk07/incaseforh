@@ -262,9 +262,7 @@ export default function EmergencyQRCode() {
     if (configuredPublicBase && /^https?:\/\//i.test(configuredPublicBase)) {
       return configuredPublicBase.replace(/\/+$/, '');
     }
-    if (typeof window !== 'undefined' && window.location?.origin) {
-      return window.location.origin.replace(/\/+$/, '');
-    }
+    // Always fall back to the public production site, not preview/staging origin.
     return 'https://incaseforh.vercel.app';
   };
 

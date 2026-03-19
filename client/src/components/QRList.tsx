@@ -205,9 +205,7 @@ export default function QRList() {
     if (configuredPublicBase && /^https?:\/\//i.test(configuredPublicBase)) {
       return configuredPublicBase.replace(/\/+$/, '');
     }
-    if (typeof window !== 'undefined' && window.location?.origin) {
-      return window.location.origin.replace(/\/+$/, '');
-    }
+    // Use public production URL to keep QR scans accessible without deployment auth.
     return 'https://incaseforh.vercel.app';
   };
 
