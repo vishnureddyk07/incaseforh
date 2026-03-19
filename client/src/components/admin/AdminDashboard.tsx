@@ -90,7 +90,7 @@ export default function AdminDashboard() {
     if (!token) return;
     setIsFetchingEmergencyCount(true);
     try {
-      const res = await fetch(`${backendApiBaseUrl}/api/v1/emergency`, {
+      const res = await fetch(`${backendApiBaseUrl}/api/v1/emergency?view=list&limit=1`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Failed to fetch emergency records');

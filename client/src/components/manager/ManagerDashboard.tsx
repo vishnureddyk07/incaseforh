@@ -36,7 +36,7 @@ export default function ManagerDashboard() {
   const fetchRecords = () => {
     if (!token) return;
     setLoading(true);
-    fetch(`${apiBase}/api/v1/emergency`, {
+    fetch(`${apiBase}/api/v1/emergency?view=list`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {

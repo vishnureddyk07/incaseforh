@@ -969,32 +969,50 @@ router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (re
 router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) => {
   try {
     console.log('Fetching all emergency records...');
-    const allEmergencies = await EmergencyInfo.aggregate([
-      { $sort: { createdAt: -1 } },
-      {
-        $project: {
-          fullName: 1,
-          email: 1,
-          qrCode: 1,
-          createdAt: 1,
-          phoneNumber: 1,
-          dateOfBirth: 1,
-          address: 1,
-          bloodType: 1,
-          emergencyContact: 1,
-          hasPhoto: {
-            $gt: [
-              {
-                $strLenCP: {
-                  $ifNull: ['$photo', ''],
-                },
-              },
-              0,
-            ],
+    const includeQr = String(req.query.includeQr || '').toLowerCase() === 'true' || String(req.query.includeQr) === '1';
+    const includePhoto = String(req.query.includePhoto || '').toLowerCase() === 'true' || String(req.query.includePhoto) === '1';
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limitRaw = parseInt(req.query.limit, 10);
+    const hasLimit = Number.isFinite(limitRaw) && limitRaw > 0;
+    const limit = hasLimit ? Math.min(limitRaw, 100) : null;
+    const skip = hasLimit ? (page - 1) * limit : 0;
+
+    const projectStage = {
+      _id: 1,
+      fullName: 1,
+      email: 1,
+      createdAt: 1,
+      phoneNumber: 1,
+      dateOfBirth: 1,
+      address: 1,
+      bloodType: 1,
+      emergencyContact: 1,
+      hasPhoto: {
+        $gt: [
+          {
+            $strLenCP: {
+              $ifNull: ['$photo', ''],
+            },
           },
-        },
+          0,
+        ],
       },
-    ]);
+    };
+
+    if (includeQr) {
+      projectStage.qrCode = 1;
+    }
+    if (includePhoto) {
+      projectStage.photo = 1;
+    }
+
+    const pipeline = [{ $sort: { createdAt: -1 } }];
+    if (hasLimit) {
+      pipeline.push({ $skip: skip }, { $limit: limit });
+    }
+    pipeline.push({ $project: projectStage });
+
+    const allEmergencies = await EmergencyInfo.aggregate(pipeline);
     console.log(`Found ${allEmergencies.length} records`);
     res.json(allEmergencies);
   } catch (error) {
