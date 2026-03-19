@@ -27,6 +27,7 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod';
 const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || null;
 const GEONAMES_USERNAME = process.env.GEONAMES_USERNAME || '';
+const FRONTEND_APP_URL = (process.env.FRONTEND_APP_URL || 'https://incaseforh.vercel.app').replace(/\/+$/, '');
 
 // Middleware
 app.use((req, res, next) => {
@@ -1037,6 +1038,12 @@ app.get('/health', async (req, res) => {
   } catch (error) {
     res.status(500).json({ status: 'unhealthy', mongodb: 'disconnected' });
   }
+});
+
+// Backward compatibility for older QR codes that used backend host.
+app.get('/emergencyinfo/:identifier', (req, res) => {
+  const { identifier } = req.params;
+  return res.redirect(302, `${FRONTEND_APP_URL}/emergencyinfo/${encodeURIComponent(identifier)}`);
 });
 
 // Environment check endpoint (does not leak secrets)
