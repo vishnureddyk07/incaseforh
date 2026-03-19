@@ -4,7 +4,7 @@ const ActionLogSchema = new mongoose.Schema(
   {
     actorId: { type: String, required: true },
     actorEmail: { type: String, required: true },
-    actorRole: { type: String, enum: ['admin', 'manager'], required: true },
+    actorRole: { type: String, enum: ['admin', 'manager', 'public'], required: true },
     action: { type: String, required: true },
     details: { type: Object, default: {} },
   },

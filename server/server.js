@@ -9,6 +9,7 @@ import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 import ActionLog from './models/ActionLog.js';
 import Hospital from './models/Hospital.js';
+import SosAlert from './models/SosAlert.js';
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -1103,33 +1104,87 @@ router.get('/hospitals/nearby', externalApiLimiter, async (req, res) => {
 // Public: Trigger SOS alert
 router.post('/sos/trigger', sosLimiter, async (req, res) => {
   try {
-    const { location, timestamp, emergencyContacts, victimName, victimPhone } = req.body;
+    const {
+      victimName,
+      victimPhone,
+      victimBloodType,
+      victimAllergies,
+      victimMedications,
+      victimEmergencyContacts,
+      responderLocation,
+      responderUserAgent,
+      triggeredAt,
+    } = req.body || {};
 
-    if (!location || !timestamp) {
-      return res.status(400).json({ error: 'Location and timestamp are required' });
+    const lat = Number(responderLocation?.lat);
+    const lng = Number(responderLocation?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: 'Responder location with valid lat and lng is required' });
     }
 
-    // Log SOS event for audit
-    if (emergencyContacts && Array.isArray(emergencyContacts) && emergencyContacts.length > 0) {
-      const primaryContact = emergencyContacts[0];
-      console.log(`🚨 SOS TRIGGERED - Victim: ${victimName || 'Unknown'} (${victimPhone || 'No phone'})`);
-      console.log(`   Location: ${location.lat}, ${location.lng}`);
-      console.log(`   Primary Contact: ${primaryContact.name} - ${primaryContact.phone}`);
+    const safeEmergencyContacts = Array.isArray(victimEmergencyContacts)
+      ? victimEmergencyContacts
+          .filter((c) => c && typeof c === 'object' && !Array.isArray(c))
+          .map((c) => ({
+            name: stripHtml(sanitizeMongoValue(c.name) || ''),
+            phone: stripHtml(sanitizeMongoValue(c.phone) || ''),
+            relationship: stripHtml(sanitizeMongoValue(c.relationship) || ''),
+          }))
+      : [];
 
-      // TODO: Implement actual SMS/WhatsApp notifications
-      // For now, just log it
-      console.log(`   📱 Would send SOS notification to ${emergencyContacts.length} contacts`);
-    }
-
-    res.json({ 
-      message: 'SOS triggered successfully',
-      contactsNotified: emergencyContacts ? emergencyContacts.length : 0,
-      timestamp 
+    const alert = await SosAlert.create({
+      victimName: stripHtml(sanitizeMongoValue(victimName) || ''),
+      victimPhone: stripHtml(sanitizeMongoValue(victimPhone) || ''),
+      victimBloodType: stripHtml(sanitizeMongoValue(victimBloodType) || ''),
+      victimAllergies: stripHtml(sanitizeMongoValue(victimAllergies) || ''),
+      victimMedications: stripHtml(sanitizeMongoValue(victimMedications) || ''),
+      victimEmergencyContacts: safeEmergencyContacts,
+      responderLocation: { lat, lng },
+      responderUserAgent: stripHtml(sanitizeMongoValue(responderUserAgent) || ''),
+      responderIP: req.ip || '',
+      triggeredAt: triggeredAt ? new Date(triggeredAt) : new Date(),
+      status: 'active',
     });
+
+    await ActionLog.create({
+      actorId: 'public',
+      actorEmail: 'public@anonymous',
+      actorRole: 'public',
+      action: 'sos_trigger',
+      details: {
+        alertId: alert._id.toString(),
+        victimName: alert.victimName,
+        victimPhone: alert.victimPhone,
+        responderLocation: alert.responderLocation,
+      },
+    });
+
+    console.log(`🚨 SOS TRIGGERED - Alert ${alert._id.toString()}`);
+    console.log(`   Victim: ${alert.victimName || 'Unknown'} (${alert.victimPhone || 'No phone'})`);
+    console.log(`   Location: ${lat}, ${lng}`);
+
+    return res.status(201).json(alert);
   } catch (error) {
     console.error('Error triggering SOS:', error);
-    // Don't block the emergency - respond with success anyway
-    res.json({ message: 'SOS recorded' });
+    return res.status(500).json({ error: 'Failed to trigger SOS alert' });
+  }
+});
+
+// Public: get SOS alert by id for police and ambulance pages
+router.get('/sos/:id', readLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid alert ID' });
+    }
+    const alert = await SosAlert.findById(id).lean();
+    if (!alert) {
+      return res.status(404).json({ error: 'SOS alert not found' });
+    }
+    return res.json(alert);
+  } catch (error) {
+    console.error('Error fetching SOS alert:', error);
+    return res.status(500).json({ error: 'Failed to fetch SOS alert' });
   }
 });
 

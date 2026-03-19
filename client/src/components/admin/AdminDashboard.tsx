@@ -180,11 +180,17 @@ export default function AdminDashboard() {
   };
 
   const getActionBadgeClass = (action: string) => {
+    if (action.includes('sos')) return 'bg-red-100 text-red-700 border-red-200';
     if (action === 'qr_scan') return 'bg-orange-100 text-orange-700 border-orange-200';
     if (action === 'login') return 'bg-blue-100 text-blue-700 border-blue-200';
     if (action.includes('delete')) return 'bg-red-100 text-red-700 border-red-200';
     if (action.includes('create')) return 'bg-green-100 text-green-700 border-green-200';
     return 'bg-gray-100 text-gray-700 border-gray-200';
+  };
+
+  const getActionLabel = (action: string) => {
+    if (action.includes('sos')) return 'SOS triggered';
+    return action;
   };
 
   const toCsvCell = (value: unknown) => {
@@ -533,7 +539,7 @@ export default function AdminDashboard() {
                           </td>
                           <td className="py-3 px-2">
                             <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getActionBadgeClass(activityLog.action)}`}>
-                              {activityLog.action}
+                              {getActionLabel(activityLog.action)}
                             </span>
                           </td>
                           <td className="py-3 px-2">
