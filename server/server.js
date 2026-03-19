@@ -1041,7 +1041,13 @@ app.get('/health', async (req, res) => {
 });
 
 // Backward compatibility for older QR codes that used backend host.
-app.get('/emergencyinfo/:identifier', (req, res) => {
+app.get([
+  '/emergencyinfo/:identifier',
+  '/emergency-info/:identifier',
+  '/emrgencyinfo/:identifier',
+  '/emrgency-info/:identifier',
+  '/emrgency info/:identifier',
+], (req, res) => {
   const { identifier } = req.params;
   return res.redirect(302, `${FRONTEND_APP_URL}/emergencyinfo/${encodeURIComponent(identifier)}`);
 });

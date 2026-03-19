@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
+import * as QRCodeLib from 'qrcode';
 import { useAuth } from "../context/AuthContext";
 
 interface EmergencyInfo {
@@ -199,6 +200,33 @@ export default function QRList() {
     }
   };
 
+  const resolvePublicAppBase = () => {
+    const configuredPublicBase = import.meta.env.VITE_PUBLIC_APP_URL?.trim();
+    if (configuredPublicBase && /^https?:\/\//i.test(configuredPublicBase)) {
+      return configuredPublicBase.replace(/\/+$/, '');
+    }
+    return 'https://incaseforh.vercel.app';
+  };
+
+  const buildEmergencyPageUrl = (record: EmergencyInfo) => {
+    const identifier = (record.email && record.email.trim()) || (record.phoneNumber && record.phoneNumber.trim());
+    if (!identifier) return null;
+    return `${resolvePublicAppBase()}/emergencyinfo/${encodeURIComponent(identifier)}`;
+  };
+
+  const generateFreshQrDataUrl = async (record: EmergencyInfo): Promise<string | null> => {
+    const pageUrl = buildEmergencyPageUrl(record);
+    if (!pageUrl) return null;
+    return QRCodeLib.toDataURL(pageUrl, {
+      width: 300,
+      margin: 1,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF',
+      },
+    });
+  };
+
   const fetchRecordForDownload = async (record: EmergencyInfo): Promise<EmergencyInfo> => {
     if (record.qrCode) return record;
     const identifier = (record.email && record.email.trim()) || (record.phoneNumber && record.phoneNumber.trim());
@@ -215,12 +243,17 @@ export default function QRList() {
 
   const downloadSingle = async (record: EmergencyInfo) => {
     try {
-      const targetRecord = await fetchRecordForDownload(record);
-      if (!targetRecord.qrCode) {
+      const freshQrCode = await generateFreshQrDataUrl(record);
+      let qrToDownload = freshQrCode;
+      if (!qrToDownload) {
+        const targetRecord = await fetchRecordForDownload(record);
+        qrToDownload = targetRecord.qrCode || null;
+      }
+      if (!qrToDownload) {
         throw new Error('QR code not available for this record');
       }
-      const blob = dataUrlToBlob(targetRecord.qrCode);
-      const filename = `${(targetRecord.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_')}.png`;
+      const blob = dataUrlToBlob(qrToDownload);
+      const filename = `${(record.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_')}.png`;
       saveAs(blob, filename);
     } catch (err) {
       console.error('Download error:', err);
@@ -254,13 +287,17 @@ export default function QRList() {
           continue;
         }
         try {
-          const targetRecord = await fetchRecordForDownload(rec);
-          if (!targetRecord.qrCode) {
-            failCount++;
-            continue;
+          let qrToDownload = await generateFreshQrDataUrl(rec);
+          if (!qrToDownload) {
+            const targetRecord = await fetchRecordForDownload(rec);
+            qrToDownload = targetRecord.qrCode || null;
+            if (!qrToDownload) {
+              failCount++;
+              continue;
+            }
           }
-          const blob = dataUrlToBlob(targetRecord.qrCode);
-          const name = (targetRecord.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_');
+          const blob = dataUrlToBlob(qrToDownload);
+          const name = (rec.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_');
           zip.file(`${name}.png`, blob);
           successCount++;
         } catch (err) {
