@@ -969,12 +969,33 @@ router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (re
 router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) => {
   try {
     console.log('Fetching all emergency records...');
-    const allEmergencies = await EmergencyInfo.find({})
-      .sort({ createdAt: -1 })
-      .select('fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact')
-      .lean();
+    const allEmergencies = await EmergencyInfo.aggregate([
+      { $sort: { createdAt: -1 } },
+      {
+        $project: {
+          fullName: 1,
+          email: 1,
+          qrCode: 1,
+          createdAt: 1,
+          phoneNumber: 1,
+          dateOfBirth: 1,
+          address: 1,
+          bloodType: 1,
+          emergencyContact: 1,
+          hasPhoto: {
+            $gt: [
+              {
+                $strLenCP: {
+                  $ifNull: ['$photo', ''],
+                },
+              },
+              0,
+            ],
+          },
+        },
+      },
+    ]);
     console.log(`Found ${allEmergencies.length} records`);
-    console.log('Sample photo URLs:', allEmergencies.slice(0, 2).map(e => ({ name: e.fullName, photo: e.photo })));
     res.json(allEmergencies);
   } catch (error) {
     console.error('Error fetching emergency records:', error);
