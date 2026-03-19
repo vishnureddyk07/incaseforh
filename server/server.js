@@ -29,7 +29,18 @@ const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || null;
 const GEONAMES_USERNAME = process.env.GEONAMES_USERNAME || '';
 const FRONTEND_APP_URL = (process.env.FRONTEND_APP_URL || 'https://incaseforh.vercel.app').replace(/\/+$/, '');
 
+const redirectLegacyEmergencyInfoRoute = (req, res, next) => {
+  const path = req.path || '';
+  const legacyPattern = /^\/(?:emergencyinfo|emergency-info|emrgencyinfo|emrgency-info|emrgency info)\/([^/?#]+)$/i;
+  const match = path.match(legacyPattern);
+  if (!match) return next();
+
+  const identifier = decodeURIComponent(match[1]);
+  return res.redirect(302, `${FRONTEND_APP_URL}/emergencyinfo/${encodeURIComponent(identifier)}`);
+};
+
 // Middleware
+app.use(redirectLegacyEmergencyInfoRoute);
 app.use((req, res, next) => {
   console.log(`Request: ${req.method} ${req.url}`);
   const allowedOrigins = [
