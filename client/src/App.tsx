@@ -17,6 +17,8 @@ import ChangePassword from './components/auth/ChangePassword';
 import ManagerLogin from './components/auth/ManagerLogin';
 import ManagerDashboard from './components/manager/ManagerDashboard';
 import EmployeeLogin from './components/auth/EmployeeLogin';
+import SosPolice from './pages/SosPolice';
+import SosAmbulance from './pages/SosAmbulance';
 
 function MainContent() {
   return (
@@ -76,6 +78,8 @@ function AppContent() {
       <Route path="/change-password" element={<ChangePassword />} />
       <Route path="/emer" element={<div>hi</div>} />
       <Route path="/assist" element={<EmergencyAssistPage />} />
+      <Route path="/sos/police" element={<SosPolice />} />
+      <Route path="/sos/ambulance" element={<SosAmbulance />} />
     </Routes>
   );
 }
