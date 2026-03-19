@@ -2,7 +2,7 @@ name: Render Backend Deploy Hook
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, staging ]
   workflow_dispatch:
 
 jobs:
