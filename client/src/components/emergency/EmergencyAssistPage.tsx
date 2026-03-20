@@ -37,7 +37,11 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [sosTriggered, setSosTriggered] = useState(false);
+  const [sosCountdown, setSosCountdown] = useState<number | null>(null);
+  const [isTriggeringSos, setIsTriggeringSos] = useState(false);
+  const [sosAlertId, setSosAlertId] = useState<string | null>(null);
+  const [sosSuccessMessage, setSosSuccessMessage] = useState<string | null>(null);
+  const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
 
   // Get user location on component mount
   useEffect(() => {
@@ -99,37 +103,99 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
     }
   };
 
-  const handleSOSButton = () => {
-    setSosTriggered(true);
-    console.log('🚨 [AssistPage] SOS pressed');
-    // Trigger SOS alert to emergency contacts
-    triggerSOS();
-    // Auto-call 108 after 2 seconds
-    setTimeout(() => {
-      console.log('📞 [AssistPage] Auto-calling 108');
-      window.location.href = 'tel:108';
-    }, 500);
+  const startSosCountdown = () => {
+    if (isTriggeringSos) return;
+    setSosErrorMessage(null);
+    setSosSuccessMessage(null);
+    setSosAlertId(null);
+    setSosCountdown(10);
+  };
+
+  const cancelSosCountdown = () => {
+    setSosCountdown(null);
+    setSosErrorMessage(null);
   };
 
   const triggerSOS = async () => {
-    if (!location) return;
+    if (!location) {
+      setSosErrorMessage('Location is unavailable. Please enable location access and try again.');
+      return;
+    }
+
+    setIsTriggeringSos(true);
+    setSosErrorMessage(null);
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
-      await fetch(`${apiUrl}/api/v1/sos/trigger`, {
+      const response = await fetch(`${apiUrl}/api/v1/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          location,
-          timestamp: new Date().toISOString(),
-          emergencyContacts: emergencyData?.emergencyContacts || [],
+          victimName: emergencyData?.fullName || 'Unknown',
+          victimPhone: emergencyData?.phoneNumber || '',
+          victimBloodType: emergencyData?.bloodType || '',
+          victimAllergies: emergencyData?.allergies || '',
+          victimMedications: emergencyData?.medications || '',
+          victimEmergencyContacts: emergencyData?.emergencyContacts || [],
+          responderName: '',
+          responderPhone: '',
+          responderLocation: {
+            lat: location.lat,
+            lng: location.lng,
+          },
+          responderLocationAccuracy: null,
+          responderLocationMeta: {
+            altitude: null,
+            heading: null,
+            speed: null,
+            capturedAt: new Date().toISOString(),
+          },
+          responderUserAgent: navigator.userAgent,
+          triggeredAt: new Date().toISOString(),
         }),
       });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || 'Failed to trigger SOS alert');
+      }
+
+      const alert = await response.json();
+      const alertId = alert?._id as string | undefined;
+      setSosAlertId(alertId || null);
+      setSosSuccessMessage('SOS alert sent. Police and ambulance have been notified.');
+
+      // Auto-call emergency number after successful SOS trigger.
+      setTimeout(() => {
+        console.log('📞 [AssistPage] Auto-calling 108');
+        window.location.href = 'tel:108';
+      }, 500);
+
       console.log('✅ [AssistPage] SOS payload sent');
     } catch (err) {
       console.error('Error triggering SOS:', err);
+      const message = err instanceof Error ? err.message : 'Failed to trigger SOS alert';
+      setSosErrorMessage(message);
+    } finally {
+      setIsTriggeringSos(false);
     }
   };
+
+  useEffect(() => {
+    if (sosCountdown === null || isTriggeringSos) return;
+
+    if (sosCountdown === 0) {
+      setSosCountdown(null);
+      triggerSOS();
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setSosCountdown((prev) => (prev === null ? null : prev - 1));
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [sosCountdown, isTriggeringSos]);
 
   const callHospital = (phone: string) => {
     console.log('📞 [AssistPage] Calling hospital', phone);
@@ -163,17 +229,45 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
       {/* SOS Button */}
       <div className="sticky top-16 z-40 bg-white/95 backdrop-blur p-3 shadow-lg border-b-2 border-red-500">
         <div className="max-w-4xl mx-auto">
-          <button
-            onClick={handleSOSButton}
-            disabled={sosTriggered}
-            className={`w-full py-4 rounded-lg font-bold text-lg transition-all transform active:scale-95 shadow-lg ${
-              sosTriggered
-                ? 'bg-green-500 text-white'
-                : 'bg-red-600 text-white hover:bg-red-700 hover:shadow-xl'
-            }`}
-          >
-            {sosTriggered ? '✅ SOS ALERT SENT' : '🚨 EMERGENCY SOS'}
-          </button>
+          {sosCountdown === null ? (
+            <button
+              onClick={startSosCountdown}
+              disabled={isTriggeringSos}
+              className="w-full py-4 rounded-lg font-bold text-lg transition-all transform active:scale-95 shadow-lg bg-red-600 text-white hover:bg-red-700 hover:shadow-xl disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isTriggeringSos ? '🚨 Sending SOS Alert...' : '🚨 EMERGENCY SOS'}
+            </button>
+          ) : (
+            <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-red-700">
+                Warning: Triggering false SOS is a criminal offence. Alert will be sent to police and ambulance in {sosCountdown} seconds.
+              </p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-2xl font-extrabold text-red-700 tabular-nums">{sosCountdown}</p>
+                <button
+                  type="button"
+                  onClick={cancelSosCountdown}
+                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {sosSuccessMessage && (
+            <p className="mt-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
+              {sosSuccessMessage}
+            </p>
+          )}
+          {sosErrorMessage && (
+            <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {sosErrorMessage}
+            </p>
+          )}
+          {sosAlertId && (
+            <p className="mt-2 text-center text-xs font-medium text-gray-600">Alert ID: {sosAlertId}</p>
+          )}
           <p className="text-xs text-gray-600 text-center mt-2 font-medium">Notifies family & emergency services with location</p>
         </div>
       </div>
