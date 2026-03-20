@@ -49,6 +49,8 @@ export default function EmergencyInfoDisplay() {
   const [sosAlertId, setSosAlertId] = useState<string | null>(null);
   const [sosSuccessMessage, setSosSuccessMessage] = useState<string | null>(null);
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
+  const [responderName, setResponderName] = useState('');
+  const [responderPhone, setResponderPhone] = useState('');
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
@@ -227,13 +229,37 @@ export default function EmergencyInfoDisplay() {
     }
   };
 
-  const getResponderLocation = async () => {
+  const getResponderLocation = async (): Promise<{
+    lat: number;
+    lng: number;
+    accuracy: number | null;
+    altitude: number | null;
+    heading: number | null;
+    speed: number | null;
+    capturedAt: string;
+  } | null> => {
     if ('geolocation' in navigator) {
       try {
-        const coords = await new Promise<{ lat: number; lng: number }>((resolve, reject) => {
+        const coords = await new Promise<{
+          lat: number;
+          lng: number;
+          accuracy: number | null;
+          altitude: number | null;
+          heading: number | null;
+          speed: number | null;
+          capturedAt: string;
+        }>((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(
             (position) => {
-              resolve({ lat: position.coords.latitude, lng: position.coords.longitude });
+              resolve({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                accuracy: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+                altitude: Number.isFinite(position.coords.altitude) ? position.coords.altitude : null,
+                heading: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
+                speed: Number.isFinite(position.coords.speed) ? position.coords.speed : null,
+                capturedAt: new Date(position.timestamp).toISOString(),
+              });
             },
             reject,
             { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
@@ -244,7 +270,18 @@ export default function EmergencyInfoDisplay() {
         console.warn('Unable to refresh responder GPS location, using current page location', geoErr);
       }
     }
-    return location;
+    if (!location) {
+      return null;
+    }
+    return {
+      lat: location.lat,
+      lng: location.lng,
+      accuracy: null,
+      altitude: null,
+      heading: null,
+      speed: null,
+      capturedAt: new Date().toISOString(),
+    };
   };
 
   const triggerSOSAlert = async () => {
@@ -254,8 +291,8 @@ export default function EmergencyInfoDisplay() {
     setSosSuccessMessage(null);
 
     try {
-      const responderLocation = await getResponderLocation();
-      if (!responderLocation) {
+      const responderDetails = await getResponderLocation();
+      if (!responderDetails) {
         throw new Error('Responder location is unavailable. Please enable location and try again.');
       }
 
@@ -269,7 +306,19 @@ export default function EmergencyInfoDisplay() {
           victimAllergies: info.allergies || '',
           victimMedications: info.medications || '',
           victimEmergencyContacts: info.emergencyContacts || [],
-          responderLocation,
+          responderName: responderName.trim(),
+          responderPhone: responderPhone.trim(),
+          responderLocation: {
+            lat: responderDetails.lat,
+            lng: responderDetails.lng,
+          },
+          responderLocationAccuracy: responderDetails.accuracy,
+          responderLocationMeta: {
+            altitude: responderDetails.altitude,
+            heading: responderDetails.heading,
+            speed: responderDetails.speed,
+            capturedAt: responderDetails.capturedAt,
+          },
           responderUserAgent: navigator.userAgent,
           triggeredAt: new Date().toISOString(),
         }),
@@ -293,6 +342,8 @@ export default function EmergencyInfoDisplay() {
       const ambulanceUrl = `${window.location.origin}/sos/ambulance?alertId=${encodeURIComponent(alertId)}`;
       window.open(policeUrl, '_blank', 'noopener,noreferrer');
       window.open(ambulanceUrl, '_blank', 'noopener,noreferrer');
+      setResponderName('');
+      setResponderPhone('');
     } catch (err) {
       console.error('Error triggering SOS:', err);
       const message = err instanceof Error ? err.message : 'Failed to trigger SOS alert';
@@ -380,6 +431,23 @@ export default function EmergencyInfoDisplay() {
 
       <div className="sticky top-16 z-40 bg-white/95 backdrop-blur p-3 shadow-lg border-b-2 border-red-500">
         <div className="max-w-4xl mx-auto">
+          <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <input
+              type="text"
+              value={responderName}
+              onChange={(e) => setResponderName(e.target.value)}
+              placeholder="Responder name (optional)"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <input
+              type="tel"
+              value={responderPhone}
+              onChange={(e) => setResponderPhone(e.target.value)}
+              placeholder="Responder phone (optional)"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+
           {sosCountdown === null ? (
             <button
               onClick={startSosCountdown}

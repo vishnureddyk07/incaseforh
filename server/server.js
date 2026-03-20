@@ -1253,7 +1253,11 @@ router.post('/sos/trigger', sosLimiter, async (req, res) => {
       victimAllergies,
       victimMedications,
       victimEmergencyContacts,
+      responderName,
+      responderPhone,
       responderLocation,
+      responderLocationAccuracy,
+      responderLocationMeta,
       responderUserAgent,
       triggeredAt,
     } = req.body || {};
@@ -1281,7 +1285,24 @@ router.post('/sos/trigger', sosLimiter, async (req, res) => {
       victimAllergies: stripHtml(sanitizeMongoValue(victimAllergies) || ''),
       victimMedications: stripHtml(sanitizeMongoValue(victimMedications) || ''),
       victimEmergencyContacts: safeEmergencyContacts,
+      responderName: stripHtml(sanitizeMongoValue(responderName) || ''),
+      responderPhone: stripHtml(sanitizeMongoValue(responderPhone) || ''),
       responderLocation: { lat, lng },
+      responderLocationAccuracy: Number.isFinite(Number(responderLocationAccuracy))
+        ? Number(responderLocationAccuracy)
+        : null,
+      responderLocationMeta: {
+        altitude: Number.isFinite(Number(responderLocationMeta?.altitude))
+          ? Number(responderLocationMeta.altitude)
+          : null,
+        heading: Number.isFinite(Number(responderLocationMeta?.heading))
+          ? Number(responderLocationMeta.heading)
+          : null,
+        speed: Number.isFinite(Number(responderLocationMeta?.speed))
+          ? Number(responderLocationMeta.speed)
+          : null,
+        capturedAt: responderLocationMeta?.capturedAt ? new Date(responderLocationMeta.capturedAt) : null,
+      },
       responderUserAgent: stripHtml(sanitizeMongoValue(responderUserAgent) || ''),
       responderIP: req.ip || '',
       triggeredAt: triggeredAt ? new Date(triggeredAt) : new Date(),
@@ -1309,6 +1330,53 @@ router.post('/sos/trigger', sosLimiter, async (req, res) => {
   } catch (error) {
     console.error('Error triggering SOS:', error);
     return res.status(500).json({ error: 'Failed to trigger SOS alert' });
+  }
+});
+
+// Police/Ambulance: close an active SOS case
+router.patch('/sos/:id/close', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid alert ID' });
+    }
+
+    const updated = await SosAlert.findOneAndUpdate(
+      { _id: id, status: 'active' },
+      {
+        $set: {
+          status: 'resolved',
+          resolvedAt: new Date(),
+          closedByRole: req.user?.role || '',
+          closedByEmail: req.user?.email || '',
+        },
+      },
+      { new: true }
+    );
+
+    if (!updated) {
+      const existing = await SosAlert.findById(id).lean();
+      if (!existing) {
+        return res.status(404).json({ error: 'SOS alert not found' });
+      }
+      return res.status(409).json({ error: 'This SOS case is already closed' });
+    }
+
+    await ActionLog.create({
+      actorId: req.user?.id || '',
+      actorEmail: req.user?.email || '',
+      actorRole: req.user?.role || '',
+      action: 'sos_close',
+      details: {
+        alertId: updated._id.toString(),
+        closedBy: req.user?.email || '',
+      },
+    });
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('Error closing SOS case:', error);
+    return res.status(500).json({ error: 'Failed to close SOS case' });
   }
 });
 

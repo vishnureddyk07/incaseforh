@@ -8,11 +8,16 @@ interface SosAlert {
   victimBloodType?: string;
   victimAllergies?: string;
   victimMedications?: string;
+  responderName?: string;
+  responderPhone?: string;
   responderLocation?: { lat: number; lng: number };
+  responderLocationAccuracy?: number | null;
   responderIP?: string;
   responderUserAgent?: string;
   triggeredAt: string;
   status: 'active' | 'resolved' | 'cancelled';
+  closedByEmail?: string;
+  resolvedAt?: string;
 }
 
 export default function PoliceDashboard() {
@@ -22,6 +27,7 @@ export default function PoliceDashboard() {
   const [error, setError] = useState('');
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [closingAlertId, setClosingAlertId] = useState<string | null>(null);
 
   // Fetch alerts from API
   const fetchAlerts = async () => {
@@ -91,6 +97,35 @@ export default function PoliceDashboard() {
     return `https://www.google.com/maps?q=${lat},${lng}`;
   };
 
+  const closeCase = async (alertId: string) => {
+    try {
+      setClosingAlertId(alertId);
+      setError('');
+      const token = localStorage.getItem('token');
+      if (!token) {
+        navigate('/police/login');
+        return;
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/v1/sos/${alertId}/close`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || 'Failed to close case');
+      }
+
+      await fetchAlerts();
+      setLastRefresh(new Date());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to close case');
+    } finally {
+      setClosingAlertId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       {/* Header */}
@@ -133,7 +168,11 @@ export default function PoliceDashboard() {
             Active Alerts ({activeAlerts.length})
           </h2>
 
-          {activeAlerts.length === 0 ? (
+          {loading ? (
+            <div className="p-8 bg-slate-800 rounded-lg text-center border border-slate-700">
+              <p className="text-slate-400">Loading alerts...</p>
+            </div>
+          ) : activeAlerts.length === 0 ? (
             <div className="p-8 bg-slate-800 rounded-lg text-center border border-slate-700">
               <p className="text-slate-400">No active alerts at this time</p>
             </div>
@@ -160,6 +199,18 @@ export default function PoliceDashboard() {
                         <strong>Caller:</strong> {alert.victimPhone}
                       </p>
                       <p className="text-sm text-slate-300 mb-2">
+                        <strong>Responder:</strong> {alert.responderName || 'Not provided'}
+                      </p>
+                      <p className="text-sm text-slate-300 mb-2">
+                        <strong>Responder Phone:</strong> {alert.responderPhone || 'Not provided'}
+                      </p>
+                      <p className="text-sm text-slate-300 mb-2">
+                        <strong>GPS Accuracy:</strong>{' '}
+                        {typeof alert.responderLocationAccuracy === 'number'
+                          ? `±${Math.round(alert.responderLocationAccuracy)}m`
+                          : 'Unknown'}
+                      </p>
+                      <p className="text-sm text-slate-300 mb-2">
                         <strong>Device Info:</strong> {alert.responderUserAgent}
                       </p>
                       <p className="text-sm text-slate-300">
@@ -183,6 +234,14 @@ export default function PoliceDashboard() {
                       >
                         🗺️ Navigate
                       </a>
+                      <button
+                        type="button"
+                        onClick={() => closeCase(alert._id)}
+                        disabled={closingAlertId === alert._id}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 rounded-lg text-sm font-semibold text-center transition-colors whitespace-nowrap"
+                      >
+                        {closingAlertId === alert._id ? 'Closing...' : '✅ Close Case'}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -207,6 +266,7 @@ export default function PoliceDashboard() {
                     <th className="px-6 py-3 text-left text-sm font-semibold">Time</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold">Phone</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold">Status</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold">Closed By</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold">Actions</th>
                   </tr>
                 </thead>
@@ -226,6 +286,7 @@ export default function PoliceDashboard() {
                           {alert.status}
                         </span>
                       </td>
+                      <td className="px-6 py-3 text-sm">{alert.closedByEmail || 'System'}</td>
                       <td className="px-6 py-3 text-sm">
                         <a
                           href={getMapLink(alert.responderLocation?.lat, alert.responderLocation?.lng)}

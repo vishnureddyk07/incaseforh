@@ -15,11 +15,16 @@ interface SosAlert {
   victimAllergies?: string;
   victimMedications?: string;
   victimEmergencyContacts?: EmergencyContact[];
+  responderName?: string;
+  responderPhone?: string;
   responderLocation?: { lat: number; lng: number };
+  responderLocationAccuracy?: number | null;
   responderIP?: string;
   responderUserAgent?: string;
   triggeredAt: string;
   status: 'active' | 'resolved' | 'cancelled';
+  closedByEmail?: string;
+  resolvedAt?: string;
 }
 
 export default function AmbulanceDashboard() {
@@ -29,8 +34,8 @@ export default function AmbulanceDashboard() {
   const [error, setError] = useState('');
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [closingAlertId, setClosingAlertId] = useState<string | null>(null);
 
-  // Fetch alerts from API
   const fetchAlerts = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -62,16 +67,13 @@ export default function AmbulanceDashboard() {
   };
 
   useEffect(() => {
-    // Load user data
     const userData = localStorage.getItem('user');
     if (userData) {
       setUser(JSON.parse(userData));
     }
 
-    // Initial fetch
     fetchAlerts();
 
-    // Set up auto-refresh every 30 seconds
     const interval = setInterval(() => {
       fetchAlerts();
       setLastRefresh(new Date());
@@ -98,9 +100,37 @@ export default function AmbulanceDashboard() {
     return `https://www.google.com/maps?api=1&destination=${lat},${lng}`;
   };
 
+  const closeCase = async (alertId: string) => {
+    try {
+      setClosingAlertId(alertId);
+      setError('');
+      const token = localStorage.getItem('token');
+      if (!token) {
+        navigate('/ambulance/login');
+        return;
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/v1/sos/${alertId}/close`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || 'Failed to close case');
+      }
+
+      await fetchAlerts();
+      setLastRefresh(new Date());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to close case');
+    } finally {
+      setClosingAlertId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -126,21 +156,23 @@ export default function AmbulanceDashboard() {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8">
-        {/* Error Banner */}
         {error && (
           <div className="mb-6 p-4 bg-red-100 border border-red-400 rounded-lg">
             <p className="text-red-700">{error}</p>
           </div>
         )}
 
-        {/* Active Alerts Section */}
         <section className="mb-8">
           <h2 className="text-2xl font-bold mb-4 flex items-center gap-2 text-gray-900">
             <span className="text-2xl">🚨</span>
             Active Medical Emergencies ({activeAlerts.length})
           </h2>
 
-          {activeAlerts.length === 0 ? (
+          {loading ? (
+            <div className="p-8 bg-white rounded-lg text-center border border-gray-200">
+              <p className="text-gray-600">Loading emergencies...</p>
+            </div>
+          ) : activeAlerts.length === 0 ? (
             <div className="p-8 bg-white rounded-lg text-center border border-gray-200">
               <p className="text-gray-600">No active emergencies at this time</p>
             </div>
@@ -148,14 +180,12 @@ export default function AmbulanceDashboard() {
             <div className="space-y-6">
               {activeAlerts.map((alert) => (
                 <div key={alert._id} className="bg-white rounded-lg shadow-md border-2 border-orange-400">
-                  {/* Alert Banner */}
                   <div className="bg-gradient-to-r from-orange-600 to-red-600 px-6 py-3 animate-pulse">
                     <p className="text-white font-bold text-lg">🚨 ACTIVE EMERGENCY RESPONSE REQUIRED</p>
                   </div>
 
                   <div className="p-6 space-y-6">
-                    {/* Patient Information Grid */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                         <p className="text-xs text-gray-600 uppercase tracking-wide font-semibold mb-1">Patient Name</p>
                         <p className="text-2xl font-bold text-gray-900">{alert.victimName || 'Unknown'}</p>
@@ -179,8 +209,7 @@ export default function AmbulanceDashboard() {
                       </div>
                     </div>
 
-                    {/* Medical Information */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="p-4 rounded-lg border border-red-200 bg-red-50">
                         <h4 className="font-semibold text-red-900 mb-2">⚠️ Allergies</h4>
                         <p className="text-sm text-red-800">{alert.victimAllergies || 'No known allergies'}</p>
@@ -191,7 +220,6 @@ export default function AmbulanceDashboard() {
                       </div>
                     </div>
 
-                    {/* Emergency Contacts */}
                     {alert.victimEmergencyContacts && alert.victimEmergencyContacts.length > 0 && (
                       <div className="border-t border-gray-200 pt-6">
                         <h4 className="font-semibold text-gray-900 mb-3">👥 Emergency Contacts</h4>
@@ -212,8 +240,7 @@ export default function AmbulanceDashboard() {
                       </div>
                     )}
 
-                    {/* Location & Navigation */}
-                    <div className="border-t border-gray-200 pt-6 grid grid-cols-2 gap-4">
+                    <div className="border-t border-gray-200 pt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                         <p className="text-xs text-blue-700 uppercase tracking-wide font-semibold mb-2">GPS Coordinates</p>
                         <p className="font-mono text-sm text-blue-900">
@@ -221,14 +248,21 @@ export default function AmbulanceDashboard() {
                             ? `${alert.responderLocation.lat.toFixed(6)}, ${alert.responderLocation.lng.toFixed(6)}`
                             : 'Location unavailable'}
                         </p>
+                        <p className="mt-1 text-xs text-blue-700">
+                          Accuracy:{' '}
+                          {typeof alert.responderLocationAccuracy === 'number'
+                            ? `±${Math.round(alert.responderLocationAccuracy)}m`
+                            : 'Unknown'}
+                        </p>
                       </div>
                       <div className="bg-green-50 p-4 rounded-lg border border-green-200">
                         <p className="text-xs text-green-700 uppercase tracking-wide font-semibold mb-2">Incident Time</p>
                         <p className="text-sm text-green-900">{formatTime(alert.triggeredAt)}</p>
+                        <p className="mt-1 text-xs text-green-800">Responder: {alert.responderName || 'Not provided'}</p>
+                        <p className="text-xs text-green-800">Contact: {alert.responderPhone || 'Not provided'}</p>
                       </div>
                     </div>
 
-                    {/* Navigation Button */}
                     <a
                       href={getNavLink(alert.responderLocation?.lat, alert.responderLocation?.lng)}
                       target="_blank"
@@ -237,6 +271,14 @@ export default function AmbulanceDashboard() {
                     >
                       🗺️ Open Navigation
                     </a>
+                    <button
+                      type="button"
+                      onClick={() => closeCase(alert._id)}
+                      disabled={closingAlertId === alert._id}
+                      className="block w-full py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:opacity-60 text-white font-bold rounded-lg text-center transition-colors"
+                    >
+                      {closingAlertId === alert._id ? 'Closing case...' : '✅ Close Case'}
+                    </button>
                   </div>
                 </div>
               ))}
@@ -244,7 +286,6 @@ export default function AmbulanceDashboard() {
           )}
         </section>
 
-        {/* Past Alerts Section */}
         <section>
           <h2 className="text-2xl font-bold mb-4 text-gray-900">Past Alerts ({pastAlerts.length})</h2>
 
@@ -262,6 +303,7 @@ export default function AmbulanceDashboard() {
                     <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Blood Type</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Phone</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Closed By</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Action</th>
                   </tr>
                 </thead>
@@ -291,6 +333,7 @@ export default function AmbulanceDashboard() {
                           {alert.status}
                         </span>
                       </td>
+                      <td className="px-6 py-3 text-sm text-gray-700">{alert.closedByEmail || 'System'}</td>
                       <td className="px-6 py-3 text-sm">
                         <a
                           href={getNavLink(alert.responderLocation?.lat, alert.responderLocation?.lng)}
