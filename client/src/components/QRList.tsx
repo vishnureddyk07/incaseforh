@@ -25,12 +25,14 @@ interface EmergencyInfo {
 }
 
 export default function QRList() {
+  const RECORDS_PER_PAGE = 25;
   const [qrs, setQrs] = useState<EmergencyInfo[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
+  const [currentPage, setCurrentPage] = useState(1);
   const [editingRecord, setEditingRecord] = useState<EmergencyInfo | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -39,6 +41,15 @@ export default function QRList() {
   const navigate = useNavigate();
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+  const normalizeEmergencyRecords = (payload: unknown): EmergencyInfo[] => {
+    if (Array.isArray(payload)) return payload as EmergencyInfo[];
+    if (payload && typeof payload === 'object') {
+      const maybe = payload as { records?: unknown; data?: unknown };
+      if (Array.isArray(maybe.records)) return maybe.records as EmergencyInfo[];
+      if (Array.isArray(maybe.data)) return maybe.data as EmergencyInfo[];
+    }
+    return [];
+  };
 
   useEffect(() => {
     const fetchQrs = async () => {
@@ -49,7 +60,7 @@ export default function QRList() {
       }
 
       try {
-        const res = await fetch(`${API_BASE}/api/v1/emergency?view=list`, {
+        const res = await fetch(`${API_BASE}/api/v1/emergency?limit=1000`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -64,7 +75,7 @@ export default function QRList() {
         }
 
         const data = await res.json();
-        setQrs(data);
+        setQrs(normalizeEmergencyRecords(data));
         setLoading(false);
       } catch (err) {
         console.error(err);
@@ -87,7 +98,7 @@ export default function QRList() {
 
   // Search and filter as derived value (no extra render cycle)
   const filteredQrs = useMemo(() => {
-    let filtered = [...qrs];
+    let filtered = [...(Array.isArray(qrs) ? qrs : [])];
 
     if (searchTerm) {
       const needle = searchTerm.toLowerCase();
@@ -123,6 +134,16 @@ export default function QRList() {
     return map;
   }, [filteredQrs]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredQrs.length / RECORDS_PER_PAGE));
+  const paginatedQrs = useMemo(() => {
+    const startIndex = (currentPage - 1) * RECORDS_PER_PAGE;
+    return filteredQrs.slice(startIndex, startIndex + RECORDS_PER_PAGE);
+  }, [filteredQrs, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, sortBy, qrs.length]);
+
   const toggleSelectionMode = () => {
     setSelectionMode((prev) => {
       if (prev) setSelectedIds(new Set());
@@ -139,7 +160,7 @@ export default function QRList() {
   };
 
   const selectAllVisible = () => {
-    setSelectedIds(new Set(filteredQrs.map((r) => r._id)));
+    setSelectedIds(new Set(paginatedQrs.map((r) => r._id)));
   };
 
   const clearSelection = () => setSelectedIds(new Set());
@@ -341,7 +362,7 @@ export default function QRList() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || 'Failed to delete record');
       }
-      setQrs((prev) => prev.filter((r) => r._id !== record._id));
+      setQrs((prev) => (Array.isArray(prev) ? prev : []).filter((r) => r._id !== record._id));
       setSelectedIds(new Set());
     } catch (err) {
       console.error(err);
@@ -376,11 +397,12 @@ export default function QRList() {
       });
       if (!res.ok) throw new Error('Failed to update');
       // Refresh list
-      const listRes = await fetch(`${API_BASE}/api/v1/emergency?view=list`, {
+      const listRes = await fetch(`${API_BASE}/api/v1/emergency?limit=1000`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await listRes.json();
-      setQrs(data);
+      setQrs(normalizeEmergencyRecords(data));
+      setCurrentPage(1);
       setEditingRecord(null);
     } catch (err) {
       console.error(err);
@@ -451,7 +473,7 @@ export default function QRList() {
           <select
             id="qr-sort"
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'name')}
             className="px-3 py-1 border rounded-md"
           >
             <option value="newest">Newest First</option>
@@ -499,7 +521,7 @@ export default function QRList() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredQrs.map((qr) => (
+        {paginatedQrs.map((qr) => (
           <div key={qr._id} className="bg-white p-4 rounded-lg shadow hover:shadow-md transition">
             <div className="flex gap-4 cursor-pointer" onClick={() => handleOpen(qr)}>
               <div className="flex-1">
@@ -554,6 +576,34 @@ export default function QRList() {
           </div>
         ))}
       </div>
+
+      {filteredQrs.length > 0 && (
+        <div className="mt-6 flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            Showing {(currentPage - 1) * RECORDS_PER_PAGE + 1}-
+            {Math.min(currentPage * RECORDS_PER_PAGE, filteredQrs.length)} of {filteredQrs.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1 border rounded hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-700">Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1 border rounded hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {editingRecord && (

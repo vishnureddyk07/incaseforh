@@ -12,10 +12,12 @@ interface EmergencyInfo {
 }
 
 export default function ManagerDashboard() {
+  const RECORDS_PER_PAGE = 25;
   const { isAuthenticated, user, token } = useAuth();
   const navigate = useNavigate();
   const apiBase = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
   const [records, setRecords] = useState<EmergencyInfo[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [empEmail, setEmpEmail] = useState('');
@@ -36,7 +38,7 @@ export default function ManagerDashboard() {
   const fetchRecords = () => {
     if (!token) return;
     setLoading(true);
-    fetch(`${apiBase}/api/v1/emergency`, {
+    fetch(`${apiBase}/api/v1/emergency?limit=1000`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
@@ -56,6 +58,10 @@ export default function ManagerDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [records.length]);
+
   const sorted = useMemo(() => {
     return [...records].sort((a, b) => {
       const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -63,6 +69,12 @@ export default function ManagerDashboard() {
       return bDate - aDate;
     });
   }, [records]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / RECORDS_PER_PAGE));
+  const paginatedRecords = useMemo(() => {
+    const startIndex = (currentPage - 1) * RECORDS_PER_PAGE;
+    return sorted.slice(startIndex, startIndex + RECORDS_PER_PAGE);
+  }, [sorted, currentPage]);
 
   const createEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,7 +124,15 @@ export default function ManagerDashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Manager Dashboard</h1>
           <div className="flex gap-3">
             <Link to="/" className="px-4 py-2 border rounded hover:bg-gray-100">Home</Link>
-            <button onClick={fetchRecords} className="px-4 py-2 border rounded hover:bg-gray-100">Refresh</button>
+            <button
+              onClick={() => {
+                setCurrentPage(1);
+                fetchRecords();
+              }}
+              className="px-4 py-2 border rounded hover:bg-gray-100"
+            >
+              Refresh
+            </button>
           </div>
         </div>
 
@@ -156,7 +176,7 @@ export default function ManagerDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map((r) => (
+                  {paginatedRecords.map((r) => (
                     <tr key={r._id} className="border-t">
                       <td className="py-2 font-medium">{r.fullName}</td>
                       <td className="py-2">{r.email || '—'}</td>
@@ -170,6 +190,33 @@ export default function ManagerDashboard() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          {!loading && sorted.length > 0 && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                Showing {(currentPage - 1) * RECORDS_PER_PAGE + 1}-
+                {Math.min(currentPage * RECORDS_PER_PAGE, sorted.length)} of {sorted.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 border rounded hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-gray-700">Page {currentPage} of {totalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 border rounded hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           )}
         </div>
