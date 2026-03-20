@@ -1362,10 +1362,8 @@ router.patch('/sos/:id/close', requireAuth, requirePoliceOrAmbulance, async (req
       return res.status(409).json({ error: 'This SOS case is already closed' });
     }
 
-    await ActionLog.create({
-      actorId: req.user?.id || '',
-      actorEmail: req.user?.email || '',
-      actorRole: req.user?.role || '',
+    await logAction({
+      actor: req.user,
       action: 'sos_close',
       details: {
         alertId: updated._id.toString(),
