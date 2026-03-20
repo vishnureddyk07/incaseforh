@@ -192,6 +192,14 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+// Middleware: allow police or ambulance
+const requirePoliceOrAmbulance = (req, res, next) => {
+  if (!req.user || (req.user.role !== 'police' && req.user.role !== 'ambulance')) {
+    return res.status(403).json({ error: 'Police or ambulance access required' });
+  }
+  next();
+};
+
 // Middleware: allow admin or manager
 const requireManagerOrAdmin = (req, res, next) => {
   if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'manager')) {
@@ -620,6 +628,64 @@ router.post('/manager/users', requireAuth, requireManagerOrAdmin, async (req, re
   } catch (error) {
     console.error('Error creating employee user:', error);
     res.status(500).json({ error: 'Failed to create employee user' });
+  }
+});
+
+// Admin: create police credentials
+router.post('/admin/users/police', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({ email: normalizedEmail, passwordHash, role: 'police' });
+
+    logAction({ actor: req.user, action: 'create_police', details: { email: normalizedEmail } });
+
+    res.status(201).json({ user: sanitizeUser(user) });
+  } catch (error) {
+    console.error('Error creating police user:', error);
+    res.status(500).json({ error: 'Failed to create police user' });
+  }
+});
+
+// Admin: create ambulance credentials
+router.post('/admin/users/ambulance', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({ email: normalizedEmail, passwordHash, role: 'ambulance' });
+
+    logAction({ actor: req.user, action: 'create_ambulance', details: { email: normalizedEmail } });
+
+    res.status(201).json({ user: sanitizeUser(user) });
+  } catch (error) {
+    console.error('Error creating ambulance user:', error);
+    res.status(500).json({ error: 'Failed to create ambulance user' });
   }
 });
 
@@ -1161,6 +1227,19 @@ router.get('/hospitals/nearby', externalApiLimiter, async (req, res) => {
   } catch (error) {
     console.error('Error finding nearby hospitals:', error);
     res.status(500).json({ error: 'Failed to find nearby hospitals' });
+  }
+});
+
+// Police/Ambulance: Get all active SOS alerts
+router.get('/sos', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
+  try {
+    const alerts = await SosAlert.find({})
+      .sort({ triggeredAt: -1 })
+      .lean();
+    return res.json(alerts);
+  } catch (error) {
+    console.error('Error fetching SOS alerts:', error);
+    return res.status(500).json({ error: 'Failed to fetch SOS alerts' });
   }
 });
 

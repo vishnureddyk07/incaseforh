@@ -417,7 +417,27 @@ export default function EmergencyInfoDisplay() {
             </p>
           )}
           {sosAlertId && (
-            <p className="mt-2 text-center text-xs font-medium text-gray-600">Alert ID: {sosAlertId}</p>
+            <div className="mt-4 space-y-3">
+              <p className="text-center text-xs font-medium text-gray-600">Alert ID: {sosAlertId}</p>
+              <div className="flex gap-2 justify-center flex-wrap">
+                <a
+                  href={`/police/dashboard`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                >
+                  👮 View Police Alert
+                </a>
+                <a
+                  href={`/ambulance/dashboard`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                >
+                  🚑 View Ambulance Alert
+                </a>
+              </div>
+            </div>
           )}
           <p className="text-xs text-gray-600 text-center mt-2 font-medium">Notifies police, ambulance, and emergency contacts with location</p>
         </div>

@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 interface UserRow {
   id: string;
   email: string;
-  role: 'admin' | 'manager' | 'user';
+  role: 'admin' | 'manager' | 'user' | 'police' | 'ambulance';
   createdAt?: string;
 }
 
@@ -29,6 +29,12 @@ export default function AdminDashboard() {
   const [newManagerEmail, setNewManagerEmail] = useState('');
   const [newManagerPassword, setNewManagerPassword] = useState('');
   const [isCreatingManager, setIsCreatingManager] = useState(false);
+  const [newPoliceEmail, setNewPoliceEmail] = useState('');
+  const [newPolicePassword, setNewPolicePassword] = useState('');
+  const [isCreatingPolice, setIsCreatingPolice] = useState(false);
+  const [newAmbulanceEmail, setNewAmbulanceEmail] = useState('');
+  const [newAmbulancePassword, setNewAmbulancePassword] = useState('');
+  const [isCreatingAmbulance, setIsCreatingAmbulance] = useState(false);
   const [systemActionLogs, setSystemActionLogs] = useState<LogEntry[]>([]);
   const [isFetchingActivityLogs, setIsFetchingActivityLogs] = useState(false);
   const [totalEmergencyRecords, setTotalEmergencyRecords] = useState(0);
@@ -137,6 +143,62 @@ export default function AdminDashboard() {
       setAdminDashboardError(msg);
     } finally {
       setIsCreatingManager(false);
+    }
+  };
+
+  const createPolice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPoliceEmail || !newPolicePassword) return;
+    setIsCreatingPolice(true);
+    setAdminDashboardError(null);
+    try {
+      const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/users/police`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: newPoliceEmail, password: newPolicePassword }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to create police account');
+      }
+      setNewPoliceEmail('');
+      setNewPolicePassword('');
+      fetchUsers();
+      fetchLogs();
+      showToast('✅ Police account created successfully!');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create police account';
+      setAdminDashboardError(msg);
+    } finally {
+      setIsCreatingPolice(false);
+    }
+  };
+
+  const createAmbulance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAmbulanceEmail || !newAmbulancePassword) return;
+    setIsCreatingAmbulance(true);
+    setAdminDashboardError(null);
+    try {
+      const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/users/ambulance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: newAmbulanceEmail, password: newAmbulancePassword }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to create ambulance account');
+      }
+      setNewAmbulanceEmail('');
+      setNewAmbulancePassword('');
+      fetchUsers();
+      fetchLogs();
+      showToast('✅ Ambulance account created successfully!');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create ambulance account';
+      setAdminDashboardError(msg);
+    } finally {
+      setIsCreatingAmbulance(false);
     }
   };
 
@@ -416,6 +478,76 @@ export default function AdminDashboard() {
                 className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 font-medium"
               >
                 {isCreatingManager ? 'Creating...' : '➕ Create Manager'}
+              </button>
+            </form>
+          </section>
+
+          {/* Create Police Account */}
+          <section className="mt-8 rounded-2xl bg-white p-6 shadow-sm border-l-4 border-blue-500">
+            <h3 className="text-lg font-semibold text-gray-900">👮 Create Police Account</h3>
+            <p className="mt-1 text-sm text-gray-500">Police officers can monitor SOS alerts in real-time via the control room.</p>
+            <form onSubmit={createPolice} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3 md:items-end">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Police Email</label>
+                <input
+                  value={newPoliceEmail}
+                  onChange={(e) => setNewPoliceEmail(e.target.value)}
+                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="officer@police.gov"
+                  type="email"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Temporary Password</label>
+                <input
+                  value={newPolicePassword}
+                  onChange={(e) => setNewPolicePassword(e.target.value)}
+                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="min 6 characters"
+                  type="password"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isCreatingPolice || !newPoliceEmail || !newPolicePassword}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 font-medium"
+              >
+                {isCreatingPolice ? 'Creating...' : '👮 Create Police'}
+              </button>
+            </form>
+          </section>
+
+          {/* Create Ambulance Account */}
+          <section className="mt-8 rounded-2xl bg-white p-6 shadow-sm border-l-4 border-orange-500">
+            <h3 className="text-lg font-semibold text-gray-900">🚑 Create Ambulance Account</h3>
+            <p className="mt-1 text-sm text-gray-500">Paramedics can access emergency medical information and dispatch management.</p>
+            <form onSubmit={createAmbulance} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3 md:items-end">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Ambulance Email</label>
+                <input
+                  value={newAmbulanceEmail}
+                  onChange={(e) => setNewAmbulanceEmail(e.target.value)}
+                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  placeholder="paramedic@ambulance.org"
+                  type="email"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Temporary Password</label>
+                <input
+                  value={newAmbulancePassword}
+                  onChange={(e) => setNewAmbulancePassword(e.target.value)}
+                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  placeholder="min 6 characters"
+                  type="password"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isCreatingAmbulance || !newAmbulanceEmail || !newAmbulancePassword}
+                className="rounded-lg bg-orange-600 px-4 py-2 text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50 font-medium"
+              >
+                {isCreatingAmbulance ? 'Creating...' : '🚑 Create Ambulance'}
               </button>
             </form>
           </section>
