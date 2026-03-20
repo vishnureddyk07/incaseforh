@@ -90,13 +90,13 @@ export default function AdminDashboard() {
     if (!token) return;
     setIsFetchingEmergencyCount(true);
     try {
-      const res = await fetch(`${backendApiBaseUrl}/api/v1/emergency?view=list&limit=1`, {
+      const res = await fetch(`${backendApiBaseUrl}/api/v1/emergency`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Failed to fetch emergency records');
       const data = await res.json();
-      const records = Array.isArray(data) ? data : data?.records || data?.data || [];
-      setTotalEmergencyRecords(Array.isArray(records) ? records.length : 0);
+      const records = Array.isArray(data) ? data : Array.isArray(data?.records) ? data.records : [];
+      setTotalEmergencyRecords(records.length);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to fetch emergency records';
       setAdminDashboardError(msg);

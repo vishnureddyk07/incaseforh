@@ -36,14 +36,17 @@ export default function ManagerDashboard() {
   const fetchRecords = () => {
     if (!token) return;
     setLoading(true);
-    fetch(`${apiBase}/api/v1/emergency?view=list`, {
+    fetch(`${apiBase}/api/v1/emergency`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to load records');
         return res.json();
       })
-      .then((data) => setRecords(data))
+      .then((data) => {
+        const recordsArray = Array.isArray(data) ? data : Array.isArray(data?.records) ? data.records : [];
+        setRecords(recordsArray);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
@@ -111,6 +114,11 @@ export default function ManagerDashboard() {
             <Link to="/" className="px-4 py-2 border rounded hover:bg-gray-100">Home</Link>
             <button onClick={fetchRecords} className="px-4 py-2 border rounded hover:bg-gray-100">Refresh</button>
           </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-4">
+          <p className="text-sm text-gray-600">Total QR Records</p>
+          <p className="text-2xl font-bold text-gray-900">{loading ? '...' : records.length}</p>
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
