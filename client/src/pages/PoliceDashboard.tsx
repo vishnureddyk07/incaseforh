@@ -8,6 +8,7 @@ interface SosAlert {
   victimBloodType?: string;
   victimAllergies?: string;
   victimMedications?: string;
+  responderDeviceId?: string;
   responderName?: string;
   responderPhone?: string;
   responderLocation?: { lat: number; lng: number };
@@ -70,13 +71,86 @@ export default function PoliceDashboard() {
     // Initial fetch
     fetchAlerts();
 
-    // Set up auto-refresh every 30 seconds
-    const interval = setInterval(() => {
-      fetchAlerts();
-      setLastRefresh(new Date());
-    }, 30000);
+    // Set up real-time SSE subscription for alerts
+    let eventSource: EventSource | null = null;
 
-    return () => clearInterval(interval);
+    const connectSSE = () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        navigate('/police/login');
+        return;
+      }
+
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        eventSource = new EventSource(`${apiUrl}/api/v1/sos/stream/subscribe`, {
+          // @ts-ignore - EventSource doesn't support headers in standard API, using workaround
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        // If native EventSource doesn't support headers, we need to handle auth differently
+        // For now, fetch with auth to get token into a session, then connect
+        eventSource.addEventListener('message', (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('Received SSE message:', data);
+
+            if (data.type === 'new_alert') {
+              // Add new alert to the top of the list
+              setAlerts((prev) => [data.alert, ...prev]);
+              setLastRefresh(new Date());
+            } else if (data.type === 'alert_updated') {
+              // Update existing alert
+              setAlerts((prev) =>
+                prev.map((alert) =>
+                  alert._id === data.alert._id
+                    ? {
+                        ...alert,
+                        status: data.alert.status,
+                        resolvedAt: data.alert.resolvedAt,
+                        closedByEmail: data.alert.closedByEmail,
+                      }
+                    : alert
+                )
+              );
+              setLastRefresh(new Date());
+            }
+          } catch (err) {
+            console.error('Error parsing SSE message:', err);
+          }
+        });
+
+        eventSource.addEventListener('error', (err) => {
+          console.error('SSE connection error:', err);
+          if (eventSource?.readyState === EventSource.CLOSED) {
+            console.log('SSE connection closed, retrying...');
+            setTimeout(() => {
+              connectSSE();
+            }, 3000);
+          }
+        });
+
+        console.log('📡 SSE subscription established');
+      } catch (err) {
+        console.error('Failed to establish SSE connection:', err);
+        setError('Real-time updates unavailable. Using polling.');
+        // Fallback to polling every 30 seconds
+        const interval = setInterval(() => {
+          fetchAlerts();
+          setLastRefresh(new Date());
+        }, 30000);
+        return () => clearInterval(interval);
+      }
+    };
+
+    connectSSE();
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+        console.log('🔌 SSE connection closed');
+      }
+    };
   }, [navigate]);
 
   const activeAlerts = alerts.filter((a) => a.status === 'active');
@@ -199,10 +273,7 @@ export default function PoliceDashboard() {
                         <strong>Caller:</strong> {alert.victimPhone}
                       </p>
                       <p className="text-sm text-slate-300 mb-2">
-                        <strong>Responder:</strong> {alert.responderName || 'Not provided'}
-                      </p>
-                      <p className="text-sm text-slate-300 mb-2">
-                        <strong>Responder Phone:</strong> {alert.responderPhone || 'Not provided'}
+                        <strong>Responder Device ID:</strong> {alert.responderDeviceId || 'Not captured'}
                       </p>
                       <p className="text-sm text-slate-300 mb-2">
                         <strong>GPS Accuracy:</strong>{' '}

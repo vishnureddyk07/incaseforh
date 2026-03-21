@@ -419,6 +419,42 @@ app.get('/', (req, res) => {
   res.send('Server is running and connected to MongoDB');
 });
 
+// ── Real-time SOS alerts via Server-Sent Events ──────────────────────
+// Set to store all connected SSE clients for broadcasting new SOS alerts
+const sseClients = new Set();
+
+const broadcastNewSosAlert = (alert) => {
+  console.log(`📡 Broadcasting new SOS alert to ${sseClients.size} connected clients`);
+  const sseMessage = `data: ${JSON.stringify({
+    type: 'new_alert',
+    alert: {
+      _id: alert._id.toString(),
+      victimName: alert.victimName,
+      victimPhone: alert.victimPhone,
+      victimBloodType: alert.victimBloodType,
+      victimAllergies: alert.victimAllergies,
+      victimMedications: alert.victimMedications,
+      victimEmergencyContacts: alert.victimEmergencyContacts,
+      responderDeviceId: alert.responderDeviceId,
+      responderLocation: alert.responderLocation,
+      responderLocationAccuracy: alert.responderLocationAccuracy,
+      responderLocationMeta: alert.responderLocationMeta,
+      responderUserAgent: alert.responderUserAgent,
+      triggeredAt: alert.triggeredAt,
+      status: alert.status,
+    },
+  })}\n\n`;
+  
+  sseClients.forEach((client) => {
+    try {
+      client.write(sseMessage);
+    } catch (e) {
+      console.warn('Failed to write to SSE client:', e.message);
+      sseClients.delete(client);
+    }
+  });
+};
+
 // ── Versioned API router ─────────────────────────────────────────────
 import { Router } from 'express';
 const router = Router();
@@ -1326,6 +1362,9 @@ router.post('/sos/trigger', sosLimiter, async (req, res) => {
     console.log(`   Victim: ${alert.victimName || 'Unknown'} (${alert.victimPhone || 'No phone'})`);
     console.log(`   Location: ${lat}, ${lng}`);
 
+    // Broadcast to all connected SSE clients immediately
+    broadcastNewSosAlert(alert);
+
     return res.status(201).json(alert);
   } catch (error) {
     console.error('Error triggering SOS:', error);
@@ -1371,6 +1410,27 @@ router.patch('/sos/:id/close', requireAuth, requirePoliceOrAmbulance, async (req
       },
     });
 
+    // Broadcast alert status update to all connected clients
+    console.log(`📡 Broadcasting SOS alert status update to ${sseClients.size} connected clients`);
+    const updateMessage = `data: ${JSON.stringify({
+      type: 'alert_updated',
+      alert: {
+        _id: updated._id.toString(),
+        status: updated.status,
+        resolvedAt: updated.resolvedAt,
+        closedByRole: updated.closedByRole,
+        closedByEmail: updated.closedByEmail,
+      },
+    })}\n\n`;
+    
+    sseClients.forEach((client) => {
+      try {
+        client.write(updateMessage);
+      } catch (e) {
+        sseClients.delete(client);
+      }
+    });
+
     return res.json(updated);
   } catch (error) {
     console.error('Error closing SOS case:', error);
@@ -1394,6 +1454,48 @@ router.get('/sos/:id', readLimiter, async (req, res) => {
     console.error('Error fetching SOS alert:', error);
     return res.status(500).json({ error: 'Failed to fetch SOS alert' });
   }
+});
+
+// Real-time SOS alerts stream (Server-Sent Events)
+// Police/Ambulance: Subscribe to real-time SOS alerts
+router.get('/sos/stream/subscribe', requireAuth, requirePoliceOrAmbulance, (req, res) => {
+  console.log(`📡 [SSE] New subscriber connected: ${req.user?.email}`);
+  
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  
+  // Send initial connection confirmation
+  res.write(`:Connected - ready for real-time SOS alerts\n\n`);
+  
+  // Add this response object to the clients set
+  sseClients.add(res);
+  
+  // Keep-alive: send periodic heartbeat to prevent connection timeout
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(':heartbeat\n\n');
+    } catch (e) {
+      clearInterval(heartbeat);
+      sseClients.delete(res);
+    }
+  }, 30000); // Every 30 seconds
+  
+  // Clean up when client disconnects
+  req.on('close', () => {
+    console.log(`📡 [SSE] Subscriber disconnected: ${req.user?.email}`);
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+    res.end();
+  });
+  
+  req.on('error', (err) => {
+    console.warn(`📡 [SSE] Error from subscriber ${req.user?.email}:`, err.message);
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+  });
 });
 
 // Admin: Get all hospitals (for management)
