@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users } from 'lucide-react';
+import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users, Copy } from 'lucide-react';
 import type { EmergencyInfo } from '../../types/emergency';
+import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../../utils/deviceId';
 
 interface QRScanDisplayProps {
   emergencyData: EmergencyInfo;
@@ -33,9 +34,16 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
   const [sosAlertId, setSosAlertId] = useState<string | null>(null);
   const [sosSuccessMessage, setSosSuccessMessage] = useState<string | null>(null);
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string>('');
+  const [deviceIdCopied, setDeviceIdCopied] = useState(false);
 
   // Get user location on component mount
   useEffect(() => {
+    // Initialize device ID
+    const id = getOrCreateDeviceId();
+    setDeviceId(id);
+    console.log('📱 Device ID initialized:', id);
+
     const trackRescuerGPSLocation = async () => {
       setIsFetchingHospitals(true);
       setGpsAccessError(null);
@@ -106,8 +114,8 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
   };
 
   const sendSOSNotificationToContacts = useCallback(async () => {
-    if (!rescuerCurrentLocation || !emergencyData) {
-      console.error('❌ [QRScanDisplay] Location or emergency details unavailable');
+    if (!rescuerCurrentLocation || !emergencyData || !deviceId) {
+      console.error('❌ [QRScanDisplay] Location, emergency details, or device ID unavailable');
       setSosErrorMessage('Location or emergency details unavailable. Please try again.');
       return;
     }
@@ -117,7 +125,7 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
 
     try {
       const backendApiUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
-      console.log('🚨 [QRScanDisplay] Sending SOS to:', `${backendApiUrl}/api/v1/sos/trigger`);
+      console.log('🚨 [QRScanDisplay] Sending SOS with device ID:', deviceId);
       const response = await fetch(`${backendApiUrl}/api/v1/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -128,8 +136,7 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
           victimAllergies: emergencyData.allergies || '',
           victimMedications: emergencyData.medications || '',
           victimEmergencyContacts: emergencyData.emergencyContacts || [],
-          responderName: '',
-          responderPhone: '',
+          responderDeviceId: deviceId,
           responderLocation: {
             lat: rescuerCurrentLocation.lat,
             lng: rescuerCurrentLocation.lng,
@@ -154,7 +161,7 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
       const alert = await response.json();
       const alertId = alert?._id as string | undefined;
       setSosAlertId(alertId || null);
-      setSosSuccessMessage('🚨 SOS alert sent! Police and ambulance have been notified.');
+      setSosSuccessMessage('🚨 SOS alert sent! Alert has been logged with your device ID for evidence.');
       console.log('✅ [QRScanDisplay] SOS alert created:', alertId);
 
       setTimeout(() => {
@@ -168,7 +175,7 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
     } finally {
       setIsTriggeringSos(false);
     }
-  }, [rescuerCurrentLocation, emergencyData]);
+  }, [rescuerCurrentLocation, emergencyData, deviceId]);
 
   useEffect(() => {
     console.log('⏲️ [QRScanDisplay] Countdown effect running. sosCountdown:', sosCountdown, 'isTriggeringSos:', isTriggeringSos);
@@ -216,6 +223,12 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
     }
   };
 
+  const copyDeviceIdToClipboard = () => {
+    navigator.clipboard.writeText(deviceId);
+    setDeviceIdCopied(true);
+    setTimeout(() => setDeviceIdCopied(false), 2000);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 pb-20">
       {/* Header - Emergency Mode */}
@@ -234,6 +247,23 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
       {/* SOS Button - Large and Prominent */}
       <div className="sticky top-16 z-40 bg-white border-b-4 border-red-600 p-4 shadow-md">
         <div className="max-w-2xl mx-auto">
+          {deviceId && (
+            <div className="mb-3 bg-blue-50 border border-blue-300 rounded-md p-2 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-blue-600 mb-1">📱 Your Device ID (Emergency Evidence)</p>
+                <p className="text-sm font-mono text-blue-900">{formatDeviceIdForDisplay(deviceId)}</p>
+                <p className="text-xs text-blue-600 mt-1">This uniquely identifies your device for police evidence</p>
+              </div>
+              <button
+                onClick={copyDeviceIdToClipboard}
+                className="ml-2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                title="Copy full device ID"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+              {deviceIdCopied && <span className="ml-2 text-xs text-green-600 font-semibold">✓ Copied!</span>}
+            </div>
+          )}
           {sosCountdown === null ? (
             <button
               onClick={startSosCountdown}

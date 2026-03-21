@@ -16,8 +16,7 @@ const SosAlertSchema = new mongoose.Schema({
   victimAllergies: { type: String, default: '' },
   victimMedications: { type: String, default: '' },
   victimEmergencyContacts: { type: [emergencyContactSchema], default: [] },
-  responderName: { type: String, default: '' },
-  responderPhone: { type: String, default: '' },
+  responderDeviceId: { type: String, default: '' },
   responderLocation: {
     lat: { type: Number },
     lng: { type: Number },

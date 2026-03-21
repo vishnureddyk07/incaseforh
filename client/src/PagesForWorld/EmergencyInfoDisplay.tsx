@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users } from 'lucide-react';
+import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users, Copy } from 'lucide-react';
+import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../utils/deviceId';
 
 interface Hospital {
   id: string;
@@ -49,8 +50,8 @@ export default function EmergencyInfoDisplay() {
   const [sosAlertId, setSosAlertId] = useState<string | null>(null);
   const [sosSuccessMessage, setSosSuccessMessage] = useState<string | null>(null);
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
-  const [responderName, setResponderName] = useState('');
-  const [responderPhone, setResponderPhone] = useState('');
+  const [deviceId, setDeviceId] = useState<string>('');
+  const [deviceIdCopied, setDeviceIdCopied] = useState(false);
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
@@ -80,6 +81,11 @@ export default function EmergencyInfoDisplay() {
   };
 
   useEffect(() => {
+    // Initialize device ID
+    const id = getOrCreateDeviceId();
+    setDeviceId(id);
+    console.log('📱 Device ID initialized:', id);
+
     const fetchEmergencyInfo = async () => {
       try {
         if (!identifierParam) {
@@ -99,6 +105,14 @@ export default function EmergencyInfoDisplay() {
         const data = await res.json();
         console.log('✅ Emergency info loaded:', data.fullName);
         setInfo(data);
+        
+        // Try to get location after loading emergency info
+        const loc = await getAccurateLocation();
+        if (loc) {
+          setLocation(loc);
+          reverseGeocode(loc.lat, loc.lng);
+          fetchNearbyHospitals(loc.lat, loc.lng);
+        }
       } catch (err) {
         console.error('❌ Error fetching emergency info:', err);
         setError(err instanceof Error ? err.message : 'Error fetching data');
@@ -194,11 +208,38 @@ export default function EmergencyInfoDisplay() {
     };
 
     fetchEmergencyInfo();
-    getUserLocation();
-    
-    // Force location permission prompt on page load
-    console.log('🌍 Initializing location services...');
   }, [identifierParam, API_BASE]);
+
+  const getAccurateLocation = async (): Promise<{ lat: number; lng: number } | null> => {
+    return new Promise((resolve) => {
+      if (!('geolocation' in navigator)) {
+        console.warn('❌ Geolocation not supported');
+        resolve(null);
+        return;
+      }
+
+      console.log('📍 Requesting high-accuracy GPS location for display...');
+      
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+          console.log('✅ GPS location obtained:', {
+            lat: latitude,
+            lng: longitude,
+            accuracy: `${accuracy.toFixed(0)}m`,
+          });
+          
+          setLocationError(accuracy > 100 ? `Location accuracy: ±${accuracy.toFixed(0)}m` : null);
+          resolve({ lat: latitude, lng: longitude });
+        },
+        () => {
+          console.warn('⚠️ GPS failed after page load');
+          resolve(null);
+        },
+        { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 }
+      );
+    });
+  };
 
   const fetchNearbyHospitals = async (lat: number, lng: number) => {
     console.log('🏥 Fetching hospitals near:', lat, lng);
@@ -260,10 +301,12 @@ export default function EmergencyInfoDisplay() {
 
             if (!bestFix || (candidate.accuracy ?? Number.POSITIVE_INFINITY) < (bestFix.accuracy ?? Number.POSITIVE_INFINITY)) {
               bestFix = candidate;
+              console.log('📍 Better GPS fix found:', `Accuracy: ${candidate.accuracy?.toFixed(0)}m`);
             }
 
-            // Good enough for dispatch.
+            // Accept if accuracy is good enough (≤25m)
             if ((candidate.accuracy ?? Number.POSITIVE_INFINITY) <= 25) {
+              console.log('✅ Excellent GPS accuracy achieved: ≤25m');
               cleanup();
               resolve(candidate);
             }
@@ -278,53 +321,61 @@ export default function EmergencyInfoDisplay() {
 
           const watchId = navigator.geolocation.watchPosition(
             acceptFix,
-            () => {
+            (error) => {
+              console.warn('⚠️ GPS watch error:', error.message);
               cleanup();
               if (bestFix) {
+                console.log('Using best fix from watch:', `Accuracy: ${bestFix.accuracy?.toFixed(0)}m`);
                 resolve(bestFix);
                 return;
               }
-              reject(new Error('Unable to acquire GPS fix'));
+              reject(new Error('Unable to acquire GPS fix: ' + error.message));
             },
-            { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 }
+            { timeout: 20000, enableHighAccuracy: true, maximumAge: 0 }
           );
 
           const timeoutId = window.setTimeout(() => {
+            console.log('⏰ GPS watch timeout (12s) - using best fix if available');
             cleanup();
             if (bestFix) {
+              console.log('✅ Returning best fix: Accuracy ' + bestFix.accuracy?.toFixed(0) + 'm');
               resolve(bestFix);
               return;
             }
-            reject(new Error('GPS timed out'));
+            reject(new Error('GPS timed out and no fix available'));
           }, 12000);
         });
         return coords;
       } catch (geoErr) {
-        console.warn('Unable to refresh responder GPS location, using current page location', geoErr);
+        console.warn('❌ GPS acquisition failed:', geoErr);
+        // If we have a stored location from page load, use it as fallback
+        if (location) {
+          console.log('📍 Using page load location as fallback for SOS');
+          return {
+            lat: location.lat,
+            lng: location.lng,
+            accuracy: null,
+            altitude: null,
+            heading: null,
+            speed: null,
+            capturedAt: new Date().toISOString(),
+          };
+        }
+        return null;
       }
     }
-    if (!location) {
-      return null;
-    }
-    return {
-      lat: location.lat,
-      lng: location.lng,
-      accuracy: null,
-      altitude: null,
-      heading: null,
-      speed: null,
-      capturedAt: new Date().toISOString(),
-    };
+    console.warn('❌ Geolocation not available');
+    return null;
   };
 
   const triggerSOSAlert = useCallback(async () => {
-    if (!info) return;
+    if (!info || !deviceId) return;
     setIsTriggeringSos(true);
     setSosErrorMessage(null);
     setSosSuccessMessage(null);
 
     try {
-      console.log('🚨 [EmergencyInfoDisplay] Starting SOS trigger...');
+      console.log('🚨 [EmergencyInfoDisplay] Starting SOS trigger with device ID:', deviceId);
       const responderDetails = await getResponderLocation();
       if (!responderDetails) {
         throw new Error('Responder location is unavailable. Please enable location and try again.');
@@ -341,8 +392,7 @@ export default function EmergencyInfoDisplay() {
           victimAllergies: info.allergies || '',
           victimMedications: info.medications || '',
           victimEmergencyContacts: info.emergencyContacts || [],
-          responderName: responderName.trim(),
-          responderPhone: responderPhone.trim(),
+          responderDeviceId: deviceId,
           responderLocation: {
             lat: responderDetails.lat,
             lng: responderDetails.lng,
@@ -372,14 +422,7 @@ export default function EmergencyInfoDisplay() {
 
       console.log('✅ [EmergencyInfoDisplay] SOS alert created:', alertId);
       setSosAlertId(alertId);
-      setSosSuccessMessage('🚨 SOS alert sent! Police and ambulance have been notified.');
-
-      const policeUrl = `${window.location.origin}/sos/police?alertId=${encodeURIComponent(alertId)}`;
-      const ambulanceUrl = `${window.location.origin}/sos/ambulance?alertId=${encodeURIComponent(alertId)}`;
-      window.open(policeUrl, '_blank', 'noopener,noreferrer');
-      window.open(ambulanceUrl, '_blank', 'noopener,noreferrer');
-      setResponderName('');
-      setResponderPhone('');
+      setSosSuccessMessage('🚨 SOS alert sent! Alert has been logged with your device ID for evidence.');
     } catch (err) {
       console.error('❌ [EmergencyInfoDisplay] Error triggering SOS:', err);
       const message = err instanceof Error ? err.message : 'Failed to trigger SOS alert';
@@ -387,7 +430,7 @@ export default function EmergencyInfoDisplay() {
     } finally {
       setIsTriggeringSos(false);
     }
-  }, [info, API_BASE, responderName, responderPhone]);
+  }, [info, API_BASE, deviceId]);
 
   const startSosCountdown = () => {
     console.log('🔴 [EmergencyInfoDisplay] SOS button clicked! isTriggeringSos:', isTriggeringSos);
@@ -438,6 +481,12 @@ export default function EmergencyInfoDisplay() {
     };
   }, [sosCountdown, isTriggeringSos, triggerSOSAlert]);
 
+  const copyDeviceIdToClipboard = () => {
+    navigator.clipboard.writeText(deviceId);
+    setDeviceIdCopied(true);
+    setTimeout(() => setDeviceIdCopied(false), 2000);
+  };
+
   const callHospital = (phone: string) => {
     window.location.href = `tel:${phone}`;
   };
@@ -487,22 +536,23 @@ export default function EmergencyInfoDisplay() {
 
       <div className="sticky top-16 z-40 bg-white/95 backdrop-blur p-3 shadow-lg border-b-2 border-red-500">
         <div className="max-w-4xl mx-auto">
-          <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <input
-              type="text"
-              value={responderName}
-              onChange={(e) => setResponderName(e.target.value)}
-              placeholder="Responder name (optional)"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <input
-              type="tel"
-              value={responderPhone}
-              onChange={(e) => setResponderPhone(e.target.value)}
-              placeholder="Responder phone (optional)"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
+          {deviceId && (
+            <div className="mb-3 bg-blue-50 border border-blue-300 rounded-md p-2 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-blue-600 mb-1">📱 Your Device ID (Emergency Evidence)</p>
+                <p className="text-sm font-mono text-blue-900">{formatDeviceIdForDisplay(deviceId)}</p>
+                <p className="text-xs text-blue-600 mt-1">This uniquely identifies your device for police evidence</p>
+              </div>
+              <button
+                onClick={copyDeviceIdToClipboard}
+                className="ml-2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                title="Copy full device ID"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+              {deviceIdCopied && <span className="ml-2 text-xs text-green-600 font-semibold">✓ Copied!</span>}
+            </div>
+          )}
 
           {sosCountdown === null ? (
             <button
@@ -542,25 +592,8 @@ export default function EmergencyInfoDisplay() {
           )}
           {sosAlertId && (
             <div className="mt-4 space-y-3">
-              <p className="text-center text-xs font-medium text-gray-600">Alert ID: {sosAlertId}</p>
-              <div className="flex gap-2 justify-center flex-wrap">
-                <a
-                  href={`/police/dashboard`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors"
-                >
-                  👮 View Police Alert
-                </a>
-                <a
-                  href={`/ambulance/dashboard`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-semibold transition-colors"
-                >
-                  🚑 View Ambulance Alert
-                </a>
-              </div>
+              <p className="text-center text-xs font-medium text-gray-600">✅ SOS Alert Logged - ID: {sosAlertId}</p>
+              <p className="text-center text-xs font-medium text-green-600">Police and ambulance have been notified</p>
             </div>
           )}
           <p className="text-xs text-gray-600 text-center mt-2 font-medium">Notifies police, ambulance, and emergency contacts with location</p>

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users } from 'lucide-react';
+import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users, Copy } from 'lucide-react';
+import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../../utils/deviceId';
 
 interface Hospital {
   id: string;
@@ -42,9 +43,16 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
   const [sosAlertId, setSosAlertId] = useState<string | null>(null);
   const [sosSuccessMessage, setSosSuccessMessage] = useState<string | null>(null);
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string>('');
+  const [deviceIdCopied, setDeviceIdCopied] = useState(false);
 
   // Get user location on component mount
   useEffect(() => {
+    // Initialize device ID
+    const id = getOrCreateDeviceId();
+    setDeviceId(id);
+    console.log('📱 Device ID initialized:', id);
+
     const getUserLocation = async () => {
       setLoading(true);
       setLocationError(null);
@@ -61,14 +69,14 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
             console.warn('GPS failed:', err);
             setLocation(null);
             setLocationError('Unable to get accurate GPS. Enable precise location and try again.');
-            setIsFetchingHospitals(false);
+            setLoading(false);
           },
           { timeout: 30000, enableHighAccuracy: true, maximumAge: 0 }
         );
       } else {
         setLocationError('Location services not available');
         setLocation(null);
-        setIsFetchingHospitals(false);
+        setLoading(false);
       }
     };
 
@@ -117,8 +125,8 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
   };
 
   const triggerSOS = useCallback(async () => {
-    if (!location) {
-      console.error('❌ [AssistPage] Location is unavailable');
+    if (!location || !deviceId) {
+      console.error('❌ [AssistPage] Location or device ID is unavailable');
       setSosErrorMessage('Location is unavailable. Please enable location access and try again.');
       return;
     }
@@ -128,7 +136,7 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
-      console.log('🚨 [AssistPage] Starting SOS trigger to:', `${apiUrl}/api/v1/sos/trigger`);
+      console.log('🚨 [AssistPage] Starting SOS trigger with device ID:', deviceId);
       const response = await fetch(`${apiUrl}/api/v1/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -139,8 +147,7 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
           victimAllergies: emergencyData?.allergies || '',
           victimMedications: emergencyData?.medications || '',
           victimEmergencyContacts: emergencyData?.emergencyContacts || [],
-          responderName: '',
-          responderPhone: '',
+          responderDeviceId: deviceId,
           responderLocation: {
             lat: location.lat,
             lng: location.lng,
@@ -165,7 +172,7 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
       const alert = await response.json();
       const alertId = alert?._id as string | undefined;
       setSosAlertId(alertId || null);
-      setSosSuccessMessage('🚨 SOS alert sent! Police and ambulance have been notified.');
+      setSosSuccessMessage('🚨 SOS alert sent! Alert has been logged with your device ID for evidence.');
       console.log('✅ [AssistPage] SOS alert created:', alertId);
 
       // Auto-call emergency number after successful SOS trigger.
@@ -180,7 +187,7 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
     } finally {
       setIsTriggeringSos(false);
     }
-  }, [location, emergencyData]);
+  }, [location, emergencyData, deviceId]);
 
   useEffect(() => {
     console.log('⏲️ [AssistPage] Countdown effect running. sosCountdown:', sosCountdown, 'isTriggeringSos:', isTriggeringSos);
@@ -228,6 +235,12 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
     }
   };
 
+  const copyDeviceIdToClipboard = () => {
+    navigator.clipboard.writeText(deviceId);
+    setDeviceIdCopied(true);
+    setTimeout(() => setDeviceIdCopied(false), 2000);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 pb-20">
       {/* Header - Emergency Mode */}
@@ -244,6 +257,23 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
       {/* SOS Button */}
       <div className="sticky top-16 z-40 bg-white/95 backdrop-blur p-3 shadow-lg border-b-2 border-red-500">
         <div className="max-w-4xl mx-auto">
+          {deviceId && (
+            <div className="mb-3 bg-blue-50 border border-blue-300 rounded-md p-2 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-blue-600 mb-1">📱 Your Device ID (Emergency Evidence)</p>
+                <p className="text-sm font-mono text-blue-900">{formatDeviceIdForDisplay(deviceId)}</p>
+                <p className="text-xs text-blue-600 mt-1">This uniquely identifies your device for police evidence</p>
+              </div>
+              <button
+                onClick={copyDeviceIdToClipboard}
+                className="ml-2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                title="Copy full device ID"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+              {deviceIdCopied && <span className="ml-2 text-xs text-green-600 font-semibold">✓ Copied!</span>}
+            </div>
+          )}
           {sosCountdown === null ? (
             <button
               onClick={startSosCountdown}
