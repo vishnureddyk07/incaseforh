@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users } from 'lucide-react';
 
 interface Hospital {
@@ -104,7 +104,12 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
   };
 
   const startSosCountdown = () => {
-    if (isTriggeringSos) return;
+    console.log('🔴 [AssistPage] SOS button clicked! isTriggeringSos:', isTriggeringSos);
+    if (isTriggeringSos) {
+      console.log('⚠️ [AssistPage] Already triggering, ignoring click');
+      return;
+    }
+    console.log('✅ [AssistPage] Starting 10-second countdown...');
     setSosErrorMessage(null);
     setSosSuccessMessage(null);
     setSosAlertId(null);
@@ -112,12 +117,14 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
   };
 
   const cancelSosCountdown = () => {
+    console.log('❌ [AssistPage] Countdown cancelled');
     setSosCountdown(null);
     setSosErrorMessage(null);
   };
 
-  const triggerSOS = async () => {
+  const triggerSOS = useCallback(async () => {
     if (!location) {
+      console.error('❌ [AssistPage] Location is unavailable');
       setSosErrorMessage('Location is unavailable. Please enable location access and try again.');
       return;
     }
@@ -127,6 +134,7 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+      console.log('🚨 [AssistPage] Starting SOS trigger to:', `${apiUrl}/api/v1/sos/trigger`);
       const response = await fetch(`${apiUrl}/api/v1/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -157,45 +165,58 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || 'Failed to trigger SOS alert');
+        throw new Error(payload.error || `HTTP ${response.status}: Failed to trigger SOS`);
       }
 
       const alert = await response.json();
       const alertId = alert?._id as string | undefined;
       setSosAlertId(alertId || null);
-      setSosSuccessMessage('SOS alert sent. Police and ambulance have been notified.');
+      setSosSuccessMessage('🚨 SOS alert sent! Police and ambulance have been notified.');
+      console.log('✅ [AssistPage] SOS alert created:', alertId);
 
       // Auto-call emergency number after successful SOS trigger.
       setTimeout(() => {
         console.log('📞 [AssistPage] Auto-calling 108');
         window.location.href = 'tel:108';
       }, 500);
-
-      console.log('✅ [AssistPage] SOS payload sent');
     } catch (err) {
-      console.error('Error triggering SOS:', err);
+      console.error('❌ [AssistPage] Error triggering SOS:', err);
       const message = err instanceof Error ? err.message : 'Failed to trigger SOS alert';
       setSosErrorMessage(message);
     } finally {
       setIsTriggeringSos(false);
     }
-  };
+  }, [location, emergencyData]);
 
   useEffect(() => {
-    if (sosCountdown === null || isTriggeringSos) return;
+    console.log('⏲️ [AssistPage] Countdown effect running. sosCountdown:', sosCountdown, 'isTriggeringSos:', isTriggeringSos);
+    
+    if (sosCountdown === null || isTriggeringSos) {
+      console.log('⏸️ [AssistPage] Skipping countdown (null or triggering)');
+      return;
+    }
 
     if (sosCountdown === 0) {
+      console.log('⏰ [AssistPage] Countdown reached zero, triggering SOS...');
       setSosCountdown(null);
       triggerSOS();
       return;
     }
 
+    console.log('⏱️ [AssistPage] Setting timer for countdown:', sosCountdown);
     const timer = window.setTimeout(() => {
-      setSosCountdown((prev) => (prev === null ? null : prev - 1));
+      setSosCountdown((prev) => {
+        const newValue = prev === null ? null : prev - 1;
+        console.log('📉 [AssistPage] Countdown updated:', prev, '→', newValue);
+        return newValue;
+      });
     }, 1000);
 
-    return () => window.clearTimeout(timer);
-  }, [sosCountdown, isTriggeringSos]);
+    return () => {
+      console.log('🧹 [AssistPage] Cleaning up timer');
+      window.clearTimeout(timer);
+    };
+  }, [sosCountdown, isTriggeringSos, triggerSOS]);
 
   const callHospital = (phone: string) => {
     console.log('📞 [AssistPage] Calling hospital', phone);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users } from 'lucide-react';
 
@@ -284,18 +284,20 @@ export default function EmergencyInfoDisplay() {
     };
   };
 
-  const triggerSOSAlert = async () => {
+  const triggerSOSAlert = useCallback(async () => {
     if (!info) return;
     setIsTriggeringSos(true);
     setSosErrorMessage(null);
     setSosSuccessMessage(null);
 
     try {
+      console.log('🚨 [EmergencyInfoDisplay] Starting SOS trigger...');
       const responderDetails = await getResponderLocation();
       if (!responderDetails) {
         throw new Error('Responder location is unavailable. Please enable location and try again.');
       }
 
+      console.log('📡 [EmergencyInfoDisplay] Sending SOS to:', `${API_BASE}/api/v1/sos/trigger`);
       const response = await fetch(`${API_BASE}/api/v1/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -326,7 +328,7 @@ export default function EmergencyInfoDisplay() {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || 'Failed to trigger SOS alert');
+        throw new Error(payload.error || `HTTP ${response.status}: Failed to trigger SOS alert`);
       }
 
       const alert = await response.json();
@@ -335,8 +337,9 @@ export default function EmergencyInfoDisplay() {
         throw new Error('SOS alert ID was not returned by the server');
       }
 
+      console.log('✅ [EmergencyInfoDisplay] SOS alert created:', alertId);
       setSosAlertId(alertId);
-      setSosSuccessMessage('SOS alert sent. Police and ambulance have been notified.');
+      setSosSuccessMessage('🚨 SOS alert sent! Police and ambulance have been notified.');
 
       const policeUrl = `${window.location.origin}/sos/police?alertId=${encodeURIComponent(alertId)}`;
       const ambulanceUrl = `${window.location.origin}/sos/ambulance?alertId=${encodeURIComponent(alertId)}`;
@@ -345,16 +348,21 @@ export default function EmergencyInfoDisplay() {
       setResponderName('');
       setResponderPhone('');
     } catch (err) {
-      console.error('Error triggering SOS:', err);
+      console.error('❌ [EmergencyInfoDisplay] Error triggering SOS:', err);
       const message = err instanceof Error ? err.message : 'Failed to trigger SOS alert';
       setSosErrorMessage(message);
     } finally {
       setIsTriggeringSos(false);
     }
-  };
+  }, [info, API_BASE, responderName, responderPhone]);
 
   const startSosCountdown = () => {
-    if (isTriggeringSos) return;
+    console.log('🔴 [EmergencyInfoDisplay] SOS button clicked! isTriggeringSos:', isTriggeringSos);
+    if (isTriggeringSos) {
+      console.log('⚠️ [EmergencyInfoDisplay] Already triggering, ignoring click');
+      return;
+    }
+    console.log('✅ [EmergencyInfoDisplay] Starting 10-second countdown...');
     setSosErrorMessage(null);
     setSosSuccessMessage(null);
     setSosAlertId(null);
@@ -362,25 +370,40 @@ export default function EmergencyInfoDisplay() {
   };
 
   const cancelSosCountdown = () => {
+    console.log('❌ [EmergencyInfoDisplay] Countdown cancelled');
     setSosCountdown(null);
     setSosErrorMessage(null);
   };
 
   useEffect(() => {
-    if (sosCountdown === null || isTriggeringSos) return;
+    console.log('⏲️ [EmergencyInfoDisplay] Countdown effect running. sosCountdown:', sosCountdown, 'isTriggeringSos:', isTriggeringSos);
+    
+    if (sosCountdown === null || isTriggeringSos) {
+      console.log('⏸️ [EmergencyInfoDisplay] Skipping countdown (null or triggering)');
+      return;
+    }
 
     if (sosCountdown === 0) {
+      console.log('⏰ [EmergencyInfoDisplay] Countdown reached zero, triggering SOS...');
       setSosCountdown(null);
       triggerSOSAlert();
       return;
     }
 
+    console.log('⏱️ [EmergencyInfoDisplay] Setting timer for countdown:', sosCountdown);
     const timer = window.setTimeout(() => {
-      setSosCountdown((prev) => (prev === null ? null : prev - 1));
+      setSosCountdown((prev) => {
+        const newValue = prev === null ? null : prev - 1;
+        console.log('📉 [EmergencyInfoDisplay] Countdown updated:', prev, '→', newValue);
+        return newValue;
+      });
     }, 1000);
 
-    return () => window.clearTimeout(timer);
-  }, [sosCountdown, isTriggeringSos]);
+    return () => {
+      console.log('🧹 [EmergencyInfoDisplay] Cleaning up timer');
+      window.clearTimeout(timer);
+    };
+  }, [sosCountdown, isTriggeringSos, triggerSOSAlert]);
 
   const callHospital = (phone: string) => {
     window.location.href = `tel:${phone}`;
