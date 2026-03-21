@@ -58,23 +58,17 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
             fetchNearbyHospitals(latitude, longitude);
           },
           (err) => {
-            console.warn('GPS failed, trying IP-based location:', err);
-            setLocationError('GPS unavailable. Using approximate location.');
-            // Fallback to Hyderabad coordinates for testing
-            const mockLat = 17.3850;
-            const mockLng = 78.4867;
-            setLocation({ lat: mockLat, lng: mockLng });
-            fetchNearbyHospitals(mockLat, mockLng);
+            console.warn('GPS failed:', err);
+            setLocation(null);
+            setLocationError('Unable to get accurate GPS. Enable precise location and try again.');
+            setIsFetchingHospitals(false);
           },
-          { timeout: 5000, enableHighAccuracy: true }
+          { timeout: 30000, enableHighAccuracy: true, maximumAge: 0 }
         );
       } else {
         setLocationError('Location services not available');
-        // Use Hyderabad default for testing
-        const mockLat = 17.3850;
-        const mockLng = 78.4867;
-        setLocation({ lat: mockLat, lng: mockLng });
-        fetchNearbyHospitals(mockLat, mockLng);
+        setLocation(null);
+        setIsFetchingHospitals(false);
       }
     };
 

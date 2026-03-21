@@ -159,9 +159,9 @@ export default function EmergencyInfoDisplay() {
             if (err.code === 1) {
               setLocationError('Location permission denied. Please enable location access.');
             } else if (err.code === 2) {
-              setLocationError('Location unavailable. Using approximate location.');
+              setLocationError('Location unavailable. Move outdoors or enable precise GPS and retry.');
             } else {
-              setLocationError('Location timeout. Retrying...');
+              setLocationError('Location timeout. Retrying for accurate GPS...');
               
               // Retry with lower accuracy requirements
               navigator.geolocation.getCurrentPosition(
@@ -174,34 +174,22 @@ export default function EmergencyInfoDisplay() {
                   fetchNearbyHospitals(latitude, longitude);
                 },
                 () => {
-                  console.error('❌ GPS retry failed, using fallback');
-                  const mockLat = 17.3850;
-                  const mockLng = 78.4867;
-                  setLocation({ lat: mockLat, lng: mockLng });
-                  setLocationError('Using approximate location (Hyderabad)');
-                  reverseGeocode(mockLat, mockLng);
-                  fetchNearbyHospitals(mockLat, mockLng);
+                  console.error('❌ GPS retry failed');
+                  setLocation(null);
+                  setLocationError('Unable to get accurate location. Please enable precise GPS and retry SOS.');
                 },
-                { timeout: 30000, enableHighAccuracy: false, maximumAge: 60000 }
+                { timeout: 35000, enableHighAccuracy: true, maximumAge: 0 }
               );
               return;
             }
-            const mockLat = 17.3850;
-            const mockLng = 78.4867;
-            setLocation({ lat: mockLat, lng: mockLng });
-            reverseGeocode(mockLat, mockLng);
-            fetchNearbyHospitals(mockLat, mockLng);
+            setLocation(null);
           },
-          { timeout: 20000, enableHighAccuracy: true, maximumAge: 0 }
+          { timeout: 30000, enableHighAccuracy: true, maximumAge: 0 }
         );
       } else {
         console.warn('❌ Geolocation not supported');
         setLocationError('Location services not available on this device');
-        const mockLat = 17.3850;
-        const mockLng = 78.4867;
-        setLocation({ lat: mockLat, lng: mockLng });
-        reverseGeocode(mockLat, mockLng);
-        fetchNearbyHospitals(mockLat, mockLng);
+        setLocation(null);
       }
     };
 
@@ -249,21 +237,66 @@ export default function EmergencyInfoDisplay() {
           speed: number | null;
           capturedAt: string;
         }>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              resolve({
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-                accuracy: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
-                altitude: Number.isFinite(position.coords.altitude) ? position.coords.altitude : null,
-                heading: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
-                speed: Number.isFinite(position.coords.speed) ? position.coords.speed : null,
-                capturedAt: new Date(position.timestamp).toISOString(),
-              });
+          let bestFix: {
+            lat: number;
+            lng: number;
+            accuracy: number | null;
+            altitude: number | null;
+            heading: number | null;
+            speed: number | null;
+            capturedAt: string;
+          } | null = null;
+
+          const acceptFix = (position: GeolocationPosition) => {
+            const candidate = {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              accuracy: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+              altitude: Number.isFinite(position.coords.altitude) ? position.coords.altitude : null,
+              heading: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
+              speed: Number.isFinite(position.coords.speed) ? position.coords.speed : null,
+              capturedAt: new Date(position.timestamp).toISOString(),
+            };
+
+            if (!bestFix || (candidate.accuracy ?? Number.POSITIVE_INFINITY) < (bestFix.accuracy ?? Number.POSITIVE_INFINITY)) {
+              bestFix = candidate;
+            }
+
+            // Good enough for dispatch.
+            if ((candidate.accuracy ?? Number.POSITIVE_INFINITY) <= 25) {
+              cleanup();
+              resolve(candidate);
+            }
+          };
+
+          const cleanup = () => {
+            if (watchId !== null) {
+              navigator.geolocation.clearWatch(watchId);
+            }
+            clearTimeout(timeoutId);
+          };
+
+          const watchId = navigator.geolocation.watchPosition(
+            acceptFix,
+            () => {
+              cleanup();
+              if (bestFix) {
+                resolve(bestFix);
+                return;
+              }
+              reject(new Error('Unable to acquire GPS fix'));
             },
-            reject,
-            { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
+            { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 }
           );
+
+          const timeoutId = window.setTimeout(() => {
+            cleanup();
+            if (bestFix) {
+              resolve(bestFix);
+              return;
+            }
+            reject(new Error('GPS timed out'));
+          }, 12000);
         });
         return coords;
       } catch (geoErr) {

@@ -49,22 +49,17 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
             findClosestEmergencyHospitals(latitude, longitude);
           },
           (gpsError) => {
-            console.warn('GPS failed, trying IP-based location:', gpsError);
-            setGpsAccessError('GPS unavailable. Using approximate location.');
-            // Fallback to Hyderabad coordinates for testing
-            const hyderabadLatitude = 17.3850;
-            const hyderabadLongitude = 78.4867;
-            setRescuerCurrentLocation({ lat: hyderabadLatitude, lng: hyderabadLongitude });
-            findClosestEmergencyHospitals(hyderabadLatitude, hyderabadLongitude);
+            console.warn('GPS failed:', gpsError);
+            setRescuerCurrentLocation(null);
+            setGpsAccessError('Unable to get accurate GPS. Enable precise location and try again.');
+            setIsFetchingHospitals(false);
           },
-          { timeout: 5000, enableHighAccuracy: true }
+          { timeout: 30000, enableHighAccuracy: true, maximumAge: 0 }
         );
       } else {
         setGpsAccessError('Location services not available');
-        const hyderabadLatitude = 17.3850;
-        const hyderabadLongitude = 78.4867;
-        setRescuerCurrentLocation({ lat: hyderabadLatitude, lng: hyderabadLongitude });
-        findClosestEmergencyHospitals(hyderabadLatitude, hyderabadLongitude);
+        setRescuerCurrentLocation(null);
+        setIsFetchingHospitals(false);
       }
     };
 
