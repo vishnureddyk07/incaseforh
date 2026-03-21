@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users } from 'lucide-react';
 import type { EmergencyInfo } from '../../types/emergency';
 
@@ -28,7 +28,11 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
   const [isFetchingHospitals, setIsFetchingHospitals] = useState(true);
   const [hospitalFetchError, setHospitalFetchError] = useState<string | null>(null);
   const [gpsAccessError, setGpsAccessError] = useState<string | null>(null);
-  const [emergencyAlertActivated, setEmergencyAlertActivated] = useState(false);
+  const [sosCountdown, setSosCountdown] = useState<number | null>(null);
+  const [isTriggeringSos, setIsTriggeringSos] = useState(false);
+  const [sosAlertId, setSosAlertId] = useState<string | null>(null);
+  const [sosSuccessMessage, setSosSuccessMessage] = useState<string | null>(null);
+  const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
 
   // Get user location on component mount
   useEffect(() => {
@@ -87,42 +91,119 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
     }
   };
 
-  const initiateEmergencySOSAlert = () => {
-    setEmergencyAlertActivated(true);
-    console.log('🚨 SOS button pressed. Triggering alerts...');
-    // Trigger SOS alert to emergency contacts
-    sendSOSNotificationToContacts();
-    // Auto-call 108 after 1 second
-    setTimeout(() => {
-      console.log('📞 Auto-calling 108');
-      window.location.href = 'tel:108';
-    }, 1000);
+  const startSosCountdown = () => {
+    console.log('🔴 [QRScanDisplay] SOS button clicked! isTriggeringSos:', isTriggeringSos);
+    if (isTriggeringSos) {
+      console.log('⚠️ [QRScanDisplay] Already triggering, ignoring click');
+      return;
+    }
+    console.log('✅ [QRScanDisplay] Starting 10-second countdown...');
+    setSosErrorMessage(null);
+    setSosSuccessMessage(null);
+    setSosAlertId(null);
+    setSosCountdown(10);
   };
 
-  const sendSOSNotificationToContacts = async () => {
-    if (!rescuerCurrentLocation || !emergencyData) return;
+  const cancelSosCountdown = () => {
+    console.log('❌ [QRScanDisplay] Countdown cancelled');
+    setSosCountdown(null);
+    setSosErrorMessage(null);
+  };
+
+  const sendSOSNotificationToContacts = useCallback(async () => {
+    if (!rescuerCurrentLocation || !emergencyData) {
+      console.error('❌ [QRScanDisplay] Location or emergency details unavailable');
+      setSosErrorMessage('Location or emergency details unavailable. Please try again.');
+      return;
+    }
+
+    setIsTriggeringSos(true);
+    setSosErrorMessage(null);
 
     try {
       const backendApiUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
-      await fetch(`${backendApiUrl}/api/v1/sos/trigger`, {
+      console.log('🚨 [QRScanDisplay] Sending SOS to:', `${backendApiUrl}/api/v1/sos/trigger`);
+      const response = await fetch(`${backendApiUrl}/api/v1/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          location: rescuerCurrentLocation,
-          timestamp: new Date().toISOString(),
-          emergencyContacts: emergencyData.emergencyContacts || [],
           victimName: emergencyData.fullName,
-          victimPhone: emergencyData.phoneNumber,
+          victimPhone: emergencyData.phoneNumber || '',
+          victimBloodType: emergencyData.bloodType || '',
+          victimAllergies: emergencyData.allergies || '',
+          victimMedications: emergencyData.medications || '',
+          victimEmergencyContacts: emergencyData.emergencyContacts || [],
+          responderName: '',
+          responderPhone: '',
+          responderLocation: {
+            lat: rescuerCurrentLocation.lat,
+            lng: rescuerCurrentLocation.lng,
+          },
+          responderLocationAccuracy: null,
+          responderLocationMeta: {
+            altitude: null,
+            heading: null,
+            speed: null,
+            capturedAt: new Date().toISOString(),
+          },
+          responderUserAgent: navigator.userAgent,
+          triggeredAt: new Date().toISOString(),
         }),
-      }).catch(() => {
-        // Fail silently - don't block the emergency response
-        console.log('SOS notification sent');
       });
-      console.log('✅ SOS payload sent to backend');
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `HTTP ${response.status}: Failed to trigger SOS`);
+      }
+
+      const alert = await response.json();
+      const alertId = alert?._id as string | undefined;
+      setSosAlertId(alertId || null);
+      setSosSuccessMessage('🚨 SOS alert sent! Police and ambulance have been notified.');
+      console.log('✅ [QRScanDisplay] SOS alert created:', alertId);
+
+      setTimeout(() => {
+        console.log('📞 [QRScanDisplay] Auto-calling 108');
+        window.location.href = 'tel:108';
+      }, 1000);
     } catch (sosError) {
-      console.error('Error triggering SOS:', sosError);
+      console.error('❌ [QRScanDisplay] Error triggering SOS:', sosError);
+      const message = sosError instanceof Error ? sosError.message : 'Failed to trigger SOS alert';
+      setSosErrorMessage(message);
+    } finally {
+      setIsTriggeringSos(false);
     }
-  };
+  }, [rescuerCurrentLocation, emergencyData]);
+
+  useEffect(() => {
+    console.log('⏲️ [QRScanDisplay] Countdown effect running. sosCountdown:', sosCountdown, 'isTriggeringSos:', isTriggeringSos);
+    
+    if (sosCountdown === null || isTriggeringSos) {
+      console.log('⏸️ [QRScanDisplay] Skipping countdown (null or triggering)');
+      return;
+    }
+
+    if (sosCountdown === 0) {
+      console.log('⏰ [QRScanDisplay] Countdown reached zero, triggering SOS...');
+      setSosCountdown(null);
+      sendSOSNotificationToContacts();
+      return;
+    }
+
+    console.log('⏱️ [QRScanDisplay] Setting timer for countdown:', sosCountdown);
+    const timer = window.setTimeout(() => {
+      setSosCountdown((prev) => {
+        const newValue = prev === null ? null : prev - 1;
+        console.log('📉 [QRScanDisplay] Countdown updated:', prev, '→', newValue);
+        return newValue;
+      });
+    }, 1000);
+
+    return () => {
+      console.log('🧹 [QRScanDisplay] Cleaning up timer');
+      window.clearTimeout(timer);
+    };
+  }, [sosCountdown, isTriggeringSos, sendSOSNotificationToContacts]);
 
   const dialHospitalAmbulanceNumber = (hospitalPhoneNumber: string) => {
     console.log('📞 Calling hospital:', hospitalPhoneNumber);
@@ -158,17 +239,42 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
       {/* SOS Button - Large and Prominent */}
       <div className="sticky top-16 z-40 bg-white border-b-4 border-red-600 p-4 shadow-md">
         <div className="max-w-2xl mx-auto">
-          <button
-            onClick={initiateEmergencySOSAlert}
-            disabled={emergencyAlertActivated}
-            className={`w-full py-6 rounded-lg font-bold text-lg transition-all transform active:scale-95 ${
-              emergencyAlertActivated
-                ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
-                : 'bg-red-600 text-white hover:bg-red-700 shadow-lg hover:shadow-2xl'
-            }`}
-          >
-            {emergencyAlertActivated ? '✓ SOS Sent to Emergency Contacts' : '🚨 EMERGENCY SOS'}
-          </button>
+          {sosCountdown === null ? (
+            <button
+              onClick={startSosCountdown}
+              disabled={isTriggeringSos}
+              className="w-full py-6 rounded-lg font-bold text-lg transition-all transform active:scale-95 bg-red-600 text-white hover:bg-red-700 shadow-lg hover:shadow-2xl disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isTriggeringSos ? '🚨 Sending SOS Alert...' : '🚨 EMERGENCY SOS'}
+            </button>
+          ) : (
+            <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-red-700">
+                Warning: Triggering false SOS is a criminal offence. Alert will be sent in {sosCountdown} seconds.
+              </p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-2xl font-extrabold text-red-700 tabular-nums">{sosCountdown}</p>
+                <button
+                  type="button"
+                  onClick={cancelSosCountdown}
+                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {sosSuccessMessage && (
+            <p className="mt-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
+              {sosSuccessMessage}
+            </p>
+          )}
+          {sosErrorMessage && (
+            <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {sosErrorMessage}
+            </p>
+          )}
+          {sosAlertId && <p className="mt-2 text-center text-xs font-medium text-gray-600">Alert ID: {sosAlertId}</p>}
           <p className="text-xs text-gray-600 text-center mt-2">Alerts family & emergency contacts with your location</p>
         </div>
       </div>

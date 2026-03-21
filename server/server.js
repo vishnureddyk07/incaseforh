@@ -9,6 +9,7 @@ import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 import ActionLog from './models/ActionLog.js';
 import Hospital from './models/Hospital.js';
+import SosAlert from './models/SosAlert.js';
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -26,8 +27,20 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod';
 const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || null;
 const GEONAMES_USERNAME = process.env.GEONAMES_USERNAME || '';
+const FRONTEND_APP_URL = (process.env.FRONTEND_APP_URL || 'https://incaseforh.vercel.app').replace(/\/+$/, '');
+
+const redirectLegacyEmergencyInfoRoute = (req, res, next) => {
+  const path = req.path || '';
+  const legacyPattern = /^\/(?:emergencyinfo|emergency-info|emrgencyinfo|emrgency-info|emrgency info)\/([^/?#]+)$/i;
+  const match = path.match(legacyPattern);
+  if (!match) return next();
+
+  const identifier = decodeURIComponent(match[1]);
+  return res.redirect(302, `${FRONTEND_APP_URL}/emergencyinfo/${encodeURIComponent(identifier)}`);
+};
 
 // Middleware
+app.use(redirectLegacyEmergencyInfoRoute);
 app.use((req, res, next) => {
   console.log(`Request: ${req.method} ${req.url}`);
   const allowedOrigins = [
@@ -36,31 +49,19 @@ app.use((req, res, next) => {
     'http://10.5.12.85:5173',
     'http://10.5.12.85:5174',
     'https://incaseforh.vercel.app',
-    /^https:\/\/incaseforh-[a-zA-Z0-9\-]+\.vercel\.app$/  // Match all Vercel preview/staging URLs
+    /^https:\/\/incaseforh-.*\.vercel\.app$/
   ];
   const origin = req.headers.origin;
-  console.log(`CORS check for origin: ${origin}`);
-  const allowed = allowedOrigins.some(ao => {
-    if (typeof ao === 'string') {
-      return ao === origin;
-    }
-    return ao.test(origin);
-  });
-  
+  const allowed = allowedOrigins.some(ao => 
+    typeof ao === 'string' ? ao === origin : ao.test(origin)
+  );
   if (allowed) {
     res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Credentials', 'true');
-    console.log(`✓ CORS allowed for: ${origin}`);
-  } else {
-    console.log(`✗ CORS denied for: ${origin}`);
   }
-  
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Authorization-Token');
-  res.header('Access-Control-Max-Age', '3600');
-  
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   if (req.method === 'OPTIONS') {
-    console.log('Handling OPTIONS preflight');
+    console.log('Handling OPTIONS');
     res.sendStatus(200);
   } else {
     next();
@@ -187,6 +188,14 @@ const requireAuth = (req, res, next) => {
 const requireAdmin = (req, res, next) => {
   if (!req.user || req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+};
+
+// Middleware: allow police or ambulance
+const requirePoliceOrAmbulance = (req, res, next) => {
+  if (!req.user || (req.user.role !== 'police' && req.user.role !== 'ambulance')) {
+    return res.status(403).json({ error: 'Police or ambulance access required' });
   }
   next();
 };
@@ -564,21 +573,6 @@ router.delete('/admin/emergency/:id', requireAuth, requireAdmin, async (req, res
   }
 });
 
-// Admin/Manager: fetch QR code payload for one record (used for lazy download)
-router.get('/admin/emergency/:id/qrcode', requireAuth, requireManagerOrAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const record = await EmergencyInfo.findById(id).select('qrCode fullName').lean();
-    if (!record) {
-      return res.status(404).json({ error: 'Record not found' });
-    }
-    res.json({ id, fullName: record.fullName, qrCode: record.qrCode || null });
-  } catch (error) {
-    console.error('Error fetching emergency QR code:', error);
-    res.status(500).json({ error: 'Failed to fetch QR code' });
-  }
-});
-
 // Admin: create manager credentials
 router.post('/admin/users/manager', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -634,6 +628,64 @@ router.post('/manager/users', requireAuth, requireManagerOrAdmin, async (req, re
   } catch (error) {
     console.error('Error creating employee user:', error);
     res.status(500).json({ error: 'Failed to create employee user' });
+  }
+});
+
+// Admin: create police credentials
+router.post('/admin/users/police', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({ email: normalizedEmail, passwordHash, role: 'police' });
+
+    logAction({ actor: req.user, action: 'create_police', details: { email: normalizedEmail } });
+
+    res.status(201).json({ user: sanitizeUser(user) });
+  } catch (error) {
+    console.error('Error creating police user:', error);
+    res.status(500).json({ error: 'Failed to create police user' });
+  }
+});
+
+// Admin: create ambulance credentials
+router.post('/admin/users/ambulance', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({ email: normalizedEmail, passwordHash, role: 'ambulance' });
+
+    logAction({ actor: req.user, action: 'create_ambulance', details: { email: normalizedEmail } });
+
+    res.status(201).json({ user: sanitizeUser(user) });
+  } catch (error) {
+    console.error('Error creating ambulance user:', error);
+    res.status(500).json({ error: 'Failed to create ambulance user' });
   }
 });
 
@@ -991,41 +1043,56 @@ router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (re
   }
 });
 
-// GET all emergency records (admin/manager) with pagination
+// GET all emergency records (admin/manager)
 router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) => {
   try {
-    console.log('Fetching emergency records with pagination...');
-    
-    // Get pagination params from query
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 20)); // Cap at 100 records per page
-    const skip = (page - 1) * limit;
-    const includeQr = String(req.query.includeQr || 'false').toLowerCase() === 'true';
-    
-    // Fast count for unfiltered listings
-    const total = await EmergencyInfo.estimatedDocumentCount();
-    const fields = includeQr
-      ? 'fullName email qrCode createdAt phoneNumber dateOfBirth address bloodType emergencyContact allergies medications medicalConditions alternateNumber1 alternateNumber2'
-      : 'fullName email createdAt phoneNumber dateOfBirth address bloodType emergencyContact allergies medications medicalConditions alternateNumber1 alternateNumber2';
-    
-    // Fetch paginated records
-    const records = await EmergencyInfo.find({})
-      .sort({ createdAt: -1 })
-      .select(fields)
-      .skip(skip)
-      .limit(limit)
-      .maxTimeMS(15000)
-      .lean();
-    
-    console.log(`Fetched ${records.length} of ${total} records (page ${page}, limit ${limit})`);
-    
-    // Return pagination metadata
-    res.json({
-      total,
-      page,
-      limit,
-      records
-    });
+    console.log('Fetching all emergency records...');
+    const includeQr = String(req.query.includeQr || '').toLowerCase() === 'true' || String(req.query.includeQr) === '1';
+    const includePhoto = String(req.query.includePhoto || '').toLowerCase() === 'true' || String(req.query.includePhoto) === '1';
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limitRaw = parseInt(req.query.limit, 10);
+    const hasLimit = Number.isFinite(limitRaw) && limitRaw > 0;
+    const limit = hasLimit ? Math.min(limitRaw, 100) : null;
+    const skip = hasLimit ? (page - 1) * limit : 0;
+
+    const projectStage = {
+      _id: 1,
+      fullName: 1,
+      email: 1,
+      createdAt: 1,
+      phoneNumber: 1,
+      dateOfBirth: 1,
+      address: 1,
+      bloodType: 1,
+      emergencyContact: 1,
+      hasPhoto: {
+        $gt: [
+          {
+            $strLenCP: {
+              $ifNull: ['$photo', ''],
+            },
+          },
+          0,
+        ],
+      },
+    };
+
+    if (includeQr) {
+      projectStage.qrCode = 1;
+    }
+    if (includePhoto) {
+      projectStage.photo = 1;
+    }
+
+    const pipeline = [{ $sort: { createdAt: -1 } }];
+    if (hasLimit) {
+      pipeline.push({ $skip: skip }, { $limit: limit });
+    }
+    pipeline.push({ $project: projectStage });
+
+    const allEmergencies = await EmergencyInfo.aggregate(pipeline);
+    console.log(`Found ${allEmergencies.length} records`);
+    res.json(allEmergencies);
   } catch (error) {
     console.error('Error fetching emergency records:', error);
     res.status(500).json({ error: 'Failed to fetch emergency records' });
@@ -1048,6 +1115,18 @@ app.get('/health', async (req, res) => {
   } catch (error) {
     res.status(500).json({ status: 'unhealthy', mongodb: 'disconnected' });
   }
+});
+
+// Backward compatibility for older QR codes that used backend host.
+app.get([
+  '/emergencyinfo/:identifier',
+  '/emergency-info/:identifier',
+  '/emrgencyinfo/:identifier',
+  '/emrgency-info/:identifier',
+  '/emrgency info/:identifier',
+], (req, res) => {
+  const { identifier } = req.params;
+  return res.redirect(302, `${FRONTEND_APP_URL}/emergencyinfo/${encodeURIComponent(identifier)}`);
 });
 
 // Environment check endpoint (does not leak secrets)
@@ -1151,36 +1230,169 @@ router.get('/hospitals/nearby', externalApiLimiter, async (req, res) => {
   }
 });
 
+// Police/Ambulance: Get all active SOS alerts
+router.get('/sos', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
+  try {
+    const alerts = await SosAlert.find({})
+      .sort({ triggeredAt: -1 })
+      .lean();
+    return res.json(alerts);
+  } catch (error) {
+    console.error('Error fetching SOS alerts:', error);
+    return res.status(500).json({ error: 'Failed to fetch SOS alerts' });
+  }
+});
+
 // Public: Trigger SOS alert
 router.post('/sos/trigger', sosLimiter, async (req, res) => {
   try {
-    const { location, timestamp, emergencyContacts, victimName, victimPhone } = req.body;
+    const {
+      victimName,
+      victimPhone,
+      victimBloodType,
+      victimAllergies,
+      victimMedications,
+      victimEmergencyContacts,
+      responderName,
+      responderPhone,
+      responderLocation,
+      responderLocationAccuracy,
+      responderLocationMeta,
+      responderUserAgent,
+      triggeredAt,
+    } = req.body || {};
 
-    if (!location || !timestamp) {
-      return res.status(400).json({ error: 'Location and timestamp are required' });
+    const lat = Number(responderLocation?.lat);
+    const lng = Number(responderLocation?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: 'Responder location with valid lat and lng is required' });
     }
 
-    // Log SOS event for audit
-    if (emergencyContacts && Array.isArray(emergencyContacts) && emergencyContacts.length > 0) {
-      const primaryContact = emergencyContacts[0];
-      console.log(`🚨 SOS TRIGGERED - Victim: ${victimName || 'Unknown'} (${victimPhone || 'No phone'})`);
-      console.log(`   Location: ${location.lat}, ${location.lng}`);
-      console.log(`   Primary Contact: ${primaryContact.name} - ${primaryContact.phone}`);
+    const safeEmergencyContacts = Array.isArray(victimEmergencyContacts)
+      ? victimEmergencyContacts
+          .filter((c) => c && typeof c === 'object' && !Array.isArray(c))
+          .map((c) => ({
+            name: stripHtml(sanitizeMongoValue(c.name) || ''),
+            phone: stripHtml(sanitizeMongoValue(c.phone) || ''),
+            relationship: stripHtml(sanitizeMongoValue(c.relationship) || ''),
+          }))
+      : [];
 
-      // TODO: Implement actual SMS/WhatsApp notifications
-      // For now, just log it
-      console.log(`   📱 Would send SOS notification to ${emergencyContacts.length} contacts`);
-    }
-
-    res.json({ 
-      message: 'SOS triggered successfully',
-      contactsNotified: emergencyContacts ? emergencyContacts.length : 0,
-      timestamp 
+    const alert = await SosAlert.create({
+      victimName: stripHtml(sanitizeMongoValue(victimName) || ''),
+      victimPhone: stripHtml(sanitizeMongoValue(victimPhone) || ''),
+      victimBloodType: stripHtml(sanitizeMongoValue(victimBloodType) || ''),
+      victimAllergies: stripHtml(sanitizeMongoValue(victimAllergies) || ''),
+      victimMedications: stripHtml(sanitizeMongoValue(victimMedications) || ''),
+      victimEmergencyContacts: safeEmergencyContacts,
+      responderName: stripHtml(sanitizeMongoValue(responderName) || ''),
+      responderPhone: stripHtml(sanitizeMongoValue(responderPhone) || ''),
+      responderLocation: { lat, lng },
+      responderLocationAccuracy: Number.isFinite(Number(responderLocationAccuracy))
+        ? Number(responderLocationAccuracy)
+        : null,
+      responderLocationMeta: {
+        altitude: Number.isFinite(Number(responderLocationMeta?.altitude))
+          ? Number(responderLocationMeta.altitude)
+          : null,
+        heading: Number.isFinite(Number(responderLocationMeta?.heading))
+          ? Number(responderLocationMeta.heading)
+          : null,
+        speed: Number.isFinite(Number(responderLocationMeta?.speed))
+          ? Number(responderLocationMeta.speed)
+          : null,
+        capturedAt: responderLocationMeta?.capturedAt ? new Date(responderLocationMeta.capturedAt) : null,
+      },
+      responderUserAgent: stripHtml(sanitizeMongoValue(responderUserAgent) || ''),
+      responderIP: req.ip || '',
+      triggeredAt: triggeredAt ? new Date(triggeredAt) : new Date(),
+      status: 'active',
     });
+
+    await ActionLog.create({
+      actorId: 'public',
+      actorEmail: 'public@anonymous',
+      actorRole: 'public',
+      action: 'sos_trigger',
+      details: {
+        alertId: alert._id.toString(),
+        victimName: alert.victimName,
+        victimPhone: alert.victimPhone,
+        responderLocation: alert.responderLocation,
+      },
+    });
+
+    console.log(`🚨 SOS TRIGGERED - Alert ${alert._id.toString()}`);
+    console.log(`   Victim: ${alert.victimName || 'Unknown'} (${alert.victimPhone || 'No phone'})`);
+    console.log(`   Location: ${lat}, ${lng}`);
+
+    return res.status(201).json(alert);
   } catch (error) {
     console.error('Error triggering SOS:', error);
-    // Don't block the emergency - respond with success anyway
-    res.json({ message: 'SOS recorded' });
+    return res.status(500).json({ error: 'Failed to trigger SOS alert' });
+  }
+});
+
+// Police/Ambulance: close an active SOS case
+router.patch('/sos/:id/close', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid alert ID' });
+    }
+
+    const updated = await SosAlert.findOneAndUpdate(
+      { _id: id, status: 'active' },
+      {
+        $set: {
+          status: 'resolved',
+          resolvedAt: new Date(),
+          closedByRole: req.user?.role || '',
+          closedByEmail: req.user?.email || '',
+        },
+      },
+      { new: true }
+    );
+
+    if (!updated) {
+      const existing = await SosAlert.findById(id).lean();
+      if (!existing) {
+        return res.status(404).json({ error: 'SOS alert not found' });
+      }
+      return res.status(409).json({ error: 'This SOS case is already closed' });
+    }
+
+    await logAction({
+      actor: req.user,
+      action: 'sos_close',
+      details: {
+        alertId: updated._id.toString(),
+        closedBy: req.user?.email || '',
+      },
+    });
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('Error closing SOS case:', error);
+    return res.status(500).json({ error: 'Failed to close SOS case' });
+  }
+});
+
+// Public: get SOS alert by id for police and ambulance pages
+router.get('/sos/:id', readLimiter, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid alert ID' });
+    }
+    const alert = await SosAlert.findById(id).lean();
+    if (!alert) {
+      return res.status(404).json({ error: 'SOS alert not found' });
+    }
+    return res.json(alert);
+  } catch (error) {
+    console.error('Error fetching SOS alert:', error);
+    return res.status(500).json({ error: 'Failed to fetch SOS alert' });
   }
 });
 

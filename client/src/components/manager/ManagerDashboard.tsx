@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
@@ -12,20 +12,17 @@ interface EmergencyInfo {
 }
 
 export default function ManagerDashboard() {
+  const RECORDS_PER_PAGE = 25;
   const { isAuthenticated, user, token } = useAuth();
   const navigate = useNavigate();
   const apiBase = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
   const [records, setRecords] = useState<EmergencyInfo[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [empEmail, setEmpEmail] = useState('');
   const [empPassword, setEmpPassword] = useState('');
   const [creating, setCreating] = useState(false);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [limit] = useState(20);
-  const [isPageLoading, setIsPageLoading] = useState(false);
-  const pageCacheRef = useRef<Map<number, { records: EmergencyInfo[]; total: number }>>(new Map());
 
   useEffect(() => {
     if (!isAuthenticated || !token) return;
@@ -40,53 +37,8 @@ export default function ManagerDashboard() {
 
   const fetchRecords = () => {
     if (!token) return;
-    const parsePaginatedData = (data: unknown, requestedPage: number) => {
-      if (Array.isArray(data)) {
-        const start = (requestedPage - 1) * limit;
-        return {
-          records: data.slice(start, start + limit) as EmergencyInfo[],
-          total: data.length,
-        };
-      }
-
-      const payload = data as { records?: EmergencyInfo[]; total?: number };
-      return {
-        records: payload.records || [],
-        total: payload.total || 0,
-      };
-    };
-
-    const prefetchPage = async (targetPage: number) => {
-      if (pageCacheRef.current.has(targetPage)) return;
-      try {
-        const prefetchRes = await fetch(`${apiBase}/api/v1/emergency?page=${targetPage}&limit=${limit}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!prefetchRes.ok) return;
-        const prefetchData = await prefetchRes.json();
-        const parsed = parsePaginatedData(prefetchData, targetPage);
-        pageCacheRef.current.set(targetPage, parsed);
-      } catch {
-        // Ignore prefetch errors to keep primary flow fast.
-      }
-    };
-
-    const cachedPage = pageCacheRef.current.get(page);
-    if (cachedPage) {
-      setRecords(cachedPage.records);
-      setTotal(cachedPage.total);
-      setLoading(false);
-      const totalPages = Math.max(1, Math.ceil(cachedPage.total / limit));
-      if (page < totalPages) {
-        void prefetchPage(page + 1);
-      }
-      return;
-    }
-
-    setIsPageLoading(true);
-    if (page === 1) setLoading(true);
-
-    fetch(`${apiBase}/api/v1/emergency?page=${page}&limit=${limit}`, {
+    setLoading(true);
+    fetch(`${apiBase}/api/v1/emergency?limit=1000`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
@@ -94,26 +46,21 @@ export default function ManagerDashboard() {
         return res.json();
       })
       .then((data) => {
-        const parsed = parsePaginatedData(data, page);
-        setRecords(parsed.records);
-        setTotal(parsed.total);
-        pageCacheRef.current.set(page, parsed);
-        const totalPages = Math.max(1, Math.ceil(parsed.total / limit));
-        if (page < totalPages) {
-          void prefetchPage(page + 1);
-        }
+        const recordsArray = Array.isArray(data) ? data : Array.isArray(data?.records) ? data.records : [];
+        setRecords(recordsArray);
       })
       .catch((e) => setError(e.message))
-      .finally(() => {
-        setLoading(false);
-        setIsPageLoading(false);
-      });
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     fetchRecords();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, page]);
+  }, [token]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [records.length]);
 
   const sorted = useMemo(() => {
     return [...records].sort((a, b) => {
@@ -122,6 +69,12 @@ export default function ManagerDashboard() {
       return bDate - aDate;
     });
   }, [records]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / RECORDS_PER_PAGE));
+  const paginatedRecords = useMemo(() => {
+    const startIndex = (currentPage - 1) * RECORDS_PER_PAGE;
+    return sorted.slice(startIndex, startIndex + RECORDS_PER_PAGE);
+  }, [sorted, currentPage]);
 
   const createEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,8 +124,21 @@ export default function ManagerDashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Manager Dashboard</h1>
           <div className="flex gap-3">
             <Link to="/" className="px-4 py-2 border rounded hover:bg-gray-100">Home</Link>
-            <button onClick={fetchRecords} className="px-4 py-2 border rounded hover:bg-gray-100">Refresh</button>
+            <button
+              onClick={() => {
+                setCurrentPage(1);
+                fetchRecords();
+              }}
+              className="px-4 py-2 border rounded hover:bg-gray-100"
+            >
+              Refresh
+            </button>
           </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-4">
+          <p className="text-sm text-gray-600">Total QR Records</p>
+          <p className="text-2xl font-bold text-gray-900">{loading ? '...' : records.length}</p>
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
@@ -193,65 +159,65 @@ export default function ManagerDashboard() {
 
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-lg font-semibold mb-4">Emergency Records (view-only)</h2>
-          <p className="text-sm text-gray-600 mb-2">{sorted.length} shown • {total} total</p>
           {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
           {loading ? (
             <p>Loading...</p>
           ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="text-gray-600">
-                      <th className="py-2">Name</th>
-                      <th className="py-2">Email</th>
-                      <th className="py-2">Phone</th>
-                      <th className="py-2">Blood Type</th>
-                      <th className="py-2">Created</th>
-                      <th className="py-2">Actions</th>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="text-gray-600">
+                    <th className="py-2">Name</th>
+                    <th className="py-2">Email</th>
+                    <th className="py-2">Phone</th>
+                    <th className="py-2">Blood Type</th>
+                    <th className="py-2">Created</th>
+                    <th className="py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedRecords.map((r) => (
+                    <tr key={r._id} className="border-t">
+                      <td className="py-2 font-medium">{r.fullName}</td>
+                      <td className="py-2">{r.email || '—'}</td>
+                      <td className="py-2">{r.phoneNumber || '—'}</td>
+                      <td className="py-2">{r.bloodType || '—'}</td>
+                      <td className="py-2">{r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</td>
+                      <td className="py-2">
+                        <button className="text-orange-600 hover:underline" onClick={() => handleOpen(r)}>Open</button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {sorted.map((r) => (
-                      <tr key={r._id} className="border-t">
-                        <td className="py-2 font-medium">{r.fullName}</td>
-                        <td className="py-2">{r.email || '—'}</td>
-                        <td className="py-2">{r.phoneNumber || '—'}</td>
-                        <td className="py-2">{r.bloodType || '—'}</td>
-                        <td className="py-2">{r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</td>
-                        <td className="py-2">
-                          <button className="text-orange-600 hover:underline" onClick={() => handleOpen(r)}>Open</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {!loading && sorted.length > 0 && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                Showing {(currentPage - 1) * RECORDS_PER_PAGE + 1}-
+                {Math.min(currentPage * RECORDS_PER_PAGE, sorted.length)} of {sorted.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 border rounded hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-gray-700">Page {currentPage} of {totalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 border rounded hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
               </div>
-
-              {total > 0 && (
-                <div className="mt-6 flex items-center justify-center gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                    disabled={page <= 1 || isPageLoading}
-                    className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  <span className="text-sm text-gray-700 font-medium">
-                    Page {page} of {Math.max(1, Math.ceil(total / limit))}{isPageLoading ? ' • Loading...' : ''}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPage((prev) => Math.min(Math.ceil(total / limit), prev + 1))}
-                    disabled={page >= Math.ceil(total / limit) || isPageLoading}
-                    className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </>
+            </div>
           )}
         </div>
       </div>

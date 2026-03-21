@@ -47,6 +47,10 @@ export default function Navbar() {
                   <a href="/admin" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setIsAccessOpen(false)}>Admin</a>
                   <a href="/manager" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setIsAccessOpen(false)}>Manager</a>
                   <a href="/employee" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setIsAccessOpen(false)}>Employee</a>
+                  <div className="border-t border-gray-200">
+                    <a href="/police/login" className="block px-4 py-2 text-sm text-blue-600 font-semibold hover:bg-blue-50" onClick={() => setIsAccessOpen(false)}>👮 Police</a>
+                    <a href="/ambulance/login" className="block px-4 py-2 text-sm text-orange-600 font-semibold hover:bg-orange-50" onClick={() => setIsAccessOpen(false)}>🚑 Ambulance</a>
+                  </div>
                 </div>
               )}
             </div>
@@ -103,6 +107,10 @@ export default function Navbar() {
               <a href="/admin" onClick={closeMenu} className="block px-4 py-2 text-gray-700 hover:bg-gray-100">Admin</a>
               <a href="/manager" onClick={closeMenu} className="block px-4 py-2 text-gray-700 hover:bg-gray-100">Manager</a>
               <a href="/employee" onClick={closeMenu} className="block px-4 py-2 text-gray-700 hover:bg-gray-100">Employee</a>
+              <div className="border-t border-gray-200">
+                <a href="/police/login" onClick={closeMenu} className="block px-4 py-2 text-sm text-blue-600 font-semibold hover:bg-blue-50">👮 Police</a>
+                <a href="/ambulance/login" onClick={closeMenu} className="block px-4 py-2 text-sm text-orange-600 font-semibold hover:bg-orange-50">🚑 Ambulance</a>
+              </div>
             </div>
             {user && (
               <button

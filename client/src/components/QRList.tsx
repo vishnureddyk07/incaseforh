@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
+import * as QRCodeLib from 'qrcode';
 import { useAuth } from "../context/AuthContext";
 
 interface EmergencyInfo {
   _id: string;
   fullName: string;
   email?: string;
-  qrCode: string;
-  photo?: string;
+  qrCode?: string;
+  hasPhoto?: boolean;
   bloodType?: string;
   emergencyContact?: string;
   allergies?: string;
@@ -24,63 +25,33 @@ interface EmergencyInfo {
 }
 
 export default function QRList() {
-  // Fallback placeholder if a photo is missing/404
-  const PLACEHOLDER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><rect width="120" height="120" fill="%23f3f4f6"/><circle cx="60" cy="45" r="22" fill="%23d1d5db"/><rect x="25" y="75" width="70" height="30" rx="12" fill="%23d1d5db"/></svg>';
+  const RECORDS_PER_PAGE = 25;
   const [qrs, setQrs] = useState<EmergencyInfo[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [limit] = useState(20);
-  const [isPageLoading, setIsPageLoading] = useState(false);
-  const pageCacheRef = useRef<Map<number, { records: EmergencyInfo[]; total: number }>>(new Map());
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
+  const [currentPage, setCurrentPage] = useState(1);
   const [editingRecord, setEditingRecord] = useState<EmergencyInfo | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
-  const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
   const { isAuthenticated, token, user } = useAuth();
   const navigate = useNavigate();
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+  const normalizeEmergencyRecords = (payload: unknown): EmergencyInfo[] => {
+    if (Array.isArray(payload)) return payload as EmergencyInfo[];
+    if (payload && typeof payload === 'object') {
+      const maybe = payload as { records?: unknown; data?: unknown };
+      if (Array.isArray(maybe.records)) return maybe.records as EmergencyInfo[];
+      if (Array.isArray(maybe.data)) return maybe.data as EmergencyInfo[];
+    }
+    return [];
+  };
 
   useEffect(() => {
-    const parsePaginatedData = (data: unknown, requestedPage: number) => {
-      if (Array.isArray(data)) {
-        const start = (requestedPage - 1) * limit;
-        return {
-          records: data.slice(start, start + limit) as EmergencyInfo[],
-          total: data.length,
-        };
-      }
-
-      const payload = data as { records?: EmergencyInfo[]; total?: number };
-      return {
-        records: payload.records || [],
-        total: payload.total || 0,
-      };
-    };
-
-    const prefetchPage = async (targetPage: number) => {
-      if (!isAuthenticated || !token || user?.role !== 'admin') return;
-      if (pageCacheRef.current.has(targetPage)) return;
-
-      try {
-        const prefetchRes = await fetch(`${API_BASE}/api/v1/emergency?page=${targetPage}&limit=${limit}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!prefetchRes.ok) return;
-        const prefetchData = await prefetchRes.json();
-        const parsed = parsePaginatedData(prefetchData, targetPage);
-        pageCacheRef.current.set(targetPage, parsed);
-      } catch {
-        // Ignore prefetch errors to keep primary flow fast.
-      }
-    };
-
     const fetchQrs = async () => {
       if (!isAuthenticated || !token || user?.role !== 'admin') {
         setLoading(false);
@@ -88,25 +59,8 @@ export default function QRList() {
         return;
       }
 
-      const cachedPage = pageCacheRef.current.get(page);
-      if (cachedPage) {
-        setQrs(cachedPage.records);
-        setTotal(cachedPage.total);
-        setLoading(false);
-        const totalPages = Math.max(1, Math.ceil(cachedPage.total / limit));
-        if (page < totalPages) {
-          void prefetchPage(page + 1);
-        }
-        return;
-      }
-
-      setIsPageLoading(true);
-      if (page === 1) {
-        setLoading(true);
-      }
-
       try {
-        const res = await fetch(`${API_BASE}/api/v1/emergency?page=${page}&limit=${limit}`, {
+        const res = await fetch(`${API_BASE}/api/v1/emergency?limit=1000`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -121,106 +75,17 @@ export default function QRList() {
         }
 
         const data = await res.json();
-        const parsed = parsePaginatedData(data, page);
-        setQrs(parsed.records);
-        setTotal(parsed.total);
-        pageCacheRef.current.set(page, parsed);
-        const totalPages = Math.max(1, Math.ceil(parsed.total / limit));
-        if (page < totalPages) {
-          void prefetchPage(page + 1);
-        }
+        setQrs(normalizeEmergencyRecords(data));
         setLoading(false);
       } catch (err) {
         console.error(err);
         setError(err instanceof Error ? err.message : 'Failed to fetch QR list');
         setLoading(false);
-      } finally {
-        setIsPageLoading(false);
       }
     };
 
     fetchQrs();
-  }, [API_BASE, isAuthenticated, token, user?.role, page, limit]);
-
-  // Resolve authenticated photo URLs into stable object URLs (or keep data URLs)
-  useEffect(() => {
-    let isActive = true;
-    const aborters: AbortController[] = [];
-    const createdBlobUrls: string[] = [];
-
-    const resolveSrc = (src: string): string => {
-      const trimmed = src.trim();
-      if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
-        return trimmed;
-      }
-      // Treat as backend-relative path - use env var or production default
-      const base = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
-      return trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`;
-    };
-
-    const resolvePhotos = async () => {
-      if (!isAuthenticated || !token) return;
-
-      const recordsWithPhotos = qrs.filter((rec) => Boolean(rec.photo));
-      const entries: Array<[string, string] | null> = [];
-      const CHUNK_SIZE = 8;
-
-      for (let i = 0; i < recordsWithPhotos.length; i += CHUNK_SIZE) {
-        const chunk = recordsWithPhotos.slice(i, i + CHUNK_SIZE);
-        const chunkEntries = await Promise.all(
-          chunk.map(async (rec): Promise<[string, string] | null> => {
-            if (!rec.photo) return null;
-            const resolved = resolveSrc(rec.photo.trim());
-            const id = rec._id;
-
-            if (resolved.startsWith('data:')) return [id, resolved];
-
-            try {
-              const controller = new AbortController();
-              aborters.push(controller);
-              const res = await fetch(resolved, {
-                headers: { Authorization: `Bearer ${token}` },
-                signal: controller.signal,
-              });
-              if (!res.ok) {
-                console.warn(`Photo fetch failed (${res.status}) for`, id, resolved);
-                return [id, PLACEHOLDER];
-              }
-              const blob = await res.blob();
-              const blobUrl = URL.createObjectURL(blob);
-              createdBlobUrls.push(blobUrl);
-              return [id, blobUrl];
-            } catch (e) {
-              console.warn('Photo resolve error for', id, e);
-              return [id, PLACEHOLDER];
-            }
-          })
-        );
-        entries.push(...chunkEntries);
-      }
-
-      if (isActive) {
-        const nextMap = new Map<string, string>(
-          entries.filter((e): e is [string, string] => e !== null)
-        );
-        setPhotoUrls((prev) => {
-          prev.forEach((url) => {
-            if (url.startsWith('blob:')) URL.revokeObjectURL(url);
-          });
-          return nextMap;
-        });
-      }
-    };
-
-    resolvePhotos();
-
-    return () => {
-      isActive = false;
-      aborters.forEach((c) => c.abort());
-      createdBlobUrls.forEach((url) => URL.revokeObjectURL(url));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qrs, isAuthenticated, token]);
+  }, [API_BASE, isAuthenticated, token, user?.role]);
 
   const handleOpen = (record: EmergencyInfo) => {
     const identifier = (record.email && record.email.trim()) || (record.phoneNumber && record.phoneNumber.trim());
@@ -233,7 +98,7 @@ export default function QRList() {
 
   // Search and filter as derived value (no extra render cycle)
   const filteredQrs = useMemo(() => {
-    let filtered = [...qrs];
+    let filtered = [...(Array.isArray(qrs) ? qrs : [])];
 
     if (searchTerm) {
       const needle = searchTerm.toLowerCase();
@@ -269,6 +134,16 @@ export default function QRList() {
     return map;
   }, [filteredQrs]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredQrs.length / RECORDS_PER_PAGE));
+  const paginatedQrs = useMemo(() => {
+    const startIndex = (currentPage - 1) * RECORDS_PER_PAGE;
+    return filteredQrs.slice(startIndex, startIndex + RECORDS_PER_PAGE);
+  }, [filteredQrs, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, sortBy, qrs.length]);
+
   const toggleSelectionMode = () => {
     setSelectionMode((prev) => {
       if (prev) setSelectedIds(new Set());
@@ -285,7 +160,7 @@ export default function QRList() {
   };
 
   const selectAllVisible = () => {
-    setSelectedIds(new Set(filteredQrs.map((r) => r._id)));
+    setSelectedIds(new Set(paginatedQrs.map((r) => r._id)));
   };
 
   const clearSelection = () => setSelectedIds(new Set());
@@ -346,13 +221,60 @@ export default function QRList() {
     }
   };
 
-  const downloadSingle = async (record: EmergencyInfo) => {
-    if (!record.qrCode) {
-      alert('QR code not available for this record');
-      return;
+  const resolvePublicAppBase = () => {
+    const configuredPublicBase = import.meta.env.VITE_PUBLIC_APP_URL?.trim();
+    if (configuredPublicBase && /^https?:\/\//i.test(configuredPublicBase)) {
+      return configuredPublicBase.replace(/\/+$/, '');
     }
+    // Use public production URL to keep QR scans accessible without deployment auth.
+    return 'https://incaseforh.vercel.app';
+  };
+
+  const buildEmergencyPageUrl = (record: EmergencyInfo) => {
+    const identifier = (record.email && record.email.trim()) || (record.phoneNumber && record.phoneNumber.trim());
+    if (!identifier) return null;
+    return `${resolvePublicAppBase()}/emergencyinfo/${encodeURIComponent(identifier)}`;
+  };
+
+  const generateFreshQrDataUrl = async (record: EmergencyInfo): Promise<string | null> => {
+    const pageUrl = buildEmergencyPageUrl(record);
+    if (!pageUrl) return null;
+    return QRCodeLib.toDataURL(pageUrl, {
+      width: 300,
+      margin: 1,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF',
+      },
+    });
+  };
+
+  const fetchRecordForDownload = async (record: EmergencyInfo): Promise<EmergencyInfo> => {
+    if (record.qrCode) return record;
+    const identifier = (record.email && record.email.trim()) || (record.phoneNumber && record.phoneNumber.trim());
+    if (!identifier) throw new Error('No email or phone number available for download');
+    const isEmail = identifier.includes('@');
+    const endpoint = isEmail
+      ? `${API_BASE}/api/v1/emergency/${encodeURIComponent(identifier)}`
+      : `${API_BASE}/api/v1/emergency/phone/${encodeURIComponent(identifier)}`;
+    const res = await fetch(endpoint);
+    if (!res.ok) throw new Error('Failed to fetch QR code for this record');
+    const fullRecord = await res.json();
+    return fullRecord;
+  };
+
+  const downloadSingle = async (record: EmergencyInfo) => {
     try {
-      const blob = dataUrlToBlob(record.qrCode);
+      const freshQrCode = await generateFreshQrDataUrl(record);
+      let qrToDownload = freshQrCode;
+      if (!qrToDownload) {
+        const targetRecord = await fetchRecordForDownload(record);
+        qrToDownload = targetRecord.qrCode || null;
+      }
+      if (!qrToDownload) {
+        throw new Error('QR code not available for this record');
+      }
+      const blob = dataUrlToBlob(qrToDownload);
       const filename = `${(record.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_')}.png`;
       saveAs(blob, filename);
     } catch (err) {
@@ -382,12 +304,21 @@ export default function QRList() {
 
       for (const id of selectedIds) {
         const rec = filteredMap.get(id);
-        if (!rec || !rec.qrCode) {
+        if (!rec) {
           failCount++;
           continue;
         }
         try {
-          const blob = dataUrlToBlob(rec.qrCode);
+          let qrToDownload = await generateFreshQrDataUrl(rec);
+          if (!qrToDownload) {
+            const targetRecord = await fetchRecordForDownload(rec);
+            qrToDownload = targetRecord.qrCode || null;
+            if (!qrToDownload) {
+              failCount++;
+              continue;
+            }
+          }
+          const blob = dataUrlToBlob(qrToDownload);
           const name = (rec.fullName || 'qr-code').replace(/[^a-z0-9\-_. ]/gi, '_');
           zip.file(`${name}.png`, blob);
           successCount++;
@@ -431,9 +362,7 @@ export default function QRList() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || 'Failed to delete record');
       }
-      setQrs((prev) => prev.filter((r) => r._id !== record._id));
-      setTotal((prev) => Math.max(0, prev - 1));
-      pageCacheRef.current.clear();
+      setQrs((prev) => (Array.isArray(prev) ? prev : []).filter((r) => r._id !== record._id));
       setSelectedIds(new Set());
     } catch (err) {
       console.error(err);
@@ -468,17 +397,12 @@ export default function QRList() {
       });
       if (!res.ok) throw new Error('Failed to update');
       // Refresh list
-      const listRes = await fetch(`${API_BASE}/api/v1/emergency?page=${page}&limit=${limit}`, {
+      const listRes = await fetch(`${API_BASE}/api/v1/emergency?limit=1000`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await listRes.json();
-      const parsed = Array.isArray(data)
-        ? { records: data.slice((page - 1) * limit, (page - 1) * limit + limit), total: data.length }
-        : { records: data.records || [], total: data.total || 0 };
-      setQrs(parsed.records);
-      setTotal(parsed.total);
-      pageCacheRef.current.clear();
-      pageCacheRef.current.set(page, parsed);
+      setQrs(normalizeEmergencyRecords(data));
+      setCurrentPage(1);
       setEditingRecord(null);
     } catch (err) {
       console.error(err);
@@ -549,14 +473,14 @@ export default function QRList() {
           <select
             id="qr-sort"
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'name')}
             className="px-3 py-1 border rounded-md"
           >
             <option value="newest">Newest First</option>
             <option value="oldest">Oldest First</option>
             <option value="name">Name (A-Z)</option>
           </select>
-          <span className="ml-auto text-sm text-gray-600">{filteredQrs.length} shown • {total} total</span>
+          <span className="ml-auto text-sm text-gray-600">{filteredQrs.length} record(s)</span>
           <div className="flex gap-2">
             <button
               type="button"
@@ -597,18 +521,18 @@ export default function QRList() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredQrs.map((qr) => (
+        {paginatedQrs.map((qr) => (
           <div key={qr._id} className="bg-white p-4 rounded-lg shadow hover:shadow-md transition">
             <div className="flex gap-4 cursor-pointer" onClick={() => handleOpen(qr)}>
-              {qr.photo ? (
-                <img src={photoUrls.get(qr._id) || qr.photo} alt={qr.fullName} className="w-20 h-20 rounded object-cover border" />
-              ) : (
-                <div className="w-20 h-20 rounded bg-gray-100 grid place-items-center text-gray-500 text-xs">No Photo</div>
-              )}
               <div className="flex-1">
                 <h3 className="text-lg font-semibold">{qr.fullName}</h3>
                 <p className="text-sm text-gray-600">{qr.email || 'Email not provided'}</p>
                 <p className="text-sm text-gray-700">{qr.phoneNumber || 'Phone not provided'}</p>
+                {qr.hasPhoto && (
+                  <span className="mt-1 inline-flex rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                    Photo available
+                  </span>
+                )}
                 {(qr.alternateNumber1 || qr.alternateNumber2) && (
                   <p className="text-xs text-gray-500">
                     Alt: {[qr.alternateNumber1, qr.alternateNumber2].filter(Boolean).join(' | ')}
@@ -653,27 +577,31 @@ export default function QRList() {
         ))}
       </div>
 
-      {total > 0 && (
-        <div className="mt-8 flex items-center justify-center gap-4">
-          <button
-            type="button"
-            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-            disabled={page <= 1 || isPageLoading}
-            className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Previous
-          </button>
-          <span className="text-sm text-gray-700 font-medium">
-            Page {page} of {Math.max(1, Math.ceil(total / limit))}{isPageLoading ? ' • Loading...' : ''}
-          </span>
-          <button
-            type="button"
-            onClick={() => setPage((prev) => Math.min(Math.ceil(total / limit), prev + 1))}
-            disabled={page >= Math.ceil(total / limit) || isPageLoading}
-            className="px-4 py-2 border rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Next
-          </button>
+      {filteredQrs.length > 0 && (
+        <div className="mt-6 flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            Showing {(currentPage - 1) * RECORDS_PER_PAGE + 1}-
+            {Math.min(currentPage * RECORDS_PER_PAGE, filteredQrs.length)} of {filteredQrs.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1 border rounded hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-700">Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1 border rounded hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
 

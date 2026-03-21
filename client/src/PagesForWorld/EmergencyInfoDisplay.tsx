@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users } from 'lucide-react';
 
@@ -44,7 +44,13 @@ export default function EmergencyInfoDisplay() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [sosTriggered, setSosTriggered] = useState(false);
+  const [sosCountdown, setSosCountdown] = useState<number | null>(null);
+  const [isTriggeringSos, setIsTriggeringSos] = useState(false);
+  const [sosAlertId, setSosAlertId] = useState<string | null>(null);
+  const [sosSuccessMessage, setSosSuccessMessage] = useState<string | null>(null);
+  const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
+  const [responderName, setResponderName] = useState('');
+  const [responderPhone, setResponderPhone] = useState('');
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
@@ -223,32 +229,181 @@ export default function EmergencyInfoDisplay() {
     }
   };
 
-  const handleSOSButton = () => {
-    setSosTriggered(true);
-    triggerSOS();
-    setTimeout(() => {
-      window.location.href = 'tel:108';
-    }, 1000);
+  const getResponderLocation = async (): Promise<{
+    lat: number;
+    lng: number;
+    accuracy: number | null;
+    altitude: number | null;
+    heading: number | null;
+    speed: number | null;
+    capturedAt: string;
+  } | null> => {
+    if ('geolocation' in navigator) {
+      try {
+        const coords = await new Promise<{
+          lat: number;
+          lng: number;
+          accuracy: number | null;
+          altitude: number | null;
+          heading: number | null;
+          speed: number | null;
+          capturedAt: string;
+        }>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              resolve({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                accuracy: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+                altitude: Number.isFinite(position.coords.altitude) ? position.coords.altitude : null,
+                heading: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
+                speed: Number.isFinite(position.coords.speed) ? position.coords.speed : null,
+                capturedAt: new Date(position.timestamp).toISOString(),
+              });
+            },
+            reject,
+            { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
+          );
+        });
+        return coords;
+      } catch (geoErr) {
+        console.warn('Unable to refresh responder GPS location, using current page location', geoErr);
+      }
+    }
+    if (!location) {
+      return null;
+    }
+    return {
+      lat: location.lat,
+      lng: location.lng,
+      accuracy: null,
+      altitude: null,
+      heading: null,
+      speed: null,
+      capturedAt: new Date().toISOString(),
+    };
   };
 
-  const triggerSOS = async () => {
-    if (!location || !info) return;
+  const triggerSOSAlert = useCallback(async () => {
+    if (!info) return;
+    setIsTriggeringSos(true);
+    setSosErrorMessage(null);
+    setSosSuccessMessage(null);
+
     try {
-      await fetch(`${API_BASE}/api/v1/sos/trigger`, {
+      console.log('🚨 [EmergencyInfoDisplay] Starting SOS trigger...');
+      const responderDetails = await getResponderLocation();
+      if (!responderDetails) {
+        throw new Error('Responder location is unavailable. Please enable location and try again.');
+      }
+
+      console.log('📡 [EmergencyInfoDisplay] Sending SOS to:', `${API_BASE}/api/v1/sos/trigger`);
+      const response = await fetch(`${API_BASE}/api/v1/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          location,
-          timestamp: new Date().toISOString(),
-          emergencyContacts: info.emergencyContacts || [],
           victimName: info.fullName,
-          victimPhone: info.phoneNumber,
+          victimPhone: info.phoneNumber || '',
+          victimBloodType: info.bloodType || '',
+          victimAllergies: info.allergies || '',
+          victimMedications: info.medications || '',
+          victimEmergencyContacts: info.emergencyContacts || [],
+          responderName: responderName.trim(),
+          responderPhone: responderPhone.trim(),
+          responderLocation: {
+            lat: responderDetails.lat,
+            lng: responderDetails.lng,
+          },
+          responderLocationAccuracy: responderDetails.accuracy,
+          responderLocationMeta: {
+            altitude: responderDetails.altitude,
+            heading: responderDetails.heading,
+            speed: responderDetails.speed,
+            capturedAt: responderDetails.capturedAt,
+          },
+          responderUserAgent: navigator.userAgent,
+          triggeredAt: new Date().toISOString(),
         }),
       });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `HTTP ${response.status}: Failed to trigger SOS alert`);
+      }
+
+      const alert = await response.json();
+      const alertId = alert?._id as string | undefined;
+      if (!alertId) {
+        throw new Error('SOS alert ID was not returned by the server');
+      }
+
+      console.log('✅ [EmergencyInfoDisplay] SOS alert created:', alertId);
+      setSosAlertId(alertId);
+      setSosSuccessMessage('🚨 SOS alert sent! Police and ambulance have been notified.');
+
+      const policeUrl = `${window.location.origin}/sos/police?alertId=${encodeURIComponent(alertId)}`;
+      const ambulanceUrl = `${window.location.origin}/sos/ambulance?alertId=${encodeURIComponent(alertId)}`;
+      window.open(policeUrl, '_blank', 'noopener,noreferrer');
+      window.open(ambulanceUrl, '_blank', 'noopener,noreferrer');
+      setResponderName('');
+      setResponderPhone('');
     } catch (err) {
-      console.error('Error triggering SOS:', err);
+      console.error('❌ [EmergencyInfoDisplay] Error triggering SOS:', err);
+      const message = err instanceof Error ? err.message : 'Failed to trigger SOS alert';
+      setSosErrorMessage(message);
+    } finally {
+      setIsTriggeringSos(false);
     }
+  }, [info, API_BASE, responderName, responderPhone]);
+
+  const startSosCountdown = () => {
+    console.log('🔴 [EmergencyInfoDisplay] SOS button clicked! isTriggeringSos:', isTriggeringSos);
+    if (isTriggeringSos) {
+      console.log('⚠️ [EmergencyInfoDisplay] Already triggering, ignoring click');
+      return;
+    }
+    console.log('✅ [EmergencyInfoDisplay] Starting 10-second countdown...');
+    setSosErrorMessage(null);
+    setSosSuccessMessage(null);
+    setSosAlertId(null);
+    setSosCountdown(10);
   };
+
+  const cancelSosCountdown = () => {
+    console.log('❌ [EmergencyInfoDisplay] Countdown cancelled');
+    setSosCountdown(null);
+    setSosErrorMessage(null);
+  };
+
+  useEffect(() => {
+    console.log('⏲️ [EmergencyInfoDisplay] Countdown effect running. sosCountdown:', sosCountdown, 'isTriggeringSos:', isTriggeringSos);
+    
+    if (sosCountdown === null || isTriggeringSos) {
+      console.log('⏸️ [EmergencyInfoDisplay] Skipping countdown (null or triggering)');
+      return;
+    }
+
+    if (sosCountdown === 0) {
+      console.log('⏰ [EmergencyInfoDisplay] Countdown reached zero, triggering SOS...');
+      setSosCountdown(null);
+      triggerSOSAlert();
+      return;
+    }
+
+    console.log('⏱️ [EmergencyInfoDisplay] Setting timer for countdown:', sosCountdown);
+    const timer = window.setTimeout(() => {
+      setSosCountdown((prev) => {
+        const newValue = prev === null ? null : prev - 1;
+        console.log('📉 [EmergencyInfoDisplay] Countdown updated:', prev, '→', newValue);
+        return newValue;
+      });
+    }, 1000);
+
+    return () => {
+      console.log('🧹 [EmergencyInfoDisplay] Cleaning up timer');
+      window.clearTimeout(timer);
+    };
+  }, [sosCountdown, isTriggeringSos, triggerSOSAlert]);
 
   const callHospital = (phone: string) => {
     window.location.href = `tel:${phone}`;
@@ -299,18 +454,83 @@ export default function EmergencyInfoDisplay() {
 
       <div className="sticky top-16 z-40 bg-white/95 backdrop-blur p-3 shadow-lg border-b-2 border-red-500">
         <div className="max-w-4xl mx-auto">
-          <button
-            onClick={handleSOSButton}
-            disabled={sosTriggered}
-            className={`w-full py-4 rounded-lg font-bold text-lg transition-all transform active:scale-95 shadow-lg ${
-              sosTriggered
-                ? 'bg-green-500 text-white'
-                : 'bg-red-600 text-white hover:bg-red-700 hover:shadow-xl'
-            }`}
-          >
-            {sosTriggered ? '✅ SOS ALERT SENT' : '🚨 EMERGENCY SOS'}
-          </button>
-          <p className="text-xs text-gray-600 text-center mt-2 font-medium">Notifies family & emergency services with location</p>
+          <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <input
+              type="text"
+              value={responderName}
+              onChange={(e) => setResponderName(e.target.value)}
+              placeholder="Responder name (optional)"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <input
+              type="tel"
+              value={responderPhone}
+              onChange={(e) => setResponderPhone(e.target.value)}
+              placeholder="Responder phone (optional)"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+
+          {sosCountdown === null ? (
+            <button
+              onClick={startSosCountdown}
+              disabled={isTriggeringSos}
+              className="w-full py-4 rounded-lg font-bold text-lg transition-all transform active:scale-95 shadow-lg bg-red-600 text-white hover:bg-red-700 hover:shadow-xl disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isTriggeringSos ? '🚨 Sending SOS Alert...' : '🚨 EMERGENCY SOS'}
+            </button>
+          ) : (
+            <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-red-700">
+                Warning: Triggering false SOS is a criminal offence. Alert will be sent to police and ambulance in {sosCountdown} seconds.
+              </p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-2xl font-extrabold text-red-700 tabular-nums">{sosCountdown}</p>
+                <button
+                  type="button"
+                  onClick={cancelSosCountdown}
+                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {sosSuccessMessage && (
+            <p className="mt-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
+              {sosSuccessMessage}
+            </p>
+          )}
+          {sosErrorMessage && (
+            <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {sosErrorMessage}
+            </p>
+          )}
+          {sosAlertId && (
+            <div className="mt-4 space-y-3">
+              <p className="text-center text-xs font-medium text-gray-600">Alert ID: {sosAlertId}</p>
+              <div className="flex gap-2 justify-center flex-wrap">
+                <a
+                  href={`/police/dashboard`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                >
+                  👮 View Police Alert
+                </a>
+                <a
+                  href={`/ambulance/dashboard`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                >
+                  🚑 View Ambulance Alert
+                </a>
+              </div>
+            </div>
+          )}
+          <p className="text-xs text-gray-600 text-center mt-2 font-medium">Notifies police, ambulance, and emergency contacts with location</p>
         </div>
       </div>
 
