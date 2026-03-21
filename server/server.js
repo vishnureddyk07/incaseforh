@@ -169,12 +169,21 @@ const sanitizeUser = (user) => ({
 
 // Middleware: require valid JWT
 const requireAuth = (req, res, next) => {
+  // First check Authorization header (for fetch/axios requests)
+  let token = '';
   const authHeader = req.headers.authorization || '';
-  if (!authHeader.startsWith('Bearer ')) {
+  
+  if (authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query.token) {
+    // Fallback: check query parameter (for EventSource which can't set custom headers)
+    token = req.query.token;
+  }
+  
+  if (!token) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const token = authHeader.split(' ')[1];
   try {
     const payload = jwt.verify(token, JWT_SECRET);
     req.user = payload;

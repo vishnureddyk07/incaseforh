@@ -87,10 +87,10 @@ export default function AmbulanceDashboard() {
 
       try {
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        eventSource = new EventSource(`${apiUrl}/api/v1/sos/stream/subscribe`, {
-          // @ts-ignore - EventSource doesn't support headers in standard API, using workaround
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        // EventSource doesn't support custom headers, so pass token via query parameter
+        const sseUrl = new URL(`${apiUrl}/api/v1/sos/stream/subscribe`);
+        sseUrl.searchParams.append('token', token);
+        eventSource = new EventSource(sseUrl.toString());
 
         eventSource.addEventListener('message', (event) => {
           try {
