@@ -9,8 +9,6 @@ interface SosAlert {
   victimAllergies?: string;
   victimMedications?: string;
   responderDeviceId?: string;
-  responderName?: string;
-  responderPhone?: string;
   responderLocation?: { lat: number; lng: number };
   responderLocationAccuracy?: number | null;
   responderIP?: string;
@@ -29,6 +27,7 @@ export default function PoliceDashboard() {
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [closingAlertId, setClosingAlertId] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState(true);
 
   // Fetch alerts from API
   const fetchAlerts = async () => {
@@ -71,85 +70,38 @@ export default function PoliceDashboard() {
     // Initial fetch
     fetchAlerts();
 
-    // Set up real-time SSE subscription for alerts
-    let eventSource: EventSource | null = null;
+    // Near real-time updates without manual refresh.
+    let timerId: number;
 
-    const connectSSE = () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        navigate('/police/login');
-        return;
-      }
+    const scheduleRefresh = () => {
+      const refreshDelay = document.visibilityState === 'visible' ? 2000 : 10000;
+      timerId = window.setTimeout(async () => {
+        await fetchAlerts();
+        setLastRefresh(new Date());
+        scheduleRefresh();
+      }, refreshDelay);
+    };
 
-      try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        // EventSource doesn't support custom headers, so pass token via query parameter
-        const sseUrl = new URL(`${apiUrl}/api/v1/sos/stream/subscribe`);
-        sseUrl.searchParams.append('token', token);
-        eventSource = new EventSource(sseUrl.toString());
+    const handleFocusRefresh = async () => {
+      await fetchAlerts();
+      setLastRefresh(new Date());
+    };
 
-        // If native EventSource doesn't support headers, we need to handle auth differently
-        // For now, fetch with auth to get token into a session, then connect
-        eventSource.addEventListener('message', (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            console.log('Received SSE message:', data);
-
-            if (data.type === 'new_alert') {
-              // Add new alert to the top of the list
-              setAlerts((prev) => [data.alert, ...prev]);
-              setLastRefresh(new Date());
-            } else if (data.type === 'alert_updated') {
-              // Update existing alert
-              setAlerts((prev) =>
-                prev.map((alert) =>
-                  alert._id === data.alert._id
-                    ? {
-                        ...alert,
-                        status: data.alert.status,
-                        resolvedAt: data.alert.resolvedAt,
-                        closedByEmail: data.alert.closedByEmail,
-                      }
-                    : alert
-                )
-              );
-              setLastRefresh(new Date());
-            }
-          } catch (err) {
-            console.error('Error parsing SSE message:', err);
-          }
-        });
-
-        eventSource.addEventListener('error', (err) => {
-          console.error('SSE connection error:', err);
-          if (eventSource?.readyState === EventSource.CLOSED) {
-            console.log('SSE connection closed, retrying...');
-            setTimeout(() => {
-              connectSSE();
-            }, 3000);
-          }
-        });
-
-        console.log('📡 SSE subscription established');
-      } catch (err) {
-        console.error('Failed to establish SSE connection:', err);
-        setError('Real-time updates unavailable. Using polling.');
-        // Fallback to polling every 30 seconds
-        const interval = setInterval(() => {
-          fetchAlerts();
-          setLastRefresh(new Date());
-        }, 30000);
-        return () => clearInterval(interval);
+    const handleVisibilityChange = () => {
+      setIsLive(document.visibilityState === 'visible');
+      if (document.visibilityState === 'visible') {
+        handleFocusRefresh();
       }
     };
 
-    connectSSE();
+    scheduleRefresh();
+    window.addEventListener('focus', handleFocusRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      if (eventSource) {
-        eventSource.close();
-        console.log('🔌 SSE connection closed');
-      }
+      window.clearTimeout(timerId);
+      window.removeEventListener('focus', handleFocusRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [navigate]);
 
@@ -216,6 +168,9 @@ export default function PoliceDashboard() {
             <div className="text-right text-sm">
               <p className="text-slate-300">{user?.email}</p>
               <p className="text-xs text-slate-500">Last refresh: {lastRefresh.toLocaleTimeString()}</p>
+              <p className={`text-xs ${isLive ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {isLive ? 'Live updates ON (2s)' : 'Background mode (10s)'}
+              </p>
             </div>
             <button
               onClick={handleLogout}
@@ -273,7 +228,7 @@ export default function PoliceDashboard() {
                         <strong>Caller:</strong> {alert.victimPhone}
                       </p>
                       <p className="text-sm text-slate-300 mb-2">
-                        <strong>Responder Device ID:</strong> {alert.responderDeviceId || 'Not captured'}
+                        <strong>Device ID:</strong> {alert.responderDeviceId || 'Not available'}
                       </p>
                       <p className="text-sm text-slate-300 mb-2">
                         <strong>GPS Accuracy:</strong>{' '}

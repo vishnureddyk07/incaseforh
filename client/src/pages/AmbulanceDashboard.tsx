@@ -16,8 +16,6 @@ interface SosAlert {
   victimMedications?: string;
   victimEmergencyContacts?: EmergencyContact[];
   responderDeviceId?: string;
-  responderName?: string;
-  responderPhone?: string;
   responderLocation?: { lat: number; lng: number };
   responderLocationAccuracy?: number | null;
   responderIP?: string;
@@ -36,6 +34,7 @@ export default function AmbulanceDashboard() {
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [closingAlertId, setClosingAlertId] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState(true);
 
   const fetchAlerts = async () => {
     try {
@@ -75,83 +74,38 @@ export default function AmbulanceDashboard() {
 
     fetchAlerts();
 
-    // Set up real-time SSE subscription for alerts
-    let eventSource: EventSource | null = null;
+    // Near real-time updates without manual refresh.
+    let timerId: number;
 
-    const connectSSE = () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        navigate('/ambulance/login');
-        return;
-      }
+    const scheduleRefresh = () => {
+      const refreshDelay = document.visibilityState === 'visible' ? 2000 : 10000;
+      timerId = window.setTimeout(async () => {
+        await fetchAlerts();
+        setLastRefresh(new Date());
+        scheduleRefresh();
+      }, refreshDelay);
+    };
 
-      try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-        // EventSource doesn't support custom headers, so pass token via query parameter
-        const sseUrl = new URL(`${apiUrl}/api/v1/sos/stream/subscribe`);
-        sseUrl.searchParams.append('token', token);
-        eventSource = new EventSource(sseUrl.toString());
+    const handleFocusRefresh = async () => {
+      await fetchAlerts();
+      setLastRefresh(new Date());
+    };
 
-        eventSource.addEventListener('message', (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            console.log('Received SSE message:', data);
-
-            if (data.type === 'new_alert') {
-              // Add new alert to the top of the list
-              setAlerts((prev) => [data.alert, ...prev]);
-              setLastRefresh(new Date());
-            } else if (data.type === 'alert_updated') {
-              // Update existing alert
-              setAlerts((prev) =>
-                prev.map((alert) =>
-                  alert._id === data.alert._id
-                    ? {
-                        ...alert,
-                        status: data.alert.status,
-                        resolvedAt: data.alert.resolvedAt,
-                        closedByEmail: data.alert.closedByEmail,
-                      }
-                    : alert
-                )
-              );
-              setLastRefresh(new Date());
-            }
-          } catch (err) {
-            console.error('Error parsing SSE message:', err);
-          }
-        });
-
-        eventSource.addEventListener('error', (err) => {
-          console.error('SSE connection error:', err);
-          if (eventSource?.readyState === EventSource.CLOSED) {
-            console.log('SSE connection closed, retrying...');
-            setTimeout(() => {
-              connectSSE();
-            }, 3000);
-          }
-        });
-
-        console.log('📡 SSE subscription established');
-      } catch (err) {
-        console.error('Failed to establish SSE connection:', err);
-        setError('Real-time updates unavailable. Using polling.');
-        // Fallback to polling every 30 seconds
-        const interval = setInterval(() => {
-          fetchAlerts();
-          setLastRefresh(new Date());
-        }, 30000);
-        return () => clearInterval(interval);
+    const handleVisibilityChange = () => {
+      setIsLive(document.visibilityState === 'visible');
+      if (document.visibilityState === 'visible') {
+        handleFocusRefresh();
       }
     };
 
-    connectSSE();
+    scheduleRefresh();
+    window.addEventListener('focus', handleFocusRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      if (eventSource) {
-        eventSource.close();
-        console.log('🔌 SSE connection closed');
-      }
+      window.clearTimeout(timerId);
+      window.removeEventListener('focus', handleFocusRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [navigate]);
 
@@ -217,6 +171,9 @@ export default function AmbulanceDashboard() {
             <div className="text-right text-sm">
               <p className="text-gray-700">{user?.email}</p>
               <p className="text-xs text-gray-500">Last refresh: {lastRefresh.toLocaleTimeString()}</p>
+              <p className={`text-xs ${isLive ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {isLive ? 'Live updates ON (2s)' : 'Background mode (10s)'}
+              </p>
             </div>
             <button
               onClick={handleLogout}
@@ -331,7 +288,7 @@ export default function AmbulanceDashboard() {
                       <div className="bg-green-50 p-4 rounded-lg border border-green-200">
                         <p className="text-xs text-green-700 uppercase tracking-wide font-semibold mb-2">Incident Time</p>
                         <p className="text-sm text-green-900">{formatTime(alert.triggeredAt)}</p>
-                        <p className="mt-1 text-xs text-green-800">Device ID: {alert.responderDeviceId || 'Not captured'}</p>
+                        <p className="mt-1 text-xs text-green-800">Device ID: {alert.responderDeviceId || 'Not available'}</p>
                       </div>
                     </div>
 
