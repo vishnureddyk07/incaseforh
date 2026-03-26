@@ -8,3 +8,12 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>
 );
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    const swUrl = new URL('./service-worker.ts', import.meta.url);
+    navigator.serviceWorker.register(swUrl, { type: 'module' }).catch((err) => {
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}

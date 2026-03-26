@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import QRStickerManagement from './QRStickerManagement';
 
 interface UserRow {
   id: string;
@@ -386,6 +387,9 @@ export default function AdminDashboard() {
             <a href="#users" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
               <span>👥</span> Users
             </a>
+            <a href="#qr-management" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
+              <span>🏷️</span> QR Management
+            </a>
             <a href="#audit-logs" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
               <span>🔍</span> Audit Logs
             </a>
@@ -446,6 +450,8 @@ export default function AdminDashboard() {
               </div>
             ))}
           </section>
+
+          <QRStickerManagement token={token} backendApiBaseUrl={backendApiBaseUrl} />
 
           {/* Create Manager */}
           <section className="mt-8 rounded-2xl bg-white p-6 shadow-sm">

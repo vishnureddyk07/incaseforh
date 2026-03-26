@@ -23,6 +23,8 @@ import PoliceLogin from './pages/PoliceLogin';
 import PoliceDashboard from './pages/PoliceDashboard';
 import AmbulanceLogin from './pages/AmbulanceLogin';
 import AmbulanceDashboard from './pages/AmbulanceDashboard';
+import ActivateQR from './pages/ActivateQR';
+import StickerActivationSuccess from './pages/StickerActivationSuccess';
 
 function MainContent() {
   return (
@@ -73,6 +75,8 @@ function AppContent() {
     <Routes>
       <Route path="/" element={<MainContent />} />
       <Route path="/emergencyinfo/:email" element={<EmergencyInfoDisplay />} />
+      <Route path="/activate/:uuid" element={<ActivateQR />} />
+      <Route path="/activation-success" element={<StickerActivationSuccess />} />
       <Route path="/qrs" element={<QRList />} />
       <Route path="/admin" element={<AdminLogin />} />
       <Route path="/admin/dashboard" element={<AdminDashboard />} />
