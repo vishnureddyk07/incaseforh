@@ -10,6 +10,9 @@ import User from './models/User.js';
 import ActionLog from './models/ActionLog.js';
 import Hospital from './models/Hospital.js';
 import SosAlert from './models/SosAlert.js';
+import QRSticker from './models/QRSticker.js';
+import QRBatch from './models/QRBatch.js';
+import { v4 as uuidv4 } from 'uuid';
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -248,6 +251,47 @@ const sanitizeContacts = (raw) => {
 const sanitizeStringParam = (val) => {
   if (typeof val !== 'string') return '';
   return val.trim();
+};
+
+const normalizeOptionalString = (val, maxLen = 500) => {
+  const safe = sanitizeMongoValue(val);
+  if (safe === null) return '';
+  return stripHtml(safe).slice(0, maxLen);
+};
+
+const parsePositiveInt = (value, fallback = 0) => {
+  const n = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return n;
+};
+
+const ALLOWED_QR_TYPES = new Set(['b2c', 'b2b', 'b2g']);
+
+const formatSerialNumber = (sequence) => `INC-2026-${String(sequence).padStart(6, '0')}`;
+
+const parseSerialSequence = (serialNumber) => {
+  const match = String(serialNumber || '').match(/INC-\d{4}-(\d{6})$/);
+  if (!match) return 0;
+  return Number.parseInt(match[1], 10) || 0;
+};
+
+const getNextSerialSequence = async () => {
+  const latestSticker = await QRSticker.findOne({})
+    .sort({ serialNumber: -1 })
+    .select('serialNumber')
+    .lean();
+
+  if (!latestSticker?.serialNumber) return 1;
+  return parseSerialSequence(latestSticker.serialNumber) + 1;
+};
+
+const buildBatchId = () => {
+  const date = new Date();
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const suffix = uuidv4().replace(/-/g, '').slice(0, 8).toUpperCase();
+  return `BATCH-${y}${m}${d}-${suffix}`;
 };
 
 // ── End sanitization helpers ─────────────────────────────────────────
@@ -1275,6 +1319,483 @@ router.get('/hospitals/nearby', externalApiLimiter, async (req, res) => {
   }
 });
 
+// Admin: generate a new QR sticker batch
+router.post('/admin/qr/generate', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const quantity = parsePositiveInt(req.body?.quantity, 0);
+    const requestedType = normalizeOptionalString(req.body?.type || 'b2c', 20).toLowerCase();
+    const type = ALLOWED_QR_TYPES.has(requestedType) ? requestedType : 'b2c';
+    const organizationName = normalizeOptionalString(req.body?.organizationName, 200);
+    const notes = normalizeOptionalString(req.body?.notes, 1000);
+
+    if (!quantity || quantity > 500) {
+      return res.status(400).json({ error: 'Quantity is required and must be between 1 and 500' });
+    }
+
+    const batchId = buildBatchId();
+    const startSequence = await getNextSerialSequence();
+    const stickers = [];
+    const serialNumbers = [];
+    const uuids = [];
+
+    for (let i = 0; i < quantity; i += 1) {
+      const serialNumber = formatSerialNumber(startSequence + i);
+      const uuid = uuidv4();
+
+      serialNumbers.push(serialNumber);
+      uuids.push(uuid);
+
+      stickers.push({
+        uuid,
+        serialNumber,
+        status: 'generated',
+        type,
+        batchId,
+      });
+    }
+
+    await QRSticker.insertMany(stickers, { ordered: true });
+
+    await QRBatch.create({
+      batchId,
+      quantity,
+      type,
+      createdBy: req.user?.email || 'admin@unknown',
+      organizationName: organizationName || '',
+      notes,
+    });
+
+    return res.status(201).json({
+      batchId,
+      quantity,
+      serialNumbers,
+      uuids,
+    });
+  } catch (error) {
+    console.error('Error generating QR batch:', error);
+    return res.status(500).json({ error: 'Failed to generate QR batch' });
+  }
+});
+
+// Admin: list all QR batches with aggregate stats
+router.get('/admin/qr/batches', requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const batches = await QRBatch.find({}).sort({ createdAt: -1 }).lean();
+    const batchIds = batches.map((b) => b.batchId);
+
+    const stats = await QRSticker.aggregate([
+      { $match: { batchId: { $in: batchIds } } },
+      {
+        $group: {
+          _id: '$batchId',
+          total: { $sum: 1 },
+          active: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'active'] }, 1, 0],
+            },
+          },
+          unactivated: {
+            $sum: {
+              $cond: [{ $in: ['$status', ['generated', 'distributed', 'unactivated']] }, 1, 0],
+            },
+          },
+        },
+      },
+    ]);
+
+    const statsByBatch = new Map(stats.map((s) => [s._id, s]));
+    const response = batches.map((batch) => {
+      const stat = statsByBatch.get(batch.batchId) || { total: 0, active: 0, unactivated: 0 };
+      return {
+        ...batch,
+        total: stat.total,
+        activeCount: stat.active,
+        unactivatedCount: stat.unactivated,
+      };
+    });
+
+    return res.json(response);
+  } catch (error) {
+    console.error('Error listing QR batches:', error);
+    return res.status(500).json({ error: 'Failed to list QR batches' });
+  }
+});
+
+// Admin: get a single batch with sticker details
+router.get('/admin/qr/batch/:batchId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const batchId = sanitizeStringParam(req.params.batchId);
+    if (!batchId) {
+      return res.status(400).json({ error: 'batchId is required' });
+    }
+
+    const batch = await QRBatch.findOne({ batchId }).lean();
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    const stickers = await QRSticker.find({ batchId })
+      .sort({ serialNumber: 1 })
+      .populate('activatedBy', 'fullName email phoneNumber bloodType')
+      .lean();
+
+    return res.json({ batch, stickers });
+  } catch (error) {
+    console.error('Error fetching QR batch:', error);
+    return res.status(500).json({ error: 'Failed to fetch QR batch' });
+  }
+});
+
+// Admin: download batch activation manifest
+router.get('/admin/qr/download/:batchId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const batchId = sanitizeStringParam(req.params.batchId);
+    if (!batchId) {
+      return res.status(400).json({ error: 'batchId is required' });
+    }
+
+    const batch = await QRBatch.findOneAndUpdate(
+      { batchId },
+      { $inc: { downloadCount: 1 } },
+      { new: true }
+    ).lean();
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    const stickers = await QRSticker.find({ batchId })
+      .sort({ serialNumber: 1 })
+      .select('uuid serialNumber')
+      .lean();
+
+    const payload = stickers.map((sticker) => ({
+      uuid: sticker.uuid,
+      serialNumber: sticker.serialNumber,
+      activationUrl: `${FRONTEND_APP_URL}/activate/${sticker.uuid}`,
+    }));
+
+    return res.json(payload);
+  } catch (error) {
+    console.error('Error downloading QR batch manifest:', error);
+    return res.status(500).json({ error: 'Failed to download QR batch manifest' });
+  }
+});
+
+// Admin: paginated/searchable sticker list for dashboard
+router.get('/admin/qr/stickers', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const page = Math.max(parsePositiveInt(req.query.page, 1), 1);
+    const limit = Math.min(Math.max(parsePositiveInt(req.query.limit, 50), 1), 100);
+    const status = normalizeOptionalString(req.query.status, 30).toLowerCase();
+    const type = normalizeOptionalString(req.query.type, 10).toLowerCase();
+    const search = normalizeOptionalString(req.query.search, 120);
+
+    const query = {};
+    if (status && status !== 'all') query.status = status;
+    if (type && type !== 'all') query.type = type;
+    if (search) {
+      query.$or = [
+        { serialNumber: { $regex: search, $options: 'i' } },
+        { uuid: { $regex: search, $options: 'i' } },
+        { 'assignedTo.name': { $regex: search, $options: 'i' } },
+        { 'assignedTo.email': { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      QRSticker.find(query)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('activatedBy', 'fullName email phoneNumber')
+        .lean(),
+      QRSticker.countDocuments(query),
+    ]);
+
+    return res.json({
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(Math.ceil(total / limit), 1),
+    });
+  } catch (error) {
+    console.error('Error listing QR stickers:', error);
+    return res.status(500).json({ error: 'Failed to list QR stickers' });
+  }
+});
+
+// Public: check activation state for a pre-printed sticker
+router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOneAndUpdate(
+      { uuid },
+      { $set: { lastScannedAt: new Date() }, $inc: { scanCount: 1 } },
+      { new: true }
+    )
+      .populate('activatedBy', 'fullName email phoneNumber bloodType')
+      .lean();
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    if (sticker.status === 'deactivated') {
+      return res.status(410).json({
+        status: 'deactivated',
+        reason: sticker.deactivatedReason || 'This sticker has been deactivated',
+        sticker,
+      });
+    }
+
+    if (sticker.status === 'active' && sticker.activatedBy) {
+      const identifier =
+        sticker.activatedBy.email || sticker.activatedBy.phoneNumber || sticker.activatedBy._id?.toString();
+
+      const redirectTo = `${FRONTEND_APP_URL}/emergencyinfo/${encodeURIComponent(identifier)}`;
+      const acceptsHtml = String(req.headers.accept || '').includes('text/html');
+      if (acceptsHtml) {
+        return res.redirect(302, redirectTo);
+      }
+
+      return res.json({
+        status: 'active',
+        sticker,
+        redirectTo,
+      });
+    }
+
+    return res.json({
+      status: sticker.status,
+      sticker,
+    });
+  } catch (error) {
+    console.error('Error fetching sticker activation state:', error);
+    return res.status(500).json({ error: 'Failed to check sticker activation status' });
+  }
+});
+
+// Public: activate pre-printed sticker with emergency profile data
+router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+    if (sticker.status === 'deactivated') {
+      return res.status(410).json({ error: sticker.deactivatedReason || 'Sticker is deactivated' });
+    }
+    if (sticker.status === 'active') {
+      return res.status(409).json({ error: 'Sticker is already active' });
+    }
+
+    const fullName = normalizeOptionalString(req.body?.fullName, 200);
+    const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
+    const dateOfBirth = normalizeOptionalString(req.body?.dateOfBirth, 40);
+    const email = normalizeOptionalString(req.body?.email, 200).toLowerCase();
+
+    if (!fullName || !phoneNumber || !dateOfBirth) {
+      return res.status(400).json({ error: 'fullName, phoneNumber, and dateOfBirth are required' });
+    }
+
+    let photoDataUrl = null;
+    if (req.file && req.file.buffer) {
+      const mime = req.file.mimetype || 'application/octet-stream';
+      const base64 = req.file.buffer.toString('base64');
+      photoDataUrl = `data:${mime};base64,${base64}`;
+    } else if (typeof req.body?.photo === 'string' && req.body.photo.startsWith('data:')) {
+      photoDataUrl = req.body.photo;
+    }
+
+    let emergencyContacts = [];
+    if (Array.isArray(req.body?.emergencyContacts)) {
+      emergencyContacts = sanitizeContacts(req.body.emergencyContacts);
+    } else if (typeof req.body?.emergencyContacts === 'string' && req.body.emergencyContacts.trim()) {
+      try {
+        emergencyContacts = sanitizeContacts(JSON.parse(req.body.emergencyContacts));
+      } catch {
+        emergencyContacts = [];
+      }
+    }
+
+    const payload = {
+      fullName,
+      phoneNumber,
+      dateOfBirth,
+      email: email || null,
+      bloodType: normalizeOptionalString(req.body?.bloodType, 20),
+      allergies: normalizeOptionalString(req.body?.allergies, 1000),
+      medications: normalizeOptionalString(req.body?.medications, 1000),
+      medicalConditions: normalizeOptionalString(req.body?.medicalConditions, 1000),
+      emergencyContacts,
+      address: normalizeOptionalString(req.body?.address, 500),
+      photo: photoDataUrl,
+      qrCode: `${FRONTEND_APP_URL}/activate/${uuid}`,
+    };
+
+    const existing = await EmergencyInfo.findOne(
+      email ? { $or: [{ email }, { phoneNumber }] } : { phoneNumber }
+    );
+
+    let emergencyInfo;
+    if (existing) {
+      payload.photo = photoDataUrl || existing.photo || null;
+      emergencyInfo = await EmergencyInfo.findByIdAndUpdate(existing._id, payload, {
+        new: true,
+        runValidators: true,
+      });
+    } else {
+      emergencyInfo = await EmergencyInfo.create(payload);
+    }
+
+    sticker.status = 'active';
+    sticker.activatedBy = emergencyInfo._id;
+    sticker.activatedAt = new Date();
+    if (sticker.deactivatedAt) sticker.deactivatedAt = null;
+    if (sticker.deactivatedReason) sticker.deactivatedReason = '';
+    await sticker.save();
+
+    return res.status(201).json({
+      success: true,
+      emergencyInfo,
+      sticker,
+      profileUrl: `${FRONTEND_APP_URL}/emergencyinfo/${encodeURIComponent(
+        emergencyInfo.email || emergencyInfo.phoneNumber
+      )}`,
+    });
+  } catch (error) {
+    console.error('Error activating sticker:', error);
+    return res.status(500).json({ error: 'Failed to activate sticker' });
+  }
+});
+
+// Admin: deactivate a sticker
+router.post('/admin/qr/deactivate/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const reason = normalizeOptionalString(req.body?.deactivatedReason, 500);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOneAndUpdate(
+      { uuid },
+      {
+        $set: {
+          status: 'deactivated',
+          deactivatedAt: new Date(),
+          deactivatedReason: reason || 'Deactivated by admin',
+        },
+      },
+      { new: true }
+    );
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    return res.json({ success: true, sticker });
+  } catch (error) {
+    console.error('Error deactivating sticker:', error);
+    return res.status(500).json({ error: 'Failed to deactivate sticker' });
+  }
+});
+
+// Admin: reassign an existing sticker for another user/organization
+router.post('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const assignedTo = {
+      name: normalizeOptionalString(req.body?.name, 200),
+      email: normalizeOptionalString(req.body?.email, 200),
+      phone: normalizeOptionalString(req.body?.phone, 40),
+      organizationName: normalizeOptionalString(req.body?.organizationName, 200),
+    };
+
+    const sticker = await QRSticker.findOneAndUpdate(
+      { uuid },
+      {
+        $set: {
+          status: 'unactivated',
+          assignedTo,
+          activatedBy: null,
+          activatedAt: null,
+          deactivatedAt: null,
+          deactivatedReason: '',
+        },
+      },
+      { new: true }
+    );
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    return res.json({ success: true, sticker });
+  } catch (error) {
+    console.error('Error reassigning sticker:', error);
+    return res.status(500).json({ error: 'Failed to reassign sticker' });
+  }
+});
+
+// Admin: overall sticker statistics + recent activations
+router.get('/admin/qr/stats', requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const [statusRows, typeRows, recentActivations] = await Promise.all([
+      QRSticker.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+      QRSticker.aggregate([{ $group: { _id: '$type', count: { $sum: 1 } } }]),
+      QRSticker.find({ status: 'active', activatedAt: { $ne: null } })
+        .sort({ activatedAt: -1 })
+        .limit(10)
+        .populate('activatedBy', 'fullName email phoneNumber bloodType')
+        .lean(),
+    ]);
+
+    const countByStatus = Object.fromEntries(statusRows.map((r) => [r._id, r.count]));
+    const countByType = Object.fromEntries(typeRows.map((r) => [r._id, r.count]));
+
+    const totalGenerated =
+      (countByStatus.generated || 0) +
+      (countByStatus.distributed || 0) +
+      (countByStatus.unactivated || 0) +
+      (countByStatus.active || 0) +
+      (countByStatus.deactivated || 0);
+
+    return res.json({
+      totalGenerated,
+      totalActive: countByStatus.active || 0,
+      totalUnactivated:
+        (countByStatus.generated || 0) +
+        (countByStatus.distributed || 0) +
+        (countByStatus.unactivated || 0),
+      totalDeactivated: countByStatus.deactivated || 0,
+      byType: {
+        b2c: countByType.b2c || 0,
+        b2b: countByType.b2b || 0,
+        b2g: countByType.b2g || 0,
+      },
+      recentActivations,
+    });
+  } catch (error) {
+    console.error('Error fetching QR stats:', error);
+    return res.status(500).json({ error: 'Failed to fetch QR stats' });
+  }
+});
+
 // Police/Ambulance: Get all active SOS alerts
 router.get('/sos', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
   try {
@@ -1298,8 +1819,7 @@ router.post('/sos/trigger', sosLimiter, async (req, res) => {
       victimAllergies,
       victimMedications,
       victimEmergencyContacts,
-      responderName,
-      responderPhone,
+      responderDeviceId,
       responderLocation,
       responderLocationAccuracy,
       responderLocationMeta,
@@ -1330,8 +1850,7 @@ router.post('/sos/trigger', sosLimiter, async (req, res) => {
       victimAllergies: stripHtml(sanitizeMongoValue(victimAllergies) || ''),
       victimMedications: stripHtml(sanitizeMongoValue(victimMedications) || ''),
       victimEmergencyContacts: safeEmergencyContacts,
-      responderName: stripHtml(sanitizeMongoValue(responderName) || ''),
-      responderPhone: stripHtml(sanitizeMongoValue(responderPhone) || ''),
+      responderDeviceId: stripHtml(sanitizeMongoValue(responderDeviceId) || ''),
       responderLocation: { lat, lng },
       responderLocationAccuracy: Number.isFinite(Number(responderLocationAccuracy))
         ? Number(responderLocationAccuracy)
