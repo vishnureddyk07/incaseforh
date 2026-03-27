@@ -38,6 +38,13 @@ type StickerRow = {
   activatedBy?: { fullName?: string; email?: string; phoneNumber?: string };
 };
 
+type BatchDownloadRow = {
+  serialNumber: string;
+  uuid: string;
+  activationUrl: string;
+  scanUrl?: string;
+};
+
 interface Props {
   token: string | null;
   backendApiBaseUrl: string;
@@ -173,7 +180,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    return data as Array<{ serialNumber: string; uuid: string; activationUrl: string }>;
+    return data;
   };
 
   const fetchBatchDownloadData = async (batchId: string) => {
@@ -182,14 +189,14 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Download failed');
-    return data as Array<{ serialNumber: string; uuid: string; activationUrl: string }>;
+    return data as BatchDownloadRow[];
   };
 
   const downloadCsv = async (batchId: string) => {
     const rows = await downloadJson(batchId);
     const csv = [
-      'Serial Number,UUID,Activation URL',
-      ...rows.map((r) => `"${r.serialNumber}","${r.uuid}","${r.activationUrl}"`),
+      'Serial Number,UUID,Activation URL,Scan URL',
+      ...rows.map((r) => `"${r.serialNumber}","${r.uuid}","${r.activationUrl}","${r.scanUrl || ''}"`),
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -211,10 +218,13 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
       throw new Error(data.error || 'ZIP download failed');
     }
     const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition') || '';
+    const nameMatch = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = nameMatch?.[1] || `INCASE-QR-${batchId}.zip`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `incase-stickers-${batchId}.zip`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -257,7 +267,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
           (r) => `<div class="sticker">
             <div class="brand">INcase Emergency Sticker</div>
             <div class="serial">${r.serialNumber}</div>
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(r.activationUrl)}" alt="${r.serialNumber}" />
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(r.scanUrl || r.activationUrl)}" alt="${r.serialNumber}" />
             <div class="uuid">${r.uuid}</div>
             <div class="url">${r.activationUrl}</div>
           </div>`

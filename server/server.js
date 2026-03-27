@@ -32,7 +32,22 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod';
 const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || null;
 const GEONAMES_USERNAME = process.env.GEONAMES_USERNAME || '';
-const FRONTEND_APP_URL = (process.env.FRONTEND_APP_URL || 'https://incaseforh.vercel.app').replace(/\/+$/, '');
+const FRONTEND_APP_URL = (process.env.FRONTEND_APP_URL || '').replace(/\/+$/, '');
+const BACKEND_APP_URL = (process.env.BACKEND_APP_URL || '').replace(/\/+$/, '');
+
+const resolveFrontendUrl = (req) => {
+  if (FRONTEND_APP_URL) return FRONTEND_APP_URL;
+  const origin = String(req.headers.origin || '').trim();
+  if (origin.startsWith('http://') || origin.startsWith('https://')) {
+    return origin.replace(/\/+$/, '');
+  }
+  return `${req.protocol}://${req.get('host')}`.replace(/\/+$/, '');
+};
+
+const resolveBackendUrl = (req) => {
+  if (BACKEND_APP_URL) return BACKEND_APP_URL;
+  return `${req.protocol}://${req.get('host')}`.replace(/\/+$/, '');
+};
 
 const redirectLegacyEmergencyInfoRoute = (req, res, next) => {
   const path = req.path || '';
@@ -41,7 +56,7 @@ const redirectLegacyEmergencyInfoRoute = (req, res, next) => {
   if (!match) return next();
 
   const identifier = decodeURIComponent(match[1]);
-  return res.redirect(302, `${FRONTEND_APP_URL}/emergencyinfo/${encodeURIComponent(identifier)}`);
+  return res.redirect(302, `${resolveFrontendUrl(req)}/emergencyinfo/${encodeURIComponent(identifier)}`);
 };
 
 // Middleware
@@ -287,13 +302,31 @@ const getNextSerialSequence = async () => {
   return parseSerialSequence(latestSticker.serialNumber) + 1;
 };
 
-const buildBatchId = () => {
-  const date = new Date();
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  const suffix = uuidv4().replace(/-/g, '').slice(0, 8).toUpperCase();
-  return `BATCH-${y}${m}${d}-${suffix}`;
+const buildBatchId = async (type = 'b2c') => {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const dateCode = `${yy}${mm}${dd}`;
+  const typeCode = String(type || 'b2c').toUpperCase();
+
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  const batchCountToday = await QRBatch.countDocuments({
+    type,
+    createdAt: { $gte: dayStart, $lte: dayEnd },
+  });
+
+  let seq = batchCountToday + 1;
+  let batchId = `INC-${typeCode}-${dateCode}-${String(seq).padStart(3, '0')}`;
+
+  // Avoid rare collisions during near-simultaneous requests.
+  while (await QRBatch.exists({ batchId })) {
+    seq += 1;
+    batchId = `INC-${typeCode}-${dateCode}-${String(seq).padStart(3, '0')}`;
+  }
+
+  return batchId;
 };
 
 // ── End sanitization helpers ─────────────────────────────────────────
@@ -1217,7 +1250,7 @@ app.get([
   '/emrgency info/:identifier',
 ], (req, res) => {
   const { identifier } = req.params;
-  return res.redirect(302, `${FRONTEND_APP_URL}/emergencyinfo/${encodeURIComponent(identifier)}`);
+  return res.redirect(302, `${resolveFrontendUrl(req)}/emergencyinfo/${encodeURIComponent(identifier)}`);
 });
 
 // Environment check endpoint (does not leak secrets)
@@ -1334,7 +1367,7 @@ router.post('/admin/qr/generate', requireAuth, requireAdmin, async (req, res) =>
       return res.status(400).json({ error: 'Quantity is required and must be between 1 and 500' });
     }
 
-    const batchId = buildBatchId();
+    const batchId = await buildBatchId(type);
     const startSequence = await getNextSerialSequence();
     const stickers = [];
     const serialNumbers = [];
@@ -1529,6 +1562,8 @@ router.delete('/admin/qr/batch/:batchId', requireAuth, requireAdmin, async (req,
 // Admin: download batch activation manifest
 router.get('/admin/qr/download/:batchId', requireAuth, requireAdmin, async (req, res) => {
   try {
+    const frontendUrl = resolveFrontendUrl(req);
+    const backendUrl = resolveBackendUrl(req);
     const batchId = sanitizeStringParam(req.params.batchId);
     if (!batchId) {
       return res.status(400).json({ error: 'batchId is required' });
@@ -1551,7 +1586,8 @@ router.get('/admin/qr/download/:batchId', requireAuth, requireAdmin, async (req,
     const payload = stickers.map((sticker) => ({
       uuid: sticker.uuid,
       serialNumber: sticker.serialNumber,
-      activationUrl: `${FRONTEND_APP_URL}/activate/${sticker.uuid}`,
+      activationUrl: `${frontendUrl}/activate/${sticker.uuid}`,
+      scanUrl: `${backendUrl}/api/v1/qr/activate/${sticker.uuid}`,
     }));
 
     return res.json(payload);
@@ -1564,6 +1600,7 @@ router.get('/admin/qr/download/:batchId', requireAuth, requireAdmin, async (req,
 // Admin: download QR batch as ZIP file with QR code images
 router.get('/admin/qr/download-zip/:batchId', requireAuth, requireAdmin, async (req, res) => {
   try {
+    const backendUrl = resolveBackendUrl(req);
     const batchId = sanitizeStringParam(req.params.batchId);
     if (!batchId) {
       return res.status(400).json({ error: 'batchId is required' });
@@ -1587,9 +1624,13 @@ router.get('/admin/qr/download-zip/:batchId', requireAuth, requireAdmin, async (
       return res.status(404).json({ error: 'No stickers found in batch' });
     }
 
+    const zipDate = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const zipType = String(batch.type || 'b2c').toUpperCase();
+    const zipName = `INCASE-QR-${zipType}-${batchId}-${String(stickers.length).padStart(3, '0')}PCS-${zipDate}.zip`;
+
     // Set response headers for ZIP file download
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="incase-stickers-${batchId}.zip"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
 
     // Create archiver and pipe to response
     const archive = archiver('zip', { zlib: { level: 9 } });
@@ -1603,8 +1644,8 @@ router.get('/admin/qr/download-zip/:batchId', requireAuth, requireAdmin, async (
     // Generate QR codes for each sticker and add to ZIP
     const qrPromises = stickers.map(async (sticker) => {
       try {
-        const activationUrl = `${FRONTEND_APP_URL}/activate/${sticker.uuid}`;
-        const qrImage = await QRCode.toBuffer(activationUrl, {
+        const scanUrl = `${backendUrl}/api/v1/qr/activate/${sticker.uuid}`;
+        const qrImage = await QRCode.toBuffer(scanUrl, {
           errorCorrectionLevel: 'H',
           type: 'image/png',
           width: 300,
@@ -1629,8 +1670,8 @@ INSTRUCTIONS:
 1. Unzip this file to extract all QR code images
 2. Print the QR code images on sticker sheets or labels
 3. Cut the stickers and distribute to customers
-4. When a customer scans the QR code, they will be directed to fill their emergency details
-5. On subsequent scans, the emergency information will be displayed with SOS button available
+4. First scan opens activation form to fill emergency details
+5. Next scans open the saved emergency profile with SOS actions
 
 STICKER DETAILS:
 ${stickers.map((s) => `- ${s.serialNumber}: ${s.uuid}`).join('\n')}
@@ -1696,6 +1737,7 @@ router.get('/admin/qr/stickers', requireAuth, requireAdmin, async (req, res) => 
 // Public: check activation state for a pre-printed sticker
 router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
   try {
+    const frontendUrl = resolveFrontendUrl(req);
     const uuid = sanitizeStringParam(req.params.uuid);
     if (!uuid) {
       return res.status(400).json({ error: 'UUID is required' });
@@ -1725,7 +1767,7 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
       const identifier =
         sticker.activatedBy.email || sticker.activatedBy.phoneNumber || sticker.activatedBy._id?.toString();
 
-      const redirectTo = `${FRONTEND_APP_URL}/emergencyinfo/${encodeURIComponent(identifier)}`;
+      const redirectTo = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
       const acceptsHtml = String(req.headers.accept || '').includes('text/html');
       if (acceptsHtml) {
         return res.redirect(302, redirectTo);
@@ -1738,9 +1780,16 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
       });
     }
 
+    const activateUrl = `${frontendUrl}/activate/${sticker.uuid}`;
+    const acceptsHtml = String(req.headers.accept || '').includes('text/html');
+    if (acceptsHtml) {
+      return res.redirect(302, activateUrl);
+    }
+
     return res.json({
       status: sticker.status,
       sticker,
+      activateUrl,
     });
   } catch (error) {
     console.error('Error fetching sticker activation state:', error);
@@ -1751,6 +1800,7 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
 // Public: activate pre-printed sticker with emergency profile data
 router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (req, res) => {
   try {
+    const frontendUrl = resolveFrontendUrl(req);
     const uuid = sanitizeStringParam(req.params.uuid);
     if (!uuid) {
       return res.status(400).json({ error: 'UUID is required' });
@@ -1808,7 +1858,7 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
       emergencyContacts,
       address: normalizeOptionalString(req.body?.address, 500),
       photo: photoDataUrl,
-      qrCode: `${FRONTEND_APP_URL}/activate/${uuid}`,
+      qrCode: `${frontendUrl}/activate/${uuid}`,
     };
 
     const existing = await EmergencyInfo.findOne(
@@ -1837,7 +1887,7 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
       success: true,
       emergencyInfo,
       sticker,
-      profileUrl: `${FRONTEND_APP_URL}/emergencyinfo/${encodeURIComponent(
+      profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(
         emergencyInfo.email || emergencyInfo.phoneNumber
       )}`,
     });
