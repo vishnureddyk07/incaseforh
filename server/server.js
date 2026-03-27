@@ -32,7 +32,7 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod';
 const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || null;
 const GEONAMES_USERNAME = process.env.GEONAMES_USERNAME || '';
-const FRONTEND_APP_URL = (process.env.FRONTEND_APP_URL || '').replace(/\/+$/, '');
+const FRONTEND_APP_URL = (process.env.FRONTEND_APP_URL || 'https://incaseforh.vercel.app').replace(/\/+$/, '');
 const BACKEND_APP_URL = (process.env.BACKEND_APP_URL || '').replace(/\/+$/, '');
 
 const resolveFrontendUrl = (req) => {
@@ -41,7 +41,7 @@ const resolveFrontendUrl = (req) => {
   if (origin.startsWith('http://') || origin.startsWith('https://')) {
     return origin.replace(/\/+$/, '');
   }
-  return `${req.protocol}://${req.get('host')}`.replace(/\/+$/, '');
+  return 'https://incaseforh.vercel.app';
 };
 
 const resolveBackendUrl = (req) => {
