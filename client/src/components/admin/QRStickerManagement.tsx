@@ -197,6 +197,96 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     URL.revokeObjectURL(url);
   };
 
+  const printStickerSheet = async (batchId: string) => {
+    const rows = await downloadJson(batchId);
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=900');
+    if (!printWindow) {
+      throw new Error('Popup blocked. Please allow popups and try print again.');
+    }
+
+    const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>INcase Stickers - ${batchId}</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; padding: 12px; }
+      h1 { font-size: 16px; margin: 0 0 8px; }
+      .meta { font-size: 12px; color: #555; margin-bottom: 12px; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .sticker { border: 1px solid #ddd; border-radius: 8px; padding: 8px; text-align: center; page-break-inside: avoid; }
+      .brand { font-weight: 700; color: #f97316; font-size: 13px; }
+      .serial { font-size: 12px; font-weight: 700; margin-top: 4px; }
+      .uuid { font-size: 10px; color: #666; word-break: break-all; }
+      .url { font-size: 10px; color: #0a66c2; word-break: break-all; }
+      img { width: 130px; height: 130px; object-fit: contain; margin-top: 6px; }
+      @media print { .no-print { display:none; } body { padding: 0; } }
+    </style>
+  </head>
+  <body>
+    <button class="no-print" onclick="window.print()">Print</button>
+    <h1>INcase Sticker Batch: ${batchId}</h1>
+    <div class="meta">Total stickers: ${rows.length}. Print this sheet and cut by sticker borders.</div>
+    <div class="grid">
+      ${rows
+        .map(
+          (r) => `<div class="sticker">
+            <div class="brand">INcase Emergency Sticker</div>
+            <div class="serial">${r.serialNumber}</div>
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(r.activationUrl)}" alt="${r.serialNumber}" />
+            <div class="uuid">${r.uuid}</div>
+            <div class="url">${r.activationUrl}</div>
+          </div>`
+        )
+        .join('')}
+    </div>
+  </body>
+</html>`;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const editBatch = async (batch: BatchRow) => {
+    const nextType = (window.prompt('Type (b2c / b2b / b2g)', batch.type) || batch.type).toLowerCase();
+    const nextOrganization = window.prompt('Organization Name', batch.organizationName || '') ?? batch.organizationName ?? '';
+    const nextNotes = window.prompt('Notes', '') ?? '';
+
+    const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/batch/${encodeURIComponent(batch.batchId)}`, {
+      method: 'PATCH',
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: nextType, organizationName: nextOrganization, notes: nextNotes }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to edit batch');
+    await fetchBatches();
+    await fetchStats();
+  };
+
+  const deleteBatch = async (batch: BatchRow) => {
+    const confirmed = window.confirm(`Delete batch ${batch.batchId}? This may delete all stickers in this batch.`);
+    if (!confirmed) return;
+
+    let url = `${backendApiBaseUrl}/api/v1/admin/qr/batch/${encodeURIComponent(batch.batchId)}`;
+    let res = await fetch(url, { method: 'DELETE', headers: authHeaders });
+    let data = await res.json();
+
+    if (!res.ok && res.status === 409) {
+      const force = window.confirm(`${data.error}\n\nActive stickers: ${data.activeCount}. Force delete?`);
+      if (!force) return;
+      url = `${url}?force=true`;
+      res = await fetch(url, { method: 'DELETE', headers: authHeaders });
+      data = await res.json();
+    }
+
+    if (!res.ok) throw new Error(data.error || 'Failed to delete batch');
+
+    await fetchBatches();
+    await fetchStats();
+    await fetchStickers(1);
+  };
+
   const deactivateSticker = async (uuid: string) => {
     const reason = window.prompt('Deactivation reason', 'Deactivated by admin') || 'Deactivated by admin';
     const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/deactivate/${encodeURIComponent(uuid)}`, {
@@ -291,14 +381,20 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
 
       {tab === 'generate' && (
         <form onSubmit={generateBatch} className="space-y-4 rounded-xl border p-4">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+            After generation, use these options:
+            <div>1. Print Stickers: direct printable sticker sheet with QR images.</div>
+            <div>2. CSV: send to sticker printing vendor.</div>
+            <div>3. JSON: system integration / backup.</div>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-gray-700">Quantity (max 500)</label>
-              <input type="number" min={1} max={500} value={quantity} onChange={(e) => setQuantity(Number(e.target.value || 1))} className="mt-1 w-full rounded-lg border px-3 py-2" />
+              <input type="number" min={1} max={500} value={quantity} onChange={(e) => setQuantity(Number(e.target.value || 1))} className="mt-1 w-full rounded-lg border px-3 py-2" aria-label="Batch quantity" title="Batch quantity" placeholder="Enter quantity" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Type</label>
-              <select value={type} onChange={(e) => setType(e.target.value as 'b2c' | 'b2b' | 'b2g')} className="mt-1 w-full rounded-lg border px-3 py-2">
+              <select value={type} onChange={(e) => setType(e.target.value as 'b2c' | 'b2b' | 'b2g')} className="mt-1 w-full rounded-lg border px-3 py-2" aria-label="Batch type" title="Batch type">
                 <option value="b2c">B2C</option>
                 <option value="b2b">B2B</option>
                 <option value="b2g">B2G</option>
@@ -309,13 +405,13 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
           {(type === 'b2b' || type === 'b2g') && (
             <div>
               <label className="block text-sm font-medium text-gray-700">Organization Name</label>
-              <input value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />
+              <input value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" aria-label="Organization name" title="Organization name" placeholder="Organization name" />
             </div>
           )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700">Notes</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" rows={3} />
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" rows={3} aria-label="Batch notes" title="Batch notes" placeholder="Optional notes" />
           </div>
 
           <button disabled={generating} className="w-full rounded-lg bg-orange-600 px-4 py-3 font-semibold text-white hover:bg-orange-700 disabled:opacity-60">
@@ -339,6 +435,32 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                 >
                   Download Batch JSON
                 </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await downloadCsv(generateResult.batchId);
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Download failed');
+                    }
+                  }}
+                  className="ml-2 rounded-lg bg-slate-700 px-3 py-2 text-white"
+                >
+                  Download CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await printStickerSheet(generateResult.batchId);
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Print failed');
+                    }
+                  }}
+                  className="ml-2 rounded-lg bg-orange-600 px-3 py-2 text-white"
+                >
+                  Print Stickers
+                </button>
               </div>
             </div>
           ) : null}
@@ -358,7 +480,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                 <th className="px-3 py-2">Organization</th>
                 <th className="px-3 py-2">Active</th>
                 <th className="px-3 py-2">Unactivated</th>
-                <th className="px-3 py-2">Downloads</th>
+                <th className="px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -375,6 +497,9 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                     <div className="flex gap-2">
                       <button onClick={async () => { try { await downloadJson(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'Download failed'); } }} className="rounded bg-blue-600 px-2 py-1 text-xs text-white">JSON</button>
                       <button onClick={async () => { try { await downloadCsv(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'Download failed'); } }} className="rounded bg-gray-700 px-2 py-1 text-xs text-white">CSV</button>
+                      <button onClick={async () => { try { await printStickerSheet(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'Print failed'); } }} className="rounded bg-orange-600 px-2 py-1 text-xs text-white">Print</button>
+                      <button onClick={async () => { try { await editBatch(b); } catch (err) { setError(err instanceof Error ? err.message : 'Edit failed'); } }} className="rounded bg-amber-600 px-2 py-1 text-xs text-white">Edit</button>
+                      <button onClick={async () => { try { await deleteBatch(b); } catch (err) { setError(err instanceof Error ? err.message : 'Delete failed'); } }} className="rounded bg-red-600 px-2 py-1 text-xs text-white">Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -391,7 +516,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
         <div className="space-y-3">
           <div className="grid gap-2 md:grid-cols-4">
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search serial/UUID..." className="rounded-lg border px-3 py-2" />
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border px-3 py-2">
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border px-3 py-2" aria-label="Status filter" title="Status filter">
               <option value="all">All Statuses</option>
               <option value="generated">Generated</option>
               <option value="distributed">Distributed</option>
@@ -399,7 +524,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
               <option value="active">Active</option>
               <option value="deactivated">Deactivated</option>
             </select>
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="rounded-lg border px-3 py-2">
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="rounded-lg border px-3 py-2" aria-label="Type filter" title="Type filter">
               <option value="all">All Types</option>
               <option value="b2c">B2C</option>
               <option value="b2b">B2B</option>

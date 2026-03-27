@@ -1446,6 +1446,84 @@ router.get('/admin/qr/batch/:batchId', requireAuth, requireAdmin, async (req, re
   }
 });
 
+// Admin: edit batch metadata and optional batch type
+router.patch('/admin/qr/batch/:batchId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const batchId = sanitizeStringParam(req.params.batchId);
+    if (!batchId) {
+      return res.status(400).json({ error: 'batchId is required' });
+    }
+
+    const updates = {};
+    const organizationName = normalizeOptionalString(req.body?.organizationName, 200);
+    const notes = normalizeOptionalString(req.body?.notes, 1000);
+    const requestedType = normalizeOptionalString(req.body?.type, 20).toLowerCase();
+
+    if (organizationName || req.body?.organizationName === '') updates.organizationName = organizationName;
+    if (notes || req.body?.notes === '') updates.notes = notes;
+    if (requestedType) {
+      if (!ALLOWED_QR_TYPES.has(requestedType)) {
+        return res.status(400).json({ error: 'Invalid type. Use b2c, b2b, or b2g' });
+      }
+      updates.type = requestedType;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided for update' });
+    }
+
+    const batch = await QRBatch.findOneAndUpdate({ batchId }, { $set: updates }, { new: true }).lean();
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    if (updates.type) {
+      await QRSticker.updateMany({ batchId }, { $set: { type: updates.type } });
+    }
+
+    return res.json({ success: true, batch });
+  } catch (error) {
+    console.error('Error updating QR batch:', error);
+    return res.status(500).json({ error: 'Failed to update QR batch' });
+  }
+});
+
+// Admin: delete a batch and all stickers in that batch (blocks by default if active stickers exist)
+router.delete('/admin/qr/batch/:batchId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const batchId = sanitizeStringParam(req.params.batchId);
+    if (!batchId) {
+      return res.status(400).json({ error: 'batchId is required' });
+    }
+
+    const forceDelete = String(req.query.force || '').toLowerCase() === 'true';
+    const activeCount = await QRSticker.countDocuments({ batchId, status: 'active' });
+    if (activeCount > 0 && !forceDelete) {
+      return res.status(409).json({
+        error: 'Batch has active stickers. Use force=true to delete anyway.',
+        activeCount,
+      });
+    }
+
+    const batch = await QRBatch.findOne({ batchId }).lean();
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    const stickerDeleteResult = await QRSticker.deleteMany({ batchId });
+    await QRBatch.deleteOne({ batchId });
+
+    return res.json({
+      success: true,
+      batchId,
+      deletedStickers: stickerDeleteResult.deletedCount || 0,
+    });
+  } catch (error) {
+    console.error('Error deleting QR batch:', error);
+    return res.status(500).json({ error: 'Failed to delete QR batch' });
+  }
+});
+
 // Admin: download batch activation manifest
 router.get('/admin/qr/download/:batchId', requireAuth, requireAdmin, async (req, res) => {
   try {
