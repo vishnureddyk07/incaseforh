@@ -1253,6 +1253,21 @@ app.get([
   return res.redirect(302, `${resolveFrontendUrl(req)}/emergencyinfo/${encodeURIComponent(identifier)}`);
 });
 
+// Legacy QR fixer: old printed stickers may point to backend paths like /activate/:uuid.
+// Forward all known legacy scan paths into the canonical API scan route.
+app.get([
+  '/activate/:uuid',
+  '/scan/:uuid',
+  '/qr/:uuid',
+  '/q/:uuid',
+], (req, res) => {
+  const uuid = sanitizeStringParam(req.params.uuid);
+  if (!uuid) {
+    return res.status(400).json({ error: 'UUID is required' });
+  }
+  return res.redirect(302, `${resolveBackendUrl(req)}/api/v1/qr/activate/${encodeURIComponent(uuid)}`);
+});
+
 // Environment check endpoint (does not leak secrets)
 app.get('/env-check', (req, res) => {
   const envSet = Boolean(process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGODB_URL || process.env.MONGO_URL || process.env.DATABASE_URL);
