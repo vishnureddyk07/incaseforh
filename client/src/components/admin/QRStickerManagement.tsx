@@ -163,11 +163,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
   };
 
   const downloadJson = async (batchId: string) => {
-    const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/download/${encodeURIComponent(batchId)}`, {
-      headers: authHeaders,
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Download failed');
+    const data = await fetchBatchDownloadData(batchId);
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -177,6 +173,15 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    return data as Array<{ serialNumber: string; uuid: string; activationUrl: string }>;
+  };
+
+  const fetchBatchDownloadData = async (batchId: string) => {
+    const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/download/${encodeURIComponent(batchId)}`, {
+      headers: authHeaders,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Download failed');
     return data as Array<{ serialNumber: string; uuid: string; activationUrl: string }>;
   };
 
@@ -198,7 +203,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
   };
 
   const printStickerSheet = async (batchId: string) => {
-    const rows = await downloadJson(batchId);
+    const rows = await fetchBatchDownloadData(batchId);
     const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=900');
     if (!printWindow) {
       throw new Error('Popup blocked. Please allow popups and try print again.');
