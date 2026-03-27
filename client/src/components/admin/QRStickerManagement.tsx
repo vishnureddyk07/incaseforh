@@ -202,6 +202,25 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     URL.revokeObjectURL(url);
   };
 
+  const downloadZip = async (batchId: string) => {
+    const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/download-zip/${encodeURIComponent(batchId)}`, {
+      headers: authHeaders,
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'ZIP download failed');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `incase-stickers-${batchId}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const printStickerSheet = async (batchId: string) => {
     const rows = await fetchBatchDownloadData(batchId);
     const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=900');
@@ -444,6 +463,20 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                   type="button"
                   onClick={async () => {
                     try {
+                      await downloadZip(generateResult.batchId);
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'ZIP download failed');
+                    }
+                  }}
+                  className="ml-2 rounded-lg bg-green-700 px-3 py-2 text-white"
+                  title="Download QR codes as PNG images in a ZIP file - ready to print and distribute"
+                >
+                  Download as ZIP (QR Images)
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
                       await downloadCsv(generateResult.batchId);
                     } catch (err) {
                       setError(err instanceof Error ? err.message : 'Download failed');
@@ -500,6 +533,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                   <td className="px-3 py-2">{b.unactivatedCount ?? 0}</td>
                   <td className="px-3 py-2">
                     <div className="flex gap-2">
+                      <button onClick={async () => { try { await downloadZip(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'ZIP download failed'); } }} className="rounded bg-green-600 px-2 py-1 text-xs text-white" title="Download QR images as ZIP file for printing">ZIP</button>
                       <button onClick={async () => { try { await downloadJson(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'Download failed'); } }} className="rounded bg-blue-600 px-2 py-1 text-xs text-white">JSON</button>
                       <button onClick={async () => { try { await downloadCsv(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'Download failed'); } }} className="rounded bg-gray-700 px-2 py-1 text-xs text-white">CSV</button>
                       <button onClick={async () => { try { await printStickerSheet(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'Print failed'); } }} className="rounded bg-orange-600 px-2 py-1 text-xs text-white">Print</button>

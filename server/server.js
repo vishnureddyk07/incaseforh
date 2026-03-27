@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import multer from 'multer';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import archiver from 'archiver';
+import QRCode from 'qrcode';
 import EmergencyInfo from './models/EmergencyInfo.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -1556,6 +1558,94 @@ router.get('/admin/qr/download/:batchId', requireAuth, requireAdmin, async (req,
   } catch (error) {
     console.error('Error downloading QR batch manifest:', error);
     return res.status(500).json({ error: 'Failed to download QR batch manifest' });
+  }
+});
+
+// Admin: download QR batch as ZIP file with QR code images
+router.get('/admin/qr/download-zip/:batchId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const batchId = sanitizeStringParam(req.params.batchId);
+    if (!batchId) {
+      return res.status(400).json({ error: 'batchId is required' });
+    }
+
+    const batch = await QRBatch.findOneAndUpdate(
+      { batchId },
+      { $inc: { downloadCount: 1 } },
+      { new: true }
+    ).lean();
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    const stickers = await QRSticker.find({ batchId })
+      .sort({ serialNumber: 1 })
+      .select('uuid serialNumber')
+      .lean();
+
+    if (stickers.length === 0) {
+      return res.status(404).json({ error: 'No stickers found in batch' });
+    }
+
+    // Set response headers for ZIP file download
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="incase-stickers-${batchId}.zip"`);
+
+    // Create archiver and pipe to response
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', (err) => {
+      console.error('Archive error:', err);
+      res.status(500).json({ error: 'Failed to create ZIP file' });
+    });
+
+    archive.pipe(res);
+
+    // Generate QR codes for each sticker and add to ZIP
+    const qrPromises = stickers.map(async (sticker) => {
+      try {
+        const activationUrl = `${FRONTEND_APP_URL}/activate/${sticker.uuid}`;
+        const qrImage = await QRCode.toBuffer(activationUrl, {
+          errorCorrectionLevel: 'H',
+          type: 'image/png',
+          width: 300,
+          margin: 2,
+        });
+        archive.append(qrImage, { name: `QR-${sticker.serialNumber}.png` });
+      } catch (err) {
+        console.error(`Error generating QR for ${sticker.uuid}:`, err);
+      }
+    });
+
+    await Promise.all(qrPromises);
+
+    // Add a README file with sticker information
+    const readmeContent = `INcase Emergency QR Stickers - ${batchId}
+=====================================
+
+Total Stickers: ${stickers.length}
+Generated: ${new Date().toLocaleString()}
+
+INSTRUCTIONS:
+1. Unzip this file to extract all QR code images
+2. Print the QR code images on sticker sheets or labels
+3. Cut the stickers and distribute to customers
+4. When a customer scans the QR code, they will be directed to fill their emergency details
+5. On subsequent scans, the emergency information will be displayed with SOS button available
+
+STICKER DETAILS:
+${stickers.map((s) => `- ${s.serialNumber}: ${s.uuid}`).join('\n')}
+
+For support, contact INcase team.
+`;
+    archive.append(readmeContent, { name: 'README.txt' });
+
+    // Finalize archive
+    await archive.finalize();
+  } catch (error) {
+    console.error('Error downloading QR batch as ZIP:', error);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Failed to download QR batch as ZIP' });
+    }
   }
 });
 
