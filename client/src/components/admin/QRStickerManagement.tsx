@@ -350,6 +350,21 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     await fetchStickers(page);
   };
 
+  const reactivateSticker = async (uuid: string) => {
+    const confirmed = window.confirm('Reactivate this sticker? It will become usable again for a new user activation.');
+    if (!confirmed) return;
+
+    const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/reassign/${encodeURIComponent(uuid)}`, {
+      method: 'POST',
+      headers: { ...authHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to reactivate sticker');
+    await fetchStats();
+    await fetchStickers(page);
+  };
+
   const statusBadge = (status: StickerRow['status']) => {
     if (status === 'active') return 'bg-green-100 text-green-700';
     if (status === 'deactivated') return 'bg-red-100 text-red-700';
@@ -608,7 +623,11 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                     <td className="px-3 py-2">
                       <div className="flex gap-2">
                         <button onClick={async () => { try { await deactivateSticker(s.uuid); } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); } }} className="rounded bg-red-600 px-2 py-1 text-xs text-white">Deactivate</button>
-                        <button onClick={async () => { try { await reassignSticker(s.uuid); } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); } }} className="rounded bg-amber-600 px-2 py-1 text-xs text-white">Reassign</button>
+                        {s.status === 'deactivated' ? (
+                          <button onClick={async () => { try { await reactivateSticker(s.uuid); } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); } }} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white">Reactivate</button>
+                        ) : (
+                          <button onClick={async () => { try { await reassignSticker(s.uuid); } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); } }} className="rounded bg-amber-600 px-2 py-1 text-xs text-white">Reassign</button>
+                        )}
                       </div>
                     </td>
                   </tr>

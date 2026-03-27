@@ -138,6 +138,9 @@ export default function ActivateQR() {
         <div className="mx-auto max-w-xl rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
           <h1 className="text-2xl font-bold text-red-700">This sticker has been deactivated</h1>
           <p className="mt-3 text-red-600">Reason: {check.reason || 'No reason provided'}</p>
+          <p className="mt-3 text-sm text-red-700">
+            Admin can make this same sticker usable again from Admin Dashboard - QR Sticker Management - All Stickers - Reactivate.
+          </p>
         </div>
       </div>
     );
