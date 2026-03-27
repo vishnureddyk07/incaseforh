@@ -43,7 +43,7 @@ export default function ActivateQR() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}`);
+        const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
         const data = await res.json();
         if (!res.ok) {
           throw new Error(data.error || data.reason || 'Failed to load sticker');
@@ -79,6 +79,11 @@ export default function ActivateQR() {
     setError(null);
 
     try {
+      const validContacts = contacts.filter((c) => c.name.trim() && c.phone.trim());
+      if (validContacts.length === 0) {
+        throw new Error('Please add at least one emergency contact with name and phone number.');
+      }
+
       const formData = new FormData();
       formData.append('fullName', fullName);
       formData.append('phoneNumber', phoneNumber);
@@ -89,7 +94,7 @@ export default function ActivateQR() {
       formData.append('medicalConditions', medicalConditions);
       formData.append('email', email);
       formData.append('address', address);
-      formData.append('emergencyContacts', JSON.stringify(contacts.filter((c) => c.name || c.phone)));
+      formData.append('emergencyContacts', JSON.stringify(validContacts));
       if (photo) formData.append('photo', photo);
 
       const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}`, {
@@ -167,11 +172,11 @@ export default function ActivateQR() {
           <h1 className="text-2xl font-bold text-gray-900">Activate Your INcase Sticker</h1>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <input required value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name" className="rounded-lg border px-3 py-2" />
-            <input required value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number" className="rounded-lg border px-3 py-2" />
-            <input required type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="rounded-lg border px-3 py-2" />
+            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name (optional)" className="rounded-lg border px-3 py-2" />
+            <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number (optional)" className="rounded-lg border px-3 py-2" />
+            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="rounded-lg border px-3 py-2" />
             <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="rounded-lg border px-3 py-2">
-              <option value="">Blood Type</option>
+              <option value="">Blood Type (optional)</option>
               <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
               <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
             </select>
@@ -179,12 +184,12 @@ export default function ActivateQR() {
             <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (optional)" className="rounded-lg border px-3 py-2" />
           </div>
 
-          <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies" className="w-full rounded-lg border px-3 py-2" />
-          <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications" className="w-full rounded-lg border px-3 py-2" />
-          <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions" className="w-full rounded-lg border px-3 py-2" />
+          <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies (optional)" className="w-full rounded-lg border px-3 py-2" />
+          <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications (optional)" className="w-full rounded-lg border px-3 py-2" />
+          <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions (optional)" className="w-full rounded-lg border px-3 py-2" />
 
           <div className="space-y-2">
-            <p className="font-semibold text-gray-700">Emergency Contacts (max 3)</p>
+            <p className="font-semibold text-gray-700">Emergency Contacts (at least 1 required)</p>
             {contacts.map((c, idx) => (
               <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-3">
                 <input value={c.name} onChange={(e) => updateContact(idx, 'name', e.target.value)} placeholder="Name" className="rounded-lg border px-3 py-2" />

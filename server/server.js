@@ -1615,7 +1615,7 @@ router.get('/admin/qr/download/:batchId', requireAuth, requireAdmin, async (req,
 // Admin: download QR batch as ZIP file with QR code images
 router.get('/admin/qr/download-zip/:batchId', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const backendUrl = resolveBackendUrl(req);
+    const frontendUrl = resolveFrontendUrl(req);
     const batchId = sanitizeStringParam(req.params.batchId);
     if (!batchId) {
       return res.status(400).json({ error: 'batchId is required' });
@@ -1659,8 +1659,8 @@ router.get('/admin/qr/download-zip/:batchId', requireAuth, requireAdmin, async (
     // Generate QR codes for each sticker and add to ZIP
     const qrPromises = stickers.map(async (sticker) => {
       try {
-        const scanUrl = `${backendUrl}/api/v1/qr/activate/${sticker.uuid}`;
-        const qrImage = await QRCode.toBuffer(scanUrl, {
+        const activationUrl = `${frontendUrl}/activate/${sticker.uuid}`;
+        const qrImage = await QRCode.toBuffer(activationUrl, {
           errorCorrectionLevel: 'H',
           type: 'image/png',
           width: 300,
@@ -1753,6 +1753,8 @@ router.get('/admin/qr/stickers', requireAuth, requireAdmin, async (req, res) => 
 router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
   try {
     const frontendUrl = resolveFrontendUrl(req);
+    const wantsJson = String(req.query?.format || '').toLowerCase() === 'json'
+      || String(req.headers.accept || '').includes('application/json');
     const uuid = sanitizeStringParam(req.params.uuid);
     if (!uuid) {
       return res.status(400).json({ error: 'UUID is required' });
@@ -1762,15 +1764,17 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
       { uuid },
       { $set: { lastScannedAt: new Date() }, $inc: { scanCount: 1 } },
       { new: true }
-    )
-      .populate('activatedBy', 'fullName email phoneNumber bloodType')
-      .lean();
+    ).lean();
 
     if (!sticker) {
       return res.status(404).json({ error: 'Sticker not found' });
     }
 
     if (sticker.status === 'deactivated') {
+      const activateUrl = `${frontendUrl}/activate/${sticker.uuid}`;
+      if (!wantsJson) {
+        return res.redirect(302, activateUrl);
+      }
       return res.status(410).json({
         status: 'deactivated',
         reason: sticker.deactivatedReason || 'This sticker has been deactivated',
@@ -1779,25 +1783,29 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
     }
 
     if (sticker.status === 'active' && sticker.activatedBy) {
+      const activatedBy = await EmergencyInfo.findById(sticker.activatedBy)
+        .select('fullName email phoneNumber bloodType')
+        .lean();
       const identifier =
-        sticker.activatedBy.email || sticker.activatedBy.phoneNumber || sticker.activatedBy._id?.toString();
+        activatedBy?.email || activatedBy?.phoneNumber || String(sticker.activatedBy);
 
       const redirectTo = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
-      const acceptsHtml = String(req.headers.accept || '').includes('text/html');
-      if (acceptsHtml) {
+      if (!wantsJson) {
         return res.redirect(302, redirectTo);
       }
 
       return res.json({
         status: 'active',
-        sticker,
+        sticker: {
+          ...sticker,
+          activatedBy,
+        },
         redirectTo,
       });
     }
 
     const activateUrl = `${frontendUrl}/activate/${sticker.uuid}`;
-    const acceptsHtml = String(req.headers.accept || '').includes('text/html');
-    if (acceptsHtml) {
+    if (!wantsJson) {
       return res.redirect(302, activateUrl);
     }
 
@@ -1837,10 +1845,6 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
     const dateOfBirth = normalizeOptionalString(req.body?.dateOfBirth, 40);
     const email = normalizeOptionalString(req.body?.email, 200).toLowerCase();
 
-    if (!fullName || !phoneNumber || !dateOfBirth) {
-      return res.status(400).json({ error: 'fullName, phoneNumber, and dateOfBirth are required' });
-    }
-
     let photoDataUrl = null;
     if (req.file && req.file.buffer) {
       const mime = req.file.mimetype || 'application/octet-stream';
@@ -1861,16 +1865,21 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
       }
     }
 
+    const validContacts = emergencyContacts.filter((c) => c?.name && c?.phone);
+    if (validContacts.length === 0) {
+      return res.status(400).json({ error: 'At least one emergency contact (name + phone) is required' });
+    }
+
     const payload = {
-      fullName,
-      phoneNumber,
-      dateOfBirth,
+      fullName: fullName || 'INcase User',
+      phoneNumber: phoneNumber || null,
+      dateOfBirth: dateOfBirth || null,
       email: email || null,
       bloodType: normalizeOptionalString(req.body?.bloodType, 20),
       allergies: normalizeOptionalString(req.body?.allergies, 1000),
       medications: normalizeOptionalString(req.body?.medications, 1000),
       medicalConditions: normalizeOptionalString(req.body?.medicalConditions, 1000),
-      emergencyContacts,
+      emergencyContacts: validContacts,
       address: normalizeOptionalString(req.body?.address, 500),
       photo: photoDataUrl,
       qrCode: `${frontendUrl}/activate/${uuid}`,
