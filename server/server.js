@@ -2093,6 +2093,14 @@ router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, 
     emergencyInfo.medications = normalizeOptionalString(req.body?.medications, 1000);
     emergencyInfo.medicalConditions = normalizeOptionalString(req.body?.medicalConditions, 1000);
     emergencyInfo.address = normalizeOptionalString(req.body?.address, 500);
+    if (typeof req.body?.photo === 'string') {
+      const incomingPhoto = req.body.photo.trim();
+      if (!incomingPhoto) {
+        emergencyInfo.photo = '';
+      } else if (incomingPhoto.startsWith('data:') || incomingPhoto.startsWith('http')) {
+        emergencyInfo.photo = incomingPhoto;
+      }
+    }
 
     if (Array.isArray(req.body?.emergencyContacts)) {
       emergencyInfo.emergencyContacts = sanitizeContacts(req.body.emergencyContacts);
