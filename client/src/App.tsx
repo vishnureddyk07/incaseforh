@@ -25,6 +25,7 @@ import AmbulanceLogin from './pages/AmbulanceLogin';
 import AmbulanceDashboard from './pages/AmbulanceDashboard';
 import ActivateQR from './pages/ActivateQR';
 import StickerActivationSuccess from './pages/StickerActivationSuccess';
+import AdminQRReassign from './pages/AdminQRReassign';
 
 function RouteNormalizer() {
   const { pathname } = useLocation();
@@ -97,6 +98,7 @@ function AppContent() {
       <Route path="/qrs" element={<QRList />} />
       <Route path="/admin" element={<AdminLogin />} />
       <Route path="/admin/dashboard" element={<AdminDashboard />} />
+      <Route path="/admin/qr/reassign/:uuid" element={<AdminQRReassign />} />
       <Route path="/manager" element={<ManagerLogin />} />
       <Route path="/manager/dashboard" element={<ManagerDashboard />} />
       <Route path="/employee" element={<EmployeeLogin />} />

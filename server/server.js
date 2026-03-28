@@ -1953,6 +1953,32 @@ router.post('/admin/qr/deactivate/:uuid', requireAuth, requireAdmin, async (req,
   }
 });
 
+// Admin: reactivate a previously deactivated sticker
+router.post('/admin/qr/reactivate/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    // If profile exists, restore active; otherwise keep it usable as unactivated.
+    sticker.status = sticker.activatedBy ? 'active' : 'unactivated';
+    sticker.deactivatedAt = null;
+    sticker.deactivatedReason = '';
+    await sticker.save();
+
+    return res.json({ success: true, sticker });
+  } catch (error) {
+    console.error('Error reactivating sticker:', error);
+    return res.status(500).json({ error: 'Failed to reactivate sticker' });
+  }
+});
+
 // Admin: reassign an existing sticker for another user/organization
 router.post('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -1991,6 +2017,84 @@ router.post('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, r
   } catch (error) {
     console.error('Error reassigning sticker:', error);
     return res.status(500).json({ error: 'Failed to reassign sticker' });
+  }
+});
+
+// Admin: fetch sticker + linked emergency profile for reassign edit page
+router.get('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid })
+      .populate('activatedBy', 'fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo')
+      .lean();
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    return res.json({
+      success: true,
+      sticker,
+      emergencyInfo: sticker.activatedBy || null,
+    });
+  } catch (error) {
+    console.error('Error fetching reassign profile:', error);
+    return res.status(500).json({ error: 'Failed to fetch sticker profile' });
+  }
+});
+
+// Admin: update linked emergency profile for a sticker
+router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    if (!sticker.activatedBy) {
+      return res.status(400).json({ error: 'This sticker does not have an activated profile yet' });
+    }
+
+    const emergencyInfo = await EmergencyInfo.findById(sticker.activatedBy);
+    if (!emergencyInfo) {
+      return res.status(404).json({ error: 'Linked emergency profile not found' });
+    }
+
+    const normalizedEmail = normalizeOptionalString(req.body?.email, 200).toLowerCase();
+
+    emergencyInfo.fullName = normalizeOptionalString(req.body?.fullName, 200) || emergencyInfo.fullName || 'INcase User';
+    emergencyInfo.phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
+    emergencyInfo.dateOfBirth = normalizeOptionalString(req.body?.dateOfBirth, 40);
+    emergencyInfo.email = normalizedEmail || '';
+    emergencyInfo.bloodType = normalizeOptionalString(req.body?.bloodType, 20);
+    emergencyInfo.allergies = normalizeOptionalString(req.body?.allergies, 1000);
+    emergencyInfo.medications = normalizeOptionalString(req.body?.medications, 1000);
+    emergencyInfo.medicalConditions = normalizeOptionalString(req.body?.medicalConditions, 1000);
+    emergencyInfo.address = normalizeOptionalString(req.body?.address, 500);
+
+    if (Array.isArray(req.body?.emergencyContacts)) {
+      emergencyInfo.emergencyContacts = sanitizeContacts(req.body.emergencyContacts);
+    }
+
+    await emergencyInfo.save();
+
+    return res.json({
+      success: true,
+      message: 'Emergency profile updated',
+      emergencyInfo,
+    });
+  } catch (error) {
+    console.error('Error updating reassign profile:', error);
+    return res.status(500).json({ error: 'Failed to update sticker profile' });
   }
 });
 
