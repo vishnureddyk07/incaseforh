@@ -61,6 +61,12 @@ export default function ActivateQR() {
     };
   }, [apiBase, uuid]);
 
+  useEffect(() => {
+    if (check?.status === 'active' && check.redirectTo) {
+      window.location.replace(check.redirectTo);
+    }
+  }, [check]);
+
   const updateContact = (idx: number, key: keyof EmergencyContact, value: string) => {
     setContacts((prev) => prev.map((c, i) => (i === idx ? { ...c, [key]: value } : c)));
   };
@@ -147,19 +153,7 @@ export default function ActivateQR() {
   }
 
   if (check.status === 'active') {
-    return (
-      <div className="min-h-screen bg-white px-4 py-10">
-        <div className="mx-auto max-w-xl rounded-2xl border border-orange-200 bg-orange-50 p-8 text-center">
-          <h1 className="text-2xl font-bold text-orange-700">This QR is already registered</h1>
-          <p className="mt-3 text-orange-700">Serial: {check.sticker?.serialNumber}</p>
-          {check.redirectTo ? (
-            <a href={check.redirectTo} className="mt-6 inline-block rounded-lg bg-orange-600 px-5 py-3 font-semibold text-white hover:bg-orange-700">
-              View Emergency Profile
-            </a>
-          ) : null}
-        </div>
-      </div>
-    );
+    return <div className="min-h-screen grid place-items-center text-gray-600">Opening emergency profile...</div>;
   }
 
   return (
@@ -174,8 +168,21 @@ export default function ActivateQR() {
         <form onSubmit={submitActivation} className="space-y-4 rounded-2xl border border-gray-200 p-6 shadow-sm">
           <h1 className="text-2xl font-bold text-gray-900">Activate Your INcase Sticker</h1>
 
+          <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name (optional)" className="w-full rounded-lg border px-3 py-2" />
+
+          <div className="space-y-2">
+            <p className="font-semibold text-gray-700">Emergency Contacts (at least 1 required)</p>
+            {contacts.map((c, idx) => (
+              <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                <input value={c.name} onChange={(e) => updateContact(idx, 'name', e.target.value)} placeholder="Name" className="rounded-lg border px-3 py-2" />
+                <input value={c.phone} onChange={(e) => updateContact(idx, 'phone', e.target.value)} placeholder="Phone" className="rounded-lg border px-3 py-2" />
+                <button type="button" onClick={() => removeContact(idx)} className="rounded-lg border border-red-200 bg-red-50 text-red-600">Remove</button>
+              </div>
+            ))}
+            <button type="button" onClick={addContact} className="rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-orange-700">+ Add Contact</button>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name (optional)" className="rounded-lg border px-3 py-2" />
             <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number (optional)" className="rounded-lg border px-3 py-2" />
             <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="rounded-lg border px-3 py-2" />
             <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="rounded-lg border px-3 py-2">
@@ -190,18 +197,6 @@ export default function ActivateQR() {
           <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies (optional)" className="w-full rounded-lg border px-3 py-2" />
           <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications (optional)" className="w-full rounded-lg border px-3 py-2" />
           <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions (optional)" className="w-full rounded-lg border px-3 py-2" />
-
-          <div className="space-y-2">
-            <p className="font-semibold text-gray-700">Emergency Contacts (at least 1 required)</p>
-            {contacts.map((c, idx) => (
-              <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                <input value={c.name} onChange={(e) => updateContact(idx, 'name', e.target.value)} placeholder="Name" className="rounded-lg border px-3 py-2" />
-                <input value={c.phone} onChange={(e) => updateContact(idx, 'phone', e.target.value)} placeholder="Phone" className="rounded-lg border px-3 py-2" />
-                <button type="button" onClick={() => removeContact(idx)} className="rounded-lg border border-red-200 bg-red-50 text-red-600">Remove</button>
-              </div>
-            ))}
-            <button type="button" onClick={addContact} className="rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-orange-700">+ Add Contact</button>
-          </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Photo Upload (optional)</label>
