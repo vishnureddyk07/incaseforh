@@ -1021,7 +1021,13 @@ router.get('/emergency/:email', readLimiter, async (req, res) => {
     const scannerIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
     console.log('📍 QR Scanned from IP:', scannerIP);
     
-    const emergency = await EmergencyInfo.findOne({ email: { $eq: needle } }).collation({ locale: 'en', strength: 2 });
+    let emergency = await EmergencyInfo.findOne({ email: { $eq: needle } }).collation({ locale: 'en', strength: 2 });
+    
+    // Fallback: try lookup by ObjectId if needle looks like a MongoDB ObjectId
+    if (!emergency && needle.match(/^[0-9a-f]{24}$/i)) {
+      emergency = await EmergencyInfo.findById(needle);
+    }
+    
     if (!emergency) {
       return res.status(404).json({ error: 'Emergency info not found' });
     }
@@ -1068,7 +1074,13 @@ router.get('/emergency/phone/:phoneNumber', readLimiter, async (req, res) => {
     const scannerIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
     console.log('📍 QR Scanned from IP:', scannerIP);
     
-    const emergency = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } });
+    let emergency = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } });
+    
+    // Fallback: try lookup by ObjectId if needle looks like a MongoDB ObjectId
+    if (!emergency && needle.match(/^[0-9a-f]{24}$/i)) {
+      emergency = await EmergencyInfo.findById(needle);
+    }
+    
     if (!emergency) {
       return res.status(404).json({ error: 'Emergency info not found' });
     }
@@ -1870,6 +1882,11 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
       return res.status(400).json({ error: 'At least one emergency contact (name + phone) is required' });
     }
 
+    // Require at least one identifier (email or phone) for profile lookup
+    if (!email && !phoneNumber) {
+      return res.status(400).json({ error: 'At least one identifier (email or phone number) is required' });
+    }
+
     const payload = {
       fullName: fullName || 'INcase User',
       phoneNumber: phoneNumber || null,
@@ -1907,13 +1924,14 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
     if (sticker.deactivatedReason) sticker.deactivatedReason = '';
     await sticker.save();
 
+    // Use email/phone for profile URL, with ObjectId as fallback
+    const profileIdentifier = emergencyInfo.email || emergencyInfo.phoneNumber || emergencyInfo._id.toString();
+
     return res.status(201).json({
       success: true,
       emergencyInfo,
       sticker,
-      profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(
-        emergencyInfo.email || emergencyInfo.phoneNumber
-      )}`,
+      profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(profileIdentifier)}`,
     });
   } catch (error) {
     console.error('Error activating sticker:', error);
