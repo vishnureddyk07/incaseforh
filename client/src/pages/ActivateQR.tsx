@@ -79,11 +79,6 @@ export default function ActivateQR() {
     setError(null);
 
     try {
-      // Require at least one identifier for profile lookup
-      if (!email && !phoneNumber) {
-        throw new Error('Please provide either an email address or phone number so your profile can be found.');
-      }
-
       const validContacts = contacts.filter((c) => c.name.trim() && c.phone.trim());
       if (validContacts.length === 0) {
         throw new Error('Please add at least one emergency contact with name and phone number.');
@@ -178,18 +173,17 @@ export default function ActivateQR() {
 
         <form onSubmit={submitActivation} className="space-y-4 rounded-2xl border border-gray-200 p-6 shadow-sm">
           <h1 className="text-2xl font-bold text-gray-900">Activate Your INcase Sticker</h1>
-          <p className="text-sm text-orange-600 font-semibold">* At least one of Email or Phone Number is required</p>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name (optional)" className="rounded-lg border px-3 py-2" />
-            <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number (required*)" className="rounded-lg border px-3 py-2" />
+            <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number (optional)" className="rounded-lg border px-3 py-2" />
             <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="rounded-lg border px-3 py-2" />
             <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="rounded-lg border px-3 py-2">
               <option value="">Blood Type (optional)</option>
               <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
               <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
             </select>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (required*)" className="rounded-lg border px-3 py-2" />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" className="rounded-lg border px-3 py-2" />
             <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (optional)" className="rounded-lg border px-3 py-2" />
           </div>
 
