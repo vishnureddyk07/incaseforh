@@ -13,7 +13,7 @@ export default function StickerActivationSuccess() {
   const state = (location.state || {}) as SuccessState;
 
   const downloadQrPng = async () => {
-    const data = state.qrActivationUrl || window.location.origin;
+    const data = state.profileUrl || state.qrActivationUrl || window.location.origin;
     const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent(data)}`;
     const response = await fetch(qrApi);
     const blob = await response.blob();
@@ -60,7 +60,7 @@ export default function StickerActivationSuccess() {
             </a>
           ) : null}
           <button onClick={downloadQrPng} className="rounded-lg border border-gray-300 px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50">
-            Download QR as PNG
+            Download Emergency QR as PNG
           </button>
           <Link to="/" className="rounded-lg border border-gray-300 px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50">
             Go Home
