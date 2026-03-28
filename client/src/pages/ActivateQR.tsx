@@ -48,6 +48,10 @@ export default function ActivateQR() {
         if (!res.ok) {
           throw new Error(data.error || data.reason || 'Failed to load sticker');
         }
+        if (active && data?.status === 'active' && data?.redirectTo) {
+          window.location.replace(data.redirectTo);
+          return;
+        }
         if (active) setCheck(data);
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Failed to load sticker');
@@ -60,12 +64,6 @@ export default function ActivateQR() {
       active = false;
     };
   }, [apiBase, uuid]);
-
-  useEffect(() => {
-    if (check?.status === 'active' && check.redirectTo) {
-      window.location.replace(check.redirectTo);
-    }
-  }, [check]);
 
   const updateContact = (idx: number, key: keyof EmergencyContact, value: string) => {
     setContacts((prev) => prev.map((c, i) => (i === idx ? { ...c, [key]: value } : c)));
