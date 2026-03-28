@@ -1882,11 +1882,6 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
       return res.status(400).json({ error: 'At least one emergency contact (name + phone) is required' });
     }
 
-    // Require at least one identifier (email or phone) for profile lookup
-    if (!email && !phoneNumber) {
-      return res.status(400).json({ error: 'At least one identifier (email or phone number) is required' });
-    }
-
     const payload = {
       fullName: fullName || 'INcase User',
       phoneNumber: phoneNumber || null,
