@@ -19,7 +19,6 @@ type EmergencyInfo = {
   medicalConditions?: string;
   address?: string;
   emergencyContacts?: EmergencyContact[];
-  photo?: string;
 };
 
 type StickerPayload = {
@@ -53,7 +52,6 @@ export default function AdminQRReassign() {
   const [medicalConditions, setMedicalConditions] = useState('');
   const [address, setAddress] = useState('');
   const [contacts, setContacts] = useState<EmergencyContact[]>([{ name: '', phone: '' }]);
-  const [photo, setPhoto] = useState<string>('');
 
   const authHeaders = useMemo(
     () => ({ Authorization: `Bearer ${token || ''}`, 'Content-Type': 'application/json' }),
@@ -72,14 +70,6 @@ export default function AdminQRReassign() {
         : 'Unexpected server response',
     };
   };
-
-  const fileToDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error('Failed to read selected photo'));
-      reader.readAsDataURL(file);
-    });
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'admin') {
@@ -126,7 +116,6 @@ export default function AdminQRReassign() {
         setMedications(info.medications || '');
         setMedicalConditions(info.medicalConditions || '');
         setAddress(info.address || '');
-        setPhoto(info.photo || '');
 
         const existingContacts = Array.isArray(info.emergencyContacts)
           ? info.emergencyContacts.filter((c) => c && (c.name || c.phone)).map((c) => ({ name: c.name || '', phone: c.phone || '' }))
@@ -184,7 +173,6 @@ export default function AdminQRReassign() {
         medicalConditions,
         address,
         emergencyContacts,
-        photo,
       };
 
       const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/reassign/${encodeURIComponent(uuid)}`, {
@@ -233,7 +221,22 @@ export default function AdminQRReassign() {
         {success ? <p className="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{success}</p> : null}
 
         <form onSubmit={onSave} className="space-y-4">
-          <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name" className="w-full rounded-lg border px-3 py-2" />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name" className="rounded-lg border px-3 py-2" />
+            <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number" className="rounded-lg border px-3 py-2" />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="rounded-lg border px-3 py-2" />
+            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="rounded-lg border px-3 py-2" />
+            <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="rounded-lg border px-3 py-2">
+              <option value="">Blood Type</option>
+              <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+              <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+            </select>
+            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" className="rounded-lg border px-3 py-2" />
+          </div>
+
+          <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies" className="w-full rounded-lg border px-3 py-2" rows={2} />
+          <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications" className="w-full rounded-lg border px-3 py-2" rows={2} />
+          <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions" className="w-full rounded-lg border px-3 py-2" rows={2} />
 
           <div className="space-y-2 rounded-xl border border-gray-200 p-4">
             <p className="font-semibold text-gray-700">Emergency Contacts</p>
@@ -259,60 +262,6 @@ export default function AdminQRReassign() {
             <button type="button" onClick={addContact} className="rounded-lg border border-amber-300 px-3 py-2 text-amber-700 hover:bg-amber-50">
               + Add Contact
             </button>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number" className="rounded-lg border px-3 py-2" />
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="rounded-lg border px-3 py-2" />
-            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="rounded-lg border px-3 py-2" />
-            <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="rounded-lg border px-3 py-2">
-              <option value="">Blood Type</option>
-              <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
-              <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
-            </select>
-            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" className="rounded-lg border px-3 py-2" />
-          </div>
-
-          <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies" className="w-full rounded-lg border px-3 py-2" rows={2} />
-          <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications" className="w-full rounded-lg border px-3 py-2" rows={2} />
-          <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions" className="w-full rounded-lg border px-3 py-2" rows={2} />
-
-          <div className="space-y-2 rounded-xl border border-gray-200 p-4">
-            <p className="font-semibold text-gray-700">Photo</p>
-            {photo ? (
-              <img
-                src={photo}
-                alt="Profile"
-                className="h-28 w-28 rounded-lg border border-gray-200 object-cover"
-                onError={() => setPhoto('')}
-              />
-            ) : (
-              <p className="text-sm text-gray-500">No photo uploaded</p>
-            )}
-            <input
-              type="file"
-              accept="image/*"
-              className="w-full rounded-lg border px-3 py-2"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                try {
-                  const dataUrl = await fileToDataUrl(file);
-                  setPhoto(dataUrl);
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : 'Failed to load photo');
-                }
-              }}
-            />
-            {photo ? (
-              <button
-                type="button"
-                onClick={() => setPhoto('')}
-                className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
-              >
-                Remove Photo
-              </button>
-            ) : null}
           </div>
 
           <div className="flex gap-3">
