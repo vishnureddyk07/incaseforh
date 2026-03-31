@@ -105,18 +105,20 @@ export default function EmergencyInfoDisplay() {
         const data = await res.json();
         console.log('✅ Emergency info loaded:', data.fullName);
         setInfo(data);
-        
-        // Try to get location after loading emergency info
-        const loc = await getAccurateLocation();
-        if (loc) {
-          setLocation(loc);
-          reverseGeocode(loc.lat, loc.lng);
-          fetchNearbyHospitals(loc.lat, loc.lng);
-        }
+        setLoading(false);
+
+        // Fetch location and hospitals in background so profile data appears immediately.
+        void (async () => {
+          const loc = await getAccurateLocation();
+          if (loc) {
+            setLocation(loc);
+            reverseGeocode(loc.lat, loc.lng);
+            fetchNearbyHospitals(loc.lat, loc.lng);
+          }
+        })();
       } catch (err) {
         console.error('❌ Error fetching emergency info:', err);
         setError(err instanceof Error ? err.message : 'Error fetching data');
-      } finally {
         setLoading(false);
       }
     };

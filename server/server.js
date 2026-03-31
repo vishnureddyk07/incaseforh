@@ -1021,7 +1021,13 @@ router.get('/emergency/:email', readLimiter, async (req, res) => {
     const scannerIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
     console.log('📍 QR Scanned from IP:', scannerIP);
     
-    const emergency = await EmergencyInfo.findOne({ email: { $eq: needle } }).collation({ locale: 'en', strength: 2 });
+    let emergency = await EmergencyInfo.findOne({ email: { $eq: needle } }).collation({ locale: 'en', strength: 2 });
+    
+    // Fallback: try lookup by ObjectId if needle looks like a MongoDB ObjectId
+    if (!emergency && needle.match(/^[0-9a-f]{24}$/i)) {
+      emergency = await EmergencyInfo.findById(needle);
+    }
+    
     if (!emergency) {
       return res.status(404).json({ error: 'Emergency info not found' });
     }
@@ -1068,7 +1074,13 @@ router.get('/emergency/phone/:phoneNumber', readLimiter, async (req, res) => {
     const scannerIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
     console.log('📍 QR Scanned from IP:', scannerIP);
     
-    const emergency = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } });
+    let emergency = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } });
+    
+    // Fallback: try lookup by ObjectId if needle looks like a MongoDB ObjectId
+    if (!emergency && needle.match(/^[0-9a-f]{24}$/i)) {
+      emergency = await EmergencyInfo.findById(needle);
+    }
+    
     if (!emergency) {
       return res.status(404).json({ error: 'Emergency info not found' });
     }
@@ -1907,13 +1919,14 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
     if (sticker.deactivatedReason) sticker.deactivatedReason = '';
     await sticker.save();
 
+    // Use email/phone for profile URL, with ObjectId as fallback
+    const profileIdentifier = emergencyInfo.email || emergencyInfo.phoneNumber || emergencyInfo._id.toString();
+
     return res.status(201).json({
       success: true,
       emergencyInfo,
       sticker,
-      profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(
-        emergencyInfo.email || emergencyInfo.phoneNumber
-      )}`,
+      profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(profileIdentifier)}`,
     });
   } catch (error) {
     console.error('Error activating sticker:', error);
@@ -1950,6 +1963,32 @@ router.post('/admin/qr/deactivate/:uuid', requireAuth, requireAdmin, async (req,
   } catch (error) {
     console.error('Error deactivating sticker:', error);
     return res.status(500).json({ error: 'Failed to deactivate sticker' });
+  }
+});
+
+// Admin: reactivate a previously deactivated sticker
+router.post('/admin/qr/reactivate/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    // If profile exists, restore active; otherwise keep it usable as unactivated.
+    sticker.status = sticker.activatedBy ? 'active' : 'unactivated';
+    sticker.deactivatedAt = null;
+    sticker.deactivatedReason = '';
+    await sticker.save();
+
+    return res.json({ success: true, sticker });
+  } catch (error) {
+    console.error('Error reactivating sticker:', error);
+    return res.status(500).json({ error: 'Failed to reactivate sticker' });
   }
 });
 
@@ -1991,6 +2030,92 @@ router.post('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, r
   } catch (error) {
     console.error('Error reassigning sticker:', error);
     return res.status(500).json({ error: 'Failed to reassign sticker' });
+  }
+});
+
+// Admin: fetch sticker + linked emergency profile for reassign edit page
+router.get('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid })
+      .populate('activatedBy', 'fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo')
+      .lean();
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    return res.json({
+      success: true,
+      sticker,
+      emergencyInfo: sticker.activatedBy || null,
+    });
+  } catch (error) {
+    console.error('Error fetching reassign profile:', error);
+    return res.status(500).json({ error: 'Failed to fetch sticker profile' });
+  }
+});
+
+// Admin: update linked emergency profile for a sticker
+router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    if (!sticker.activatedBy) {
+      return res.status(400).json({ error: 'This sticker does not have an activated profile yet' });
+    }
+
+    const emergencyInfo = await EmergencyInfo.findById(sticker.activatedBy);
+    if (!emergencyInfo) {
+      return res.status(404).json({ error: 'Linked emergency profile not found' });
+    }
+
+    const normalizedEmail = normalizeOptionalString(req.body?.email, 200).toLowerCase();
+
+    emergencyInfo.fullName = normalizeOptionalString(req.body?.fullName, 200) || emergencyInfo.fullName || 'INcase User';
+    emergencyInfo.phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
+    emergencyInfo.dateOfBirth = normalizeOptionalString(req.body?.dateOfBirth, 40);
+    emergencyInfo.email = normalizedEmail || '';
+    emergencyInfo.bloodType = normalizeOptionalString(req.body?.bloodType, 20);
+    emergencyInfo.allergies = normalizeOptionalString(req.body?.allergies, 1000);
+    emergencyInfo.medications = normalizeOptionalString(req.body?.medications, 1000);
+    emergencyInfo.medicalConditions = normalizeOptionalString(req.body?.medicalConditions, 1000);
+    emergencyInfo.address = normalizeOptionalString(req.body?.address, 500);
+    if (typeof req.body?.photo === 'string') {
+      const incomingPhoto = req.body.photo.trim();
+      if (!incomingPhoto) {
+        emergencyInfo.photo = '';
+      } else if (incomingPhoto.startsWith('data:') || incomingPhoto.startsWith('http')) {
+        emergencyInfo.photo = incomingPhoto;
+      }
+    }
+
+    if (Array.isArray(req.body?.emergencyContacts)) {
+      emergencyInfo.emergencyContacts = sanitizeContacts(req.body.emergencyContacts);
+    }
+
+    await emergencyInfo.save();
+
+    return res.json({
+      success: true,
+      message: 'Emergency profile updated',
+      emergencyInfo,
+    });
+  } catch (error) {
+    console.error('Error updating reassign profile:', error);
+    return res.status(500).json({ error: 'Failed to update sticker profile' });
   }
 });
 

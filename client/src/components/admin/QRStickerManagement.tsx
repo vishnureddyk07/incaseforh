@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 type TabKey = 'overview' | 'generate' | 'batches' | 'stickers';
 
@@ -51,6 +52,7 @@ interface Props {
 }
 
 export default function QRStickerManagement({ token, backendApiBaseUrl }: Props) {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<TabKey>('overview');
   const [error, setError] = useState<string | null>(null);
 
@@ -321,6 +323,13 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     await fetchStickers(1);
   };
 
+  const applyStickerStateUpdate = (nextSticker: StickerRow) => {
+    setStickers((prev) => {
+      const updated = prev.map((row) => (row.uuid === nextSticker.uuid ? { ...row, ...nextSticker } : row));
+      return updated;
+    });
+  };
+
   const deactivateSticker = async (uuid: string) => {
     const reason = window.prompt('Deactivation reason', 'Deactivated by admin') || 'Deactivated by admin';
     const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/deactivate/${encodeURIComponent(uuid)}`, {
@@ -330,39 +339,32 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to deactivate sticker');
+    if (data?.sticker) applyStickerStateUpdate(data.sticker);
     await fetchStats();
-    await fetchStickers(page);
   };
 
-  const reassignSticker = async (uuid: string) => {
-    const name = window.prompt('Assign to name (optional)', '') || '';
-    const email = window.prompt('Assign to email (optional)', '') || '';
-    const phone = window.prompt('Assign to phone (optional)', '') || '';
-    const org = window.prompt('Organization name (optional)', '') || '';
-
-    const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/reassign/${encodeURIComponent(uuid)}`, {
-      method: 'POST',
-      headers: { ...authHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, phone, organizationName: org }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to reassign sticker');
-    await fetchStickers(page);
+  const openReassignPage = (uuid: string) => {
+    navigate(`/admin/qr/reassign/${encodeURIComponent(uuid)}`);
   };
 
   const reactivateSticker = async (uuid: string) => {
     const confirmed = window.confirm('Reactivate this sticker? It will become usable again for a new user activation.');
     if (!confirmed) return;
 
-    const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/reassign/${encodeURIComponent(uuid)}`, {
+    const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/reactivate/${encodeURIComponent(uuid)}`, {
       method: 'POST',
       headers: { ...authHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to reactivate sticker');
+    if (data?.sticker) {
+      applyStickerStateUpdate({ ...data.sticker, status: 'active' });
+    } else {
+      // Frontend-only fallback so status flips immediately after successful reactivate.
+      setStickers((prev) => prev.map((row) => (row.uuid === uuid ? { ...row, status: 'active' } : row)));
+    }
     await fetchStats();
-    await fetchStickers(page);
   };
 
   const statusBadge = (status: StickerRow['status']) => {
@@ -622,12 +624,12 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                     <td className="px-3 py-2 text-xs">{s.lastScannedAt ? new Date(s.lastScannedAt).toLocaleString() : '—'}</td>
                     <td className="px-3 py-2">
                       <div className="flex gap-2">
-                        <button onClick={async () => { try { await deactivateSticker(s.uuid); } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); } }} className="rounded bg-red-600 px-2 py-1 text-xs text-white">Deactivate</button>
                         {s.status === 'deactivated' ? (
-                          <button onClick={async () => { try { await reactivateSticker(s.uuid); } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); } }} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white">Reactivate</button>
+                          <button onClick={async () => { try { await reactivateSticker(s.uuid); } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); } }} className="rounded bg-emerald-600 px-2 py-1 text-xs text-white">Activate</button>
                         ) : (
-                          <button onClick={async () => { try { await reassignSticker(s.uuid); } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); } }} className="rounded bg-amber-600 px-2 py-1 text-xs text-white">Reassign</button>
+                          <button onClick={async () => { try { await deactivateSticker(s.uuid); } catch (err) { setError(err instanceof Error ? err.message : 'Action failed'); } }} className="rounded bg-red-600 px-2 py-1 text-xs text-white">Deactivate</button>
                         )}
+                        <button onClick={() => openReassignPage(s.uuid)} className="rounded bg-amber-600 px-2 py-1 text-xs text-white">Reassign</button>
                       </div>
                     </td>
                   </tr>
