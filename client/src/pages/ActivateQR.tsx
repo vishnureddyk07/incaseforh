@@ -61,6 +61,12 @@ export default function ActivateQR() {
     };
   }, [apiBase, uuid]);
 
+  useEffect(() => {
+    if (check?.status === 'active' && check.redirectTo) {
+      window.location.replace(check.redirectTo);
+    }
+  }, [check]);
+
   const updateContact = (idx: number, key: keyof EmergencyContact, value: string) => {
     setContacts((prev) => prev.map((c, i) => (i === idx ? { ...c, [key]: value } : c)));
   };
@@ -152,9 +158,10 @@ export default function ActivateQR() {
         <div className="mx-auto max-w-xl rounded-2xl border border-orange-200 bg-orange-50 p-8 text-center">
           <h1 className="text-2xl font-bold text-orange-700">This QR is already registered</h1>
           <p className="mt-3 text-orange-700">Serial: {check.sticker?.serialNumber}</p>
+          {check.redirectTo ? <p className="mt-4 text-sm text-orange-800">Opening emergency profile...</p> : null}
           {check.redirectTo ? (
-            <a href={check.redirectTo} className="mt-6 inline-block rounded-lg bg-orange-600 px-5 py-3 font-semibold text-white hover:bg-orange-700">
-              View Emergency Profile
+            <a href={check.redirectTo} className="mt-4 inline-block text-sm font-semibold text-orange-700 underline hover:text-orange-800">
+              Open manually if redirect does not happen
             </a>
           ) : null}
         </div>
