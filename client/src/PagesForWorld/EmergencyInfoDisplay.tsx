@@ -94,15 +94,41 @@ export default function EmergencyInfoDisplay() {
           return;
         }
 
-        const isEmail = identifierParam.includes('@');
-        const endpoint = isEmail
-          ? `${API_BASE}/api/v1/emergency/${encodeURIComponent(identifierParam)}`
-          : `${API_BASE}/api/v1/emergency/phone/${encodeURIComponent(identifierParam)}`;
+        const trimmedIdentifier = identifierParam.trim();
+        const encodedIdentifier = encodeURIComponent(trimmedIdentifier);
+        const isEmail = trimmedIdentifier.includes('@');
+        const isMongoId = /^[0-9a-fA-F]{24}$/.test(trimmedIdentifier);
+        const endpoints = isEmail
+          ? [`${API_BASE}/api/v1/emergency/${encodedIdentifier}`]
+          : isMongoId
+            ? [
+                `${API_BASE}/api/v1/emergency/${encodedIdentifier}`,
+                `${API_BASE}/api/v1/emergency/phone/${encodedIdentifier}`,
+              ]
+            : [
+                `${API_BASE}/api/v1/emergency/phone/${encodedIdentifier}`,
+                `${API_BASE}/api/v1/emergency/${encodedIdentifier}`,
+              ];
 
-        console.log('📡 Fetching emergency info from:', endpoint);
-        const res = await fetch(endpoint);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        let data: EmergencyInfo | null = null;
+        let lastStatus: number | null = null;
+
+        for (const endpoint of endpoints) {
+          console.log('📡 Fetching emergency info from:', endpoint);
+          const res = await fetch(endpoint);
+          if (res.ok) {
+            data = await res.json();
+            break;
+          }
+          lastStatus = res.status;
+          if (res.status !== 404) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+        }
+
+        if (!data) {
+          throw new Error(`HTTP ${lastStatus ?? 404}`);
+        }
         console.log('✅ Emergency info loaded:', data.fullName);
         setInfo(data);
         setLoading(false);

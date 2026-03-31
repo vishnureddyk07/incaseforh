@@ -12,8 +12,7 @@ createRoot(document.getElementById('root')!).render(
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    const swUrl = new URL('./service-worker.ts', import.meta.url);
-    navigator.serviceWorker.register(swUrl, { type: 'module' }).catch((err) => {
+    navigator.serviceWorker.register('/service-worker.js').catch((err) => {
       console.warn('Service worker registration failed:', err);
     });
   });
