@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import {
+  BadgeCheck,
+  Eye,
+  FileClock,
+  Mail,
+  Phone,
+  RefreshCcw,
+  ShieldCheck,
+  UserCog,
+  Users,
+} from 'lucide-react';
 
 interface EmergencyInfo {
   _id: string;
@@ -71,6 +82,18 @@ export default function ManagerDashboard() {
   }, [records]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / RECORDS_PER_PAGE));
+  const recordsThisWeek = useMemo(() => {
+    const now = Date.now();
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    return sorted.filter((record) => {
+      if (!record.createdAt) return false;
+      const createdAt = new Date(record.createdAt).getTime();
+      return Number.isFinite(createdAt) && now - createdAt <= weekMs;
+    }).length;
+  }, [sorted]);
+  const contactReadyCount = useMemo(() => {
+    return sorted.filter((record) => Boolean(record.email || record.phoneNumber)).length;
+  }, [sorted]);
   const paginatedRecords = useMemo(() => {
     const startIndex = (currentPage - 1) * RECORDS_PER_PAGE;
     return sorted.slice(startIndex, startIndex + RECORDS_PER_PAGE);
@@ -118,73 +141,142 @@ export default function ManagerDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen section gradient-primary">
       <div className="max-w-6xl mx-auto space-y-8">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Manager Dashboard</h1>
-          <div className="flex gap-3">
-            <Link to="/" className="px-4 py-2 border rounded hover:bg-gray-100">Home</Link>
+        <div className="card-elevated p-6 md:p-8 border border-primary-100">
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-100 text-primary-700 text-xs font-semibold mb-3">
+                <ShieldCheck className="h-4 w-4" />
+                Manager Control Center
+              </div>
+              <h1 className="text-3xl md:text-4xl font-bold text-neutral-900">Manager Dashboard</h1>
+              <p className="text-sm md:text-base text-neutral-600 mt-2">
+                Monitor emergency profile records and provision employee accounts securely.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+            <Link to="/" className="btn-secondary-md">Home</Link>
             <button
               onClick={() => {
                 setCurrentPage(1);
                 fetchRecords();
               }}
-              className="px-4 py-2 border rounded hover:bg-gray-100"
+              className="btn-secondary-md"
             >
+              <RefreshCcw className="h-4 w-4" />
               Refresh
             </button>
+            </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-sm text-gray-600">Total QR Records</p>
-          <p className="text-2xl font-bold text-gray-900">{loading ? '...' : records.length}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="card-elevated p-5 border border-primary-100">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-neutral-500">Total Records</p>
+                <p className="text-2xl font-bold text-neutral-900 mt-1">{loading ? '...' : records.length}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-primary-100 text-primary-600">
+                <Users className="h-5 w-5" />
+              </div>
+            </div>
+          </div>
+          <div className="card-elevated p-5 border border-primary-100">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-neutral-500">New This Week</p>
+                <p className="text-2xl font-bold text-neutral-900 mt-1">{loading ? '...' : recordsThisWeek}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-primary-100 text-primary-600">
+                <FileClock className="h-5 w-5" />
+              </div>
+            </div>
+          </div>
+          <div className="card-elevated p-5 border border-primary-100">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-neutral-500">Contact Ready</p>
+                <p className="text-2xl font-bold text-neutral-900 mt-1">{loading ? '...' : contactReadyCount}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-primary-100 text-primary-600">
+                <BadgeCheck className="h-5 w-5" />
+              </div>
+            </div>
+          </div>
+          <div className="card-elevated p-5 border border-primary-100">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-neutral-500">Current Page</p>
+                <p className="text-2xl font-bold text-neutral-900 mt-1">{currentPage}/{totalPages}</p>
+              </div>
+              <div className="p-2 rounded-lg bg-primary-100 text-primary-600">
+                <UserCog className="h-5 w-5" />
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">Create Employee Credentials</h2>
+        <div className="card-elevated p-6 border border-primary-100">
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-neutral-900">
+            <UserCog className="h-5 w-5 text-primary-600" />
+            Create Employee Credentials
+          </h2>
           <form onSubmit={createEmployee} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Employee Email</label>
-              <input value={empEmail} onChange={(e) => setEmpEmail(e.target.value)} className="mt-1 block w-full rounded border px-3 py-2" placeholder="employee@example.com" />
+              <label className="label flex items-center gap-2">
+                <Mail className="h-4 w-4 text-primary-600" />
+                Employee Email
+              </label>
+              <input value={empEmail} onChange={(e) => setEmpEmail(e.target.value)} className="input" placeholder="employee@example.com" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Temporary Password</label>
-              <input value={empPassword} onChange={(e) => setEmpPassword(e.target.value)} className="mt-1 block w-full rounded border px-3 py-2" placeholder="min 6 chars" />
+              <label className="label flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-primary-600" />
+                Temporary Password
+              </label>
+              <input value={empPassword} onChange={(e) => setEmpPassword(e.target.value)} className="input" placeholder="min 6 chars" />
             </div>
-            <button disabled={creating} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{creating ? 'Creating…' : 'Create'}</button>
+            <button disabled={creating} className="btn-primary-md disabled:opacity-50">{creating ? 'Creating…' : 'Create'}</button>
           </form>
-          <p className="mt-2 text-sm text-gray-600">All manager actions are logged for admin review.</p>
+          <p className="mt-2 text-sm text-neutral-600">All manager actions are logged for admin review.</p>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">Emergency Records (view-only)</h2>
+        <div className="card-elevated p-6 border border-primary-100">
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-neutral-900">
+            <Eye className="h-5 w-5 text-primary-600" />
+            Emergency Records (view-only)
+          </h2>
           {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
           {loading ? (
-            <p>Loading...</p>
+            <p className="text-neutral-600">Loading...</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-xl border border-neutral-200">
               <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="text-gray-600">
-                    <th className="py-2">Name</th>
-                    <th className="py-2">Email</th>
-                    <th className="py-2">Phone</th>
-                    <th className="py-2">Blood Type</th>
-                    <th className="py-2">Created</th>
-                    <th className="py-2">Actions</th>
+                <thead className="bg-neutral-100">
+                  <tr className="text-neutral-700">
+                    <th className="py-3 px-4">Name</th>
+                    <th className="py-3 px-4">Email</th>
+                    <th className="py-3 px-4">Phone</th>
+                    <th className="py-3 px-4">Blood Type</th>
+                    <th className="py-3 px-4">Created</th>
+                    <th className="py-3 px-4">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="bg-white">
                   {paginatedRecords.map((r) => (
-                    <tr key={r._id} className="border-t">
-                      <td className="py-2 font-medium">{r.fullName}</td>
-                      <td className="py-2">{r.email || '—'}</td>
-                      <td className="py-2">{r.phoneNumber || '—'}</td>
-                      <td className="py-2">{r.bloodType || '—'}</td>
-                      <td className="py-2">{r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</td>
-                      <td className="py-2">
-                        <button className="text-orange-600 hover:underline" onClick={() => handleOpen(r)}>Open</button>
+                    <tr key={r._id} className="border-t border-neutral-100 hover:bg-primary-50/40 transition-colors">
+                      <td className="py-3 px-4 font-medium text-neutral-900">{r.fullName}</td>
+                      <td className="py-3 px-4 text-neutral-700">{r.email || '—'}</td>
+                      <td className="py-3 px-4 text-neutral-700">{r.phoneNumber || '—'}</td>
+                      <td className="py-3 px-4 text-neutral-700">{r.bloodType || '—'}</td>
+                      <td className="py-3 px-4 text-neutral-700">{r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}</td>
+                      <td className="py-3 px-4">
+                        <button className="inline-flex items-center gap-1 text-primary-700 font-medium hover:text-primary-900" onClick={() => handleOpen(r)}>
+                          <Eye className="h-4 w-4" />
+                          Open
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -194,7 +286,7 @@ export default function ManagerDashboard() {
           )}
           {!loading && sorted.length > 0 && (
             <div className="mt-4 flex items-center justify-between">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-neutral-600">
                 Showing {(currentPage - 1) * RECORDS_PER_PAGE + 1}-
                 {Math.min(currentPage * RECORDS_PER_PAGE, sorted.length)} of {sorted.length}
               </p>
@@ -203,16 +295,16 @@ export default function ManagerDashboard() {
                   type="button"
                   onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 border rounded hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="btn-secondary-sm disabled:opacity-50"
                 >
                   Previous
                 </button>
-                <span className="text-sm text-gray-700">Page {currentPage} of {totalPages}</span>
+                <span className="text-sm text-neutral-700">Page {currentPage} of {totalPages}</span>
                 <button
                   type="button"
                   onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 border rounded hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="btn-secondary-sm disabled:opacity-50"
                 >
                   Next
                 </button>

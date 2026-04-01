@@ -157,27 +157,27 @@ export default function AmbulanceDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+    <div className="min-h-screen bg-neutral-50">
+      <header className="bg-white border-b border-neutral-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="text-3xl">🚑</div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Medical Control Room</h1>
-              <p className="text-sm text-gray-600">Emergency Response Dispatch</p>
+              <h1 className="text-2xl font-bold text-neutral-900">Medical Control Room</h1>
+              <p className="text-sm text-neutral-600">Emergency Response Dispatch</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right text-sm">
-              <p className="text-gray-700">{user?.email}</p>
-              <p className="text-xs text-gray-500">Last refresh: {lastRefresh.toLocaleTimeString()}</p>
+              <p className="text-neutral-700">{user?.email}</p>
+              <p className="text-xs text-neutral-500">Last refresh: {lastRefresh.toLocaleTimeString()}</p>
               <p className={`text-xs ${isLive ? 'text-emerald-600' : 'text-amber-600'}`}>
                 {isLive ? 'Live updates ON (2s)' : 'Background mode (10s)'}
               </p>
             </div>
             <button
               onClick={handleLogout}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors"
+              className="btn-danger text-sm"
             >
               Logout
             </button>
@@ -193,35 +193,35 @@ export default function AmbulanceDashboard() {
         )}
 
         <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2 text-gray-900">
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2 text-neutral-900">
             <span className="text-2xl">🚨</span>
             Active Medical Emergencies ({activeAlerts.length})
           </h2>
 
           {loading ? (
-            <div className="p-8 bg-white rounded-lg text-center border border-gray-200">
-              <p className="text-gray-600">Loading emergencies...</p>
+            <div className="p-8 card-elevated text-center border border-neutral-200">
+              <p className="text-neutral-600">Loading emergencies...</p>
             </div>
           ) : activeAlerts.length === 0 ? (
-            <div className="p-8 bg-white rounded-lg text-center border border-gray-200">
-              <p className="text-gray-600">No active emergencies at this time</p>
+            <div className="p-8 card-elevated text-center border border-neutral-200">
+              <p className="text-neutral-600">No active emergencies at this time</p>
             </div>
           ) : (
             <div className="space-y-6">
               {activeAlerts.map((alert) => (
-                <div key={alert._id} className="bg-white rounded-lg shadow-md border-2 border-orange-400">
-                  <div className="bg-gradient-to-r from-orange-600 to-red-600 px-6 py-3 animate-pulse">
+                <div key={alert._id} className="card-elevated border-2 border-primary-300">
+                  <div className="bg-gradient-to-r from-primary-600 to-primary-700 px-6 py-3 animate-pulse-soft">
                     <p className="text-white font-bold text-lg">🚨 ACTIVE EMERGENCY RESPONSE REQUIRED</p>
                   </div>
 
                   <div className="p-6 space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                        <p className="text-xs text-gray-600 uppercase tracking-wide font-semibold mb-1">Patient Name</p>
-                        <p className="text-2xl font-bold text-gray-900">{alert.victimName || 'Unknown'}</p>
+                      <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-200">
+                        <p className="text-xs text-neutral-600 uppercase tracking-wide font-semibold mb-1">Patient Name</p>
+                        <p className="text-2xl font-bold text-neutral-900">{alert.victimName || 'Unknown'}</p>
                       </div>
-                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                        <p className="text-xs text-gray-600 uppercase tracking-wide font-semibold mb-1">Emergency Call</p>
+                      <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-200">
+                        <p className="text-xs text-neutral-600 uppercase tracking-wide font-semibold mb-1">Emergency Call</p>
                         <a
                           href={`tel:${alert.victimPhone}`}
                           className="text-2xl font-bold text-red-600 hover:text-red-700 underline break-all"
@@ -233,9 +233,9 @@ export default function AmbulanceDashboard() {
                         <p className="text-xs text-red-700 uppercase tracking-wide font-semibold mb-1">Blood Type</p>
                         <p className="text-2xl font-bold text-red-600">{alert.victimBloodType || 'Unknown'}</p>
                       </div>
-                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                        <p className="text-xs text-gray-600 uppercase tracking-wide font-semibold mb-1">Alert ID</p>
-                        <p className="text-sm font-mono text-gray-700 break-all">{alert._id}</p>
+                      <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-200">
+                        <p className="text-xs text-neutral-600 uppercase tracking-wide font-semibold mb-1">Alert ID</p>
+                        <p className="text-sm font-mono text-neutral-700 break-all">{alert._id}</p>
                       </div>
                     </div>
 
@@ -244,23 +244,23 @@ export default function AmbulanceDashboard() {
                         <h4 className="font-semibold text-red-900 mb-2">⚠️ Allergies</h4>
                         <p className="text-sm text-red-800">{alert.victimAllergies || 'No known allergies'}</p>
                       </div>
-                      <div className="p-4 rounded-lg border border-orange-200 bg-orange-50">
-                        <h4 className="font-semibold text-orange-900 mb-2">💊 Current Medications</h4>
-                        <p className="text-sm text-orange-800">{alert.victimMedications || 'No medications listed'}</p>
+                      <div className="p-4 rounded-lg border border-primary-200 bg-primary-50">
+                        <h4 className="font-semibold text-primary-900 mb-2">💊 Current Medications</h4>
+                        <p className="text-sm text-primary-800">{alert.victimMedications || 'No medications listed'}</p>
                       </div>
                     </div>
 
                     {alert.victimEmergencyContacts && alert.victimEmergencyContacts.length > 0 && (
-                      <div className="border-t border-gray-200 pt-6">
-                        <h4 className="font-semibold text-gray-900 mb-3">👥 Emergency Contacts</h4>
+                      <div className="border-t border-neutral-200 pt-6">
+                        <h4 className="font-semibold text-neutral-900 mb-3">👥 Emergency Contacts</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {alert.victimEmergencyContacts.map((contact, idx) => (
-                            <div key={idx} className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors">
-                              <p className="font-semibold text-gray-900">{contact.name}</p>
-                              <p className="text-sm text-gray-600 mb-2">{contact.relationship}</p>
+                            <div key={idx} className="p-4 bg-neutral-50 rounded-lg border border-neutral-200 hover:bg-neutral-100 transition-colors">
+                              <p className="font-semibold text-neutral-900">{contact.name}</p>
+                              <p className="text-sm text-neutral-600 mb-2">{contact.relationship}</p>
                               <a
                                 href={`tel:${contact.phone}`}
-                                className="inline-block px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-semibold transition-colors"
+                                className="btn-success text-sm"
                               >
                                 📞 Call
                               </a>
@@ -270,7 +270,7 @@ export default function AmbulanceDashboard() {
                       </div>
                     )}
 
-                    <div className="border-t border-gray-200 pt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border-t border-neutral-200 pt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                         <p className="text-xs text-blue-700 uppercase tracking-wide font-semibold mb-2">GPS Coordinates</p>
                         <p className="font-mono text-sm text-blue-900">
@@ -296,7 +296,7 @@ export default function AmbulanceDashboard() {
                       href={getNavLink(alert.responderLocation?.lat, alert.responderLocation?.lng)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold rounded-lg text-center transition-colors"
+                      className="btn-primary-lg block w-full text-center"
                     >
                       🗺️ Open Navigation
                     </a>
@@ -304,7 +304,7 @@ export default function AmbulanceDashboard() {
                       type="button"
                       onClick={() => closeCase(alert._id)}
                       disabled={closingAlertId === alert._id}
-                      className="block w-full py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:opacity-60 text-white font-bold rounded-lg text-center transition-colors"
+                      className="btn-success block w-full disabled:opacity-60"
                     >
                       {closingAlertId === alert._id ? 'Closing case...' : '✅ Close Case'}
                     </button>
@@ -316,31 +316,31 @@ export default function AmbulanceDashboard() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-bold mb-4 text-gray-900">Past Alerts ({pastAlerts.length})</h2>
+          <h2 className="text-2xl font-bold mb-4 text-neutral-900">Past Alerts ({pastAlerts.length})</h2>
 
           {pastAlerts.length === 0 ? (
-            <div className="p-8 bg-white rounded-lg text-center border border-gray-200">
-              <p className="text-gray-600">No past alerts</p>
+            <div className="p-8 card-elevated text-center border border-neutral-200">
+              <p className="text-neutral-600">No past alerts</p>
             </div>
           ) : (
-            <div className="overflow-x-auto bg-white rounded-lg border border-gray-200 shadow-sm">
+            <div className="overflow-x-auto bg-white rounded-lg border border-neutral-200 shadow-sm">
               <table className="w-full">
-                <thead className="bg-gray-100 border-b border-gray-200">
+                <thead className="bg-neutral-100 border-b border-neutral-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Date/Time</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Patient</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Blood Type</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Phone</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Status</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Closed By</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Action</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-900">Date/Time</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-900">Patient</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-900">Blood Type</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-900">Phone</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-900">Status</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-900">Closed By</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-900">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-neutral-200">
                   {pastAlerts.map((alert) => (
-                    <tr key={alert._id} className="hover:bg-gray-50">
-                      <td className="px-6 py-3 text-sm text-gray-700">{formatTime(alert.triggeredAt)}</td>
-                      <td className="px-6 py-3 text-sm font-medium text-gray-900">{alert.victimName || 'Unknown'}</td>
+                    <tr key={alert._id} className="hover:bg-neutral-50">
+                      <td className="px-6 py-3 text-sm text-neutral-700">{formatTime(alert.triggeredAt)}</td>
+                      <td className="px-6 py-3 text-sm font-medium text-neutral-900">{alert.victimName || 'Unknown'}</td>
                       <td className="px-6 py-3 text-sm">
                         <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs font-semibold">
                           {alert.victimBloodType || 'N/A'}
@@ -362,7 +362,7 @@ export default function AmbulanceDashboard() {
                           {alert.status}
                         </span>
                       </td>
-                      <td className="px-6 py-3 text-sm text-gray-700">{alert.closedByEmail || 'System'}</td>
+                      <td className="px-6 py-3 text-sm text-neutral-700">{alert.closedByEmail || 'System'}</td>
                       <td className="px-6 py-3 text-sm">
                         <a
                           href={getNavLink(alert.responderLocation?.lat, alert.responderLocation?.lng)}

@@ -153,28 +153,28 @@ export default function PoliceDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white">
+    <div className="min-h-screen bg-neutral-50 text-neutral-900">
       {/* Header */}
-      <header className="bg-slate-800 border-b border-slate-700 sticky top-0 z-50">
+      <header className="bg-white border-b border-neutral-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="text-3xl">👮</div>
             <div>
               <h1 className="text-2xl font-bold">Police Control Room</h1>
-              <p className="text-sm text-slate-400">SOS Alert Management</p>
+              <p className="text-sm text-neutral-600">SOS Alert Management</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right text-sm">
-              <p className="text-slate-300">{user?.email}</p>
-              <p className="text-xs text-slate-500">Last refresh: {lastRefresh.toLocaleTimeString()}</p>
+              <p className="text-neutral-700">{user?.email}</p>
+              <p className="text-xs text-neutral-500">Last refresh: {lastRefresh.toLocaleTimeString()}</p>
               <p className={`text-xs ${isLive ? 'text-emerald-400' : 'text-amber-400'}`}>
                 {isLive ? 'Live updates ON (2s)' : 'Background mode (10s)'}
               </p>
             </div>
             <button
               onClick={handleLogout}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-semibold transition-colors"
+              className="btn-danger text-sm"
             >
               Logout
             </button>
@@ -185,8 +185,8 @@ export default function PoliceDashboard() {
       <main className="max-w-6xl mx-auto px-6 py-8">
         {/* Error Banner */}
         {error && (
-          <div className="mb-6 p-4 bg-red-900/20 border border-red-500 rounded-lg">
-            <p className="text-red-400">{error}</p>
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-red-700">{error}</p>
           </div>
         )}
 
@@ -198,19 +198,19 @@ export default function PoliceDashboard() {
           </h2>
 
           {loading ? (
-            <div className="p-8 bg-slate-800 rounded-lg text-center border border-slate-700">
-              <p className="text-slate-400">Loading alerts...</p>
+            <div className="p-8 card-elevated text-center border border-neutral-200">
+              <p className="text-neutral-500">Loading alerts...</p>
             </div>
           ) : activeAlerts.length === 0 ? (
-            <div className="p-8 bg-slate-800 rounded-lg text-center border border-slate-700">
-              <p className="text-slate-400">No active alerts at this time</p>
+            <div className="p-8 card-elevated text-center border border-neutral-200">
+              <p className="text-neutral-500">No active alerts at this time</p>
             </div>
           ) : (
             <div className="space-y-4">
               {activeAlerts.map((alert) => (
                 <div
                   key={alert._id}
-                  className="bg-gradient-to-r from-red-950/50 to-red-900/50 border-2 border-red-500 rounded-lg p-6 animate-pulse"
+                  className="card-elevated border-2 border-red-400 p-6 animate-pulse-soft"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
@@ -218,28 +218,28 @@ export default function PoliceDashboard() {
                         <div className="text-2xl animate-bounce">🔴</div>
                         <h3 className="text-xl font-bold text-red-400">ACTIVE EMERGENCY</h3>
                       </div>
-                      <p className="text-sm text-slate-300 mb-2">
+                      <p className="text-sm text-neutral-700 mb-2">
                         <strong>Alert ID:</strong> {alert._id}
                       </p>
-                      <p className="text-sm text-slate-300 mb-2">
+                      <p className="text-sm text-neutral-700 mb-2">
                         <strong>Triggered:</strong> {formatTime(alert.triggeredAt)}
                       </p>
-                      <p className="text-sm text-slate-300 mb-2">
+                      <p className="text-sm text-neutral-700 mb-2">
                         <strong>Caller:</strong> {alert.victimPhone}
                       </p>
-                      <p className="text-sm text-slate-300 mb-2">
+                      <p className="text-sm text-neutral-700 mb-2">
                         <strong>Device ID:</strong> {alert.responderDeviceId || 'Not available'}
                       </p>
-                      <p className="text-sm text-slate-300 mb-2">
+                      <p className="text-sm text-neutral-700 mb-2">
                         <strong>GPS Accuracy:</strong>{' '}
                         {typeof alert.responderLocationAccuracy === 'number'
                           ? `±${Math.round(alert.responderLocationAccuracy)}m`
                           : 'Unknown'}
                       </p>
-                      <p className="text-sm text-slate-300 mb-2">
+                      <p className="text-sm text-neutral-700 mb-2">
                         <strong>Device Info:</strong> {alert.responderUserAgent}
                       </p>
-                      <p className="text-sm text-slate-300">
+                      <p className="text-sm text-neutral-700">
                         <strong>Location IP:</strong> {alert.responderIP}
                       </p>
                     </div>
@@ -248,7 +248,7 @@ export default function PoliceDashboard() {
                         href={getMapLink(alert.responderLocation?.lat, alert.responderLocation?.lng)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-semibold text-center transition-colors whitespace-nowrap"
+                        className="btn-secondary-sm whitespace-nowrap"
                       >
                         📍 View Location
                       </a>
@@ -256,7 +256,7 @@ export default function PoliceDashboard() {
                         href={`https://www.google.com/maps/dir/?api=1&destination=${alert.responderLocation?.lat},${alert.responderLocation?.lng}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-semibold text-center transition-colors whitespace-nowrap"
+                        className="btn-success whitespace-nowrap"
                       >
                         🗺️ Navigate
                       </a>
@@ -264,7 +264,7 @@ export default function PoliceDashboard() {
                         type="button"
                         onClick={() => closeCase(alert._id)}
                         disabled={closingAlertId === alert._id}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 rounded-lg text-sm font-semibold text-center transition-colors whitespace-nowrap"
+                        className="btn-success whitespace-nowrap disabled:opacity-60"
                       >
                         {closingAlertId === alert._id ? 'Closing...' : '✅ Close Case'}
                       </button>
@@ -281,13 +281,13 @@ export default function PoliceDashboard() {
           <h2 className="text-2xl font-bold mb-4">Past Alerts ({pastAlerts.length})</h2>
 
           {pastAlerts.length === 0 ? (
-            <div className="p-8 bg-slate-800 rounded-lg text-center border border-slate-700">
-              <p className="text-slate-400">No past alerts</p>
+            <div className="p-8 card-elevated text-center border border-neutral-200">
+              <p className="text-neutral-500">No past alerts</p>
             </div>
           ) : (
-            <div className="overflow-x-auto bg-slate-800 rounded-lg border border-slate-700">
+            <div className="overflow-x-auto bg-white rounded-lg border border-neutral-200">
               <table className="w-full">
-                <thead className="bg-slate-900 border-b border-slate-700">
+                <thead className="bg-neutral-100 border-b border-neutral-200">
                   <tr>
                     <th className="px-6 py-3 text-left text-sm font-semibold">Time</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold">Phone</th>
@@ -296,17 +296,17 @@ export default function PoliceDashboard() {
                     <th className="px-6 py-3 text-left text-sm font-semibold">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700">
+                <tbody className="divide-y divide-neutral-200">
                   {pastAlerts.map((alert) => (
-                    <tr key={alert._id} className="hover:bg-slate-700/50">
+                    <tr key={alert._id} className="hover:bg-neutral-50">
                       <td className="px-6 py-3 text-sm">{formatTime(alert.triggeredAt)}</td>
                       <td className="px-6 py-3 text-sm">{alert.victimPhone}</td>
                       <td className="px-6 py-3 text-sm">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-semibold ${
                             alert.status === 'resolved'
-                              ? 'bg-green-900/30 text-green-400'
-                              : 'bg-yellow-900/30 text-yellow-400'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-yellow-100 text-yellow-700'
                           }`}
                         >
                           {alert.status}
@@ -318,7 +318,7 @@ export default function PoliceDashboard() {
                           href={getMapLink(alert.responderLocation?.lat, alert.responderLocation?.lng)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-blue-400 hover:text-blue-300 underline"
+                          className="text-primary-600 hover:text-primary-700 underline"
                         >
                           View Map
                         </a>

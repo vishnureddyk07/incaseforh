@@ -56,24 +56,24 @@ export default function ChangePassword() {
   };
 
   return (
-    <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow">
-      <h2 className="text-xl font-bold text-gray-900 mb-4">Change Password</h2>
+    <div className="max-w-md mx-auto card-elevated p-6 border border-primary-200">
+      <h2 className="text-xl font-bold text-neutral-900 mb-4">Change Password</h2>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Current Password</label>
+          <label className="label">Current Password</label>
           <input
             type="password"
-            className="mt-1 block w-full rounded-md border px-3 py-2"
+            className="input"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             required
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700">New Password</label>
+          <label className="label">New Password</label>
           <input
             type="password"
-            className="mt-1 block w-full rounded-md border px-3 py-2"
+            className="input"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
@@ -81,10 +81,10 @@ export default function ChangePassword() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700">Confirm New Password</label>
+          <label className="label">Confirm New Password</label>
           <input
             type="password"
-            className="mt-1 block w-full rounded-md border px-3 py-2"
+            className="input"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
@@ -96,7 +96,7 @@ export default function ChangePassword() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-orange-500 text-white py-2 rounded-md hover:bg-orange-600 disabled:opacity-50"
+          className="btn-primary-lg w-full disabled:opacity-50"
         >
           {loading ? 'Updating...' : 'Change Password'}
         </button>

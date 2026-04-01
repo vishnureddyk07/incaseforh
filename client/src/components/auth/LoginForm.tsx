@@ -49,51 +49,81 @@ export default function LoginForm({ onToggleForm }: LoginFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div>
-        <label className="block text-sm font-medium text-gray-700">Email</label>
-        <div className="mt-1 relative">
+        <label className="label label-required">Email Address</label>
+        <div className="relative">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none">
+            <Mail className="h-5 w-5" />
+          </div>
           <input
             type="email"
             name="email"
             value={formData.email}
             onChange={handleChange}
-            className="block w-full px-4 py-2 border rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
+            autoComplete="email"
+            className="input pl-12"
+            placeholder="Enter your email"
+            aria-invalid={!!errors.email}
           />
-          {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
+          {errors.email && (
+            <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
+              <span className="inline-block">⚠</span> {errors.email}
+            </p>
+          )}
         </div>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700">Password</label>
-        <div className="mt-1 relative">
+        <div className="flex items-center justify-between">
+          <label className="label label-required mb-0">Password</label>
+          <a href="/forgot-password" className="text-sm text-primary-600 hover:text-primary-700 font-medium">Forgot?</a>
+        </div>
+        <div className="relative mt-2">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none">
+            <Lock className="h-5 w-5" />
+          </div>
           <input
             type="password"
             name="password"
             value={formData.password}
             onChange={handleChange}
-            className="block w-full px-4 py-2 border rounded-md shadow-sm focus:ring-red-500 focus:border-red-500"
+            autoComplete="current-password"
+            className="input pl-12"
+            placeholder="Enter your password"
+            aria-invalid={!!errors.password}
           />
-          {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
+          {errors.password && (
+            <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
+              <span className="inline-block">⚠</span> {errors.password}
+            </p>
+          )}
         </div>
       </div>
 
-      <div>
-        <button
-          type="submit"
-          className="w-full bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600 transition-colors"
-        >
-          Sign In
-        </button>
+      <button
+        type="submit"
+        className="btn-primary-lg w-full justify-center"
+      >
+        Sign In
+      </button>
+
+      <div className="relative my-6">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-neutral-200"></div>
+        </div>
+        <div className="relative flex justify-center text-sm">
+          <span className="px-2 bg-white text-neutral-500">or</span>
+        </div>
       </div>
 
-      <div className="text-center">
-        <p className="text-sm text-gray-600">
+      <div className="text-center pt-2">
+        <p className="text-neutral-600 text-sm">
           Don't have an account?{' '}
           <button
             type="button"
             onClick={onToggleForm}
-            className="text-red-500 hover:text-red-600"
+            className="text-primary-600 hover:text-primary-700 font-semibold transition-colors"
           >
-            Sign up
+            Create account
           </button>
         </p>
       </div>

@@ -242,31 +242,31 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 pb-20">
+    <div className="min-h-screen gradient-primary pb-20">
       {/* Header - Emergency Mode */}
-      <div className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 shadow-lg border-b-4 border-blue-700">
+      <div className="sticky top-0 z-50 gradient-primary-dark text-white p-4 shadow-lg border-b-4 border-primary-700">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <AlertCircle className="h-7 w-7 animate-pulse" />
             Emergency Assistance
           </h1>
-          <p className="text-blue-100 text-sm mt-1">Help is on the way</p>
+          <p className="text-primary-100 text-sm mt-1">Help is on the way</p>
         </div>
       </div>
 
       {/* SOS Button */}
-      <div className="sticky top-16 z-40 bg-white/95 backdrop-blur p-3 shadow-lg border-b-2 border-red-500">
+      <div className="sticky top-16 z-40 bg-white/95 backdrop-blur p-3 shadow-lg border-b-2 border-primary-500">
         <div className="max-w-4xl mx-auto">
           {deviceId && (
-            <div className="mb-3 bg-blue-50 border border-blue-300 rounded-md p-2 flex items-center justify-between">
+            <div className="mb-3 bg-primary-50 border border-primary-300 rounded-md p-2 flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold text-blue-600 mb-1">📱 Your Device ID (Emergency Evidence)</p>
-                <p className="text-sm font-mono text-blue-900">{formatDeviceIdForDisplay(deviceId)}</p>
-                <p className="text-xs text-blue-600 mt-1">This uniquely identifies your device for police evidence</p>
+                <p className="text-xs font-bold text-primary-600 mb-1">📱 Your Device ID (Emergency Evidence)</p>
+                <p className="text-sm font-mono text-primary-900">{formatDeviceIdForDisplay(deviceId)}</p>
+                <p className="text-xs text-primary-600 mt-1">This uniquely identifies your device for police evidence</p>
               </div>
               <button
                 onClick={copyDeviceIdToClipboard}
-                className="ml-2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                className="ml-2 p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-md transition-colors"
                 title="Copy full device ID"
               >
                 <Copy className="h-4 w-4" />
@@ -278,7 +278,7 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
             <button
               onClick={startSosCountdown}
               disabled={isTriggeringSos}
-              className="w-full py-4 rounded-lg font-bold text-lg transition-all transform active:scale-95 shadow-lg bg-red-600 text-white hover:bg-red-700 hover:shadow-xl disabled:opacity-70 disabled:cursor-not-allowed"
+              className="w-full py-4 rounded-lg font-bold text-lg transition-all transform active:scale-95 shadow-lg bg-primary-600 text-white hover:bg-primary-700 hover:shadow-xl disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isTriggeringSos ? '🚨 Sending SOS Alert...' : '🚨 EMERGENCY SOS'}
             </button>
@@ -311,9 +311,9 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
             </p>
           )}
           {sosAlertId && (
-            <p className="mt-2 text-center text-xs font-medium text-gray-600">Alert ID: {sosAlertId}</p>
+            <p className="mt-2 text-center text-xs font-medium text-neutral-600">Alert ID: {sosAlertId}</p>
           )}
-          <p className="text-xs text-gray-600 text-center mt-2 font-medium">Notifies family & emergency services with location</p>
+            <p className="text-xs text-neutral-600 text-center mt-2 font-medium">Notifies family & emergency services with location</p>
         </div>
       </div>
 
@@ -321,17 +321,17 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
       <div className="max-w-4xl mx-auto p-4 space-y-4">
         {/* Patient Info with Photo */}
         {emergencyData && (
-          <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
-            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2">Patient Information</p>
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-primary-600 p-4">
+            <p className="text-xs font-bold text-primary-600 uppercase tracking-wider mb-2">Patient Information</p>
             <div className="flex gap-4">
               <div className="flex-1">
-                <p className="text-xl font-bold text-gray-900">{emergencyData.fullName || 'Emergency Contact'}</p>
+                <p className="text-xl font-bold text-neutral-900">{emergencyData.fullName || 'Emergency Contact'}</p>
               </div>
               {emergencyData.photo && (
                 <img
                   src={emergencyData.photo}
                   alt={emergencyData.fullName || 'Patient'}
-                  className="w-32 h-32 rounded-lg object-cover shadow-lg border-2 border-blue-200"
+                  className="w-32 h-32 rounded-lg object-cover shadow-lg border-2 border-primary-200"
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = 'none';
                   }}
@@ -365,11 +365,11 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
               </div>
             )}
             {emergencyData.medications && (
-              <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-blue-600 mb-1">
+              <div className="bg-primary-50 border-2 border-primary-300 rounded-lg p-3">
+                <p className="text-xs font-bold text-primary-600 mb-1">
                   <Pill className="inline h-3 w-3" /> Medications
                 </p>
-                <p className="text-sm font-bold text-blue-700">{emergencyData.medications}</p>
+                <p className="text-sm font-bold text-primary-700">{emergencyData.medications}</p>
               </div>
             )}
             {emergencyData.medicalConditions && (
@@ -385,7 +385,7 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
 
         {/* Location Info */}
         {location && (
-          <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-4 shadow-md text-white">
+          <div className="gradient-primary-dark rounded-xl p-4 shadow-md text-white">
             <div className="flex items-start gap-3">
               <MapPin className="h-6 w-6 mt-1 flex-shrink-0" />
               <div className="flex-1">
@@ -401,17 +401,17 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
 
         {/* Emergency Contacts */}
         {emergencyData?.emergencyContacts && emergencyData.emergencyContacts.length > 0 && (
-          <div className="bg-white rounded-xl shadow-md border-l-4 border-green-600 p-4">
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-success-600 p-4">
             <p className="text-sm font-bold text-green-600 mb-3 flex items-center gap-2">
               <Users className="h-4 w-4" />
               Emergency Contacts
             </p>
             <div className="space-y-2">
               {emergencyData.emergencyContacts.map((contact, idx) => (
-                <div key={idx} className="flex items-center justify-between bg-green-50 p-3 rounded-lg">
+                <div key={idx} className="flex items-center justify-between bg-success-50 p-3 rounded-lg">
                   <div>
-                    <p className="font-semibold text-gray-900">{contact.name || 'Contact'}</p>
-                    <p className="text-xs text-gray-600">{contact.relationship}</p>
+                    <p className="font-semibold text-neutral-900">{contact.name || 'Contact'}</p>
+                    <p className="text-xs text-neutral-600">{contact.relationship}</p>
                   </div>
                   {contact.phone && (
                     <button
@@ -430,7 +430,7 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
         {/* Emergency Call Button */}
         <button
           onClick={() => window.location.href = 'tel:108'}
-          className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-lg font-bold text-lg transition-colors shadow-md"
+          className="w-full bg-primary-500 hover:bg-primary-600 text-white py-4 rounded-lg font-bold text-lg transition-colors shadow-md"
         >
           📞 Call Emergency Services (108)
         </button>
@@ -438,17 +438,17 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
         {/* Hospitals Section */}
         {hospitals.length > 0 && (
           <div>
-            <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
-              <span className="bg-red-500 w-1 h-6 rounded-full"></span>
+            <h2 className="text-lg font-bold text-neutral-900 mb-3 flex items-center gap-2">
+              <span className="bg-primary-500 w-1 h-6 rounded-full"></span>
               🏥 Nearest Hospitals
             </h2>
             <div className="space-y-3">
               {hospitals.map((hospital) => (
-                <div key={hospital.id} className="bg-white rounded-lg shadow-md border-l-4 border-indigo-600 p-4">
-                  <h3 className="font-bold text-gray-900 text-base">{hospital.name}</h3>
-                  <p className="text-sm text-gray-600 mt-1">{hospital.address}</p>
+                <div key={hospital.id} className="bg-white rounded-lg shadow-md border-l-4 border-primary-600 p-4">
+                  <h3 className="font-bold text-neutral-900 text-base">{hospital.name}</h3>
+                  <p className="text-sm text-neutral-600 mt-1">{hospital.address}</p>
                   <div className="flex items-center justify-between mt-3">
-                    <p className="text-sm font-semibold text-blue-600">{hospital.distance} km away</p>
+                    <p className="text-sm font-semibold text-primary-600">{hospital.distance} km away</p>
                     {hospital.rating > 0 && <p className="text-sm text-yellow-600">⭐ {hospital.rating}</p>}
                   </div>
                   <div className="grid grid-cols-2 gap-2 mt-3">
@@ -462,7 +462,7 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
                     )}
                     <button
                       onClick={() => navigateToHospital(hospital.lat, hospital.lng, hospital.name)}
-                      className="bg-blue-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-blue-700 flex items-center justify-center gap-1"
+                      className="bg-primary-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-primary-700 flex items-center justify-center gap-1"
                     >
                       <Navigation className="h-4 w-4" /> Navigate
                     </button>
@@ -474,15 +474,15 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
         )}
 
         {hospitals.length === 0 && !loading && (
-          <div className="flex items-center justify-center py-8 bg-gray-50 rounded-lg">
+          <div className="flex items-center justify-center py-8 bg-neutral-50 rounded-lg">
             <Loader className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-            <span className="text-gray-600 font-medium">Searching for nearby hospitals...</span>
+            <span className="text-neutral-600 font-medium">Searching for nearby hospitals...</span>
           </div>
         )}
 
-        <div className="text-center py-6 border-t border-gray-200">
-          <p className="font-bold text-gray-900">INcase - Emergency Response System</p>
-          <p className="text-sm text-gray-600">All data secured • Golden-hour medical coordination</p>
+        <div className="text-center py-6 border-t border-neutral-200">
+          <p className="font-bold text-neutral-900">INcase - Emergency Response System</p>
+          <p className="text-sm text-neutral-600">All data secured • Golden-hour medical coordination</p>
         </div>
       </div>
     </div>
