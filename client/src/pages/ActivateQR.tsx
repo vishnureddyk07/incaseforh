@@ -186,19 +186,7 @@ export default function ActivateQR() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name (optional)" className="input" />
             <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number (optional)" className="input" />
-            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" />
-            <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input">
-              <option value="">Blood Type (optional)</option>
-              <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
-              <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
-            </select>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" className="input" />
-            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (optional)" className="input" />
           </div>
-
-          <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies (optional)" className="input" />
-          <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications (optional)" className="input" />
-          <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions (optional)" className="input" />
 
           <div className="space-y-2">
             <p className="font-semibold text-neutral-700">Emergency Contacts (at least 1 required)</p>
@@ -211,6 +199,21 @@ export default function ActivateQR() {
             ))}
             <button type="button" onClick={addContact} className="btn-secondary-sm">+ Add Contact</button>
           </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input">
+              <option value="">Blood Type (optional)</option>
+              <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+              <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+            </select>
+            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" className="input" />
+            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (optional)" className="input" />
+          </div>
+
+          <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies (optional)" className="input" />
+          <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications (optional)" className="input" />
+          <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions (optional)" className="input" />
 
           <div>
             <label className="mb-1 block text-sm font-medium text-neutral-700">Photo Upload (optional)</label>

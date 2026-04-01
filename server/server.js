@@ -2559,15 +2559,25 @@ router.get('/admin/users', requireAuth, requireAdmin, async (req, res) => {
         return res.status(400).json({ error: 'Invalid role filter' });
       }
     }
+    const pageRequested = req.query.page !== undefined;
     const page = Math.max(parsePositiveInt(req.query.page, 1), 1);
     const limit = Math.min(Math.max(parsePositiveInt(req.query.limit, 100), 1), 200);
     const skip = (page - 1) * limit;
     setCacheHeaders(res, { cacheControl: 'private, max-age=60, stale-while-revalidate=120', vary: 'Authorization, Accept-Encoding' });
-    const [users, total] = await Promise.all([
-      User.find(query).select('_id email role createdAt').sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-      User.countDocuments(query),
-    ]);
-    res.json(withPaginationMeta(users.map(u => ({ id: u._id.toString(), email: u.email, role: u.role, createdAt: u.createdAt })), total, page, limit));
+    if (pageRequested) {
+      const [users, total] = await Promise.all([
+        User.find(query).select('_id email role createdAt').sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+        User.countDocuments(query),
+      ]);
+      return res.json(withPaginationMeta(users.map(u => ({ id: u._id.toString(), email: u.email, role: u.role, createdAt: u.createdAt })), total, page, limit));
+    }
+
+    const queryBuilder = User.find(query).select('_id email role createdAt').sort({ createdAt: -1 });
+    if (req.query.limit !== undefined) {
+      queryBuilder.limit(limit);
+    }
+    const users = await queryBuilder.lean();
+    return res.json(users.map(u => ({ id: u._id.toString(), email: u.email, role: u.role, createdAt: u.createdAt })));
   } catch (error) {
     console.error('Error listing users:', error);
     res.status(500).json({ error: 'Failed to list users' });
@@ -2598,20 +2608,42 @@ router.delete('/admin/users/:id', requireAuth, requireAdmin, async (req, res) =>
 // Admin: view recent manager/admin action logs
 router.get('/admin/logs', requireAuth, requireAdmin, async (req, res) => {
   try {
+    const pageRequested = req.query.page !== undefined;
     const page = Math.max(parsePositiveInt(req.query.page, 1), 1);
     const limit = Math.min(Math.max(parsePositiveInt(req.query.limit, 100), 1), 200);
     const skip = (page - 1) * limit;
     setCacheHeaders(res, { cacheControl: 'private, max-age=30, stale-while-revalidate=60', vary: 'Authorization, Accept-Encoding' });
-    const [logs, total] = await Promise.all([
-      ActionLog.find({})
-        .select('_id actorEmail actorRole action details createdAt')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      ActionLog.countDocuments({}),
-    ]);
-    res.json(withPaginationMeta(
+    if (pageRequested) {
+      const [logs, total] = await Promise.all([
+        ActionLog.find({})
+          .select('_id actorEmail actorRole action details createdAt')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        ActionLog.countDocuments({}),
+      ]);
+      return res.json(withPaginationMeta(
+        logs.map((log) => ({
+          id: log._id.toString(),
+          actorEmail: log.actorEmail,
+          actorRole: log.actorRole,
+          action: log.action,
+          details: log.details,
+          createdAt: log.createdAt,
+        })),
+        total,
+        page,
+        limit
+      ));
+    }
+
+    const logs = await ActionLog.find({})
+      .select('_id actorEmail actorRole action details createdAt')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+    return res.json(
       logs.map((log) => ({
         id: log._id.toString(),
         actorEmail: log.actorEmail,
@@ -2619,11 +2651,8 @@ router.get('/admin/logs', requireAuth, requireAdmin, async (req, res) => {
         action: log.action,
         details: log.details,
         createdAt: log.createdAt,
-      })),
-      total,
-      page,
-      limit
-    ));
+      }))
+    );
   } catch (error) {
     console.error('Error listing logs:', error);
     res.status(500).json({ error: 'Failed to list logs' });
