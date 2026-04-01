@@ -45,6 +45,8 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>('');
   const [deviceIdCopied, setDeviceIdCopied] = useState(false);
+  const fallbackPhotoDataUrl =
+    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
 
   // Get user location on component mount
   useEffect(() => {
@@ -319,39 +321,78 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
 
       {/* Main Content */}
       <div className="max-w-4xl mx-auto p-4 space-y-4">
-        {/* Patient Info with Photo */}
+        {/* Photo */}
+        {emergencyData && (
+          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4">
+            <p className="text-sm font-bold text-neutral-700 mb-3">Photo</p>
+            <img
+              src={emergencyData.photo || fallbackPhotoDataUrl}
+              alt={emergencyData.fullName || 'Emergency profile photo'}
+              className="w-40 h-40 rounded-lg object-cover shadow-lg border-2 border-primary-200"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = fallbackPhotoDataUrl;
+              }}
+            />
+          </div>
+        )}
+
+        {/* Name */}
         {emergencyData && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-primary-600 p-4">
-            <p className="text-xs font-bold text-primary-600 uppercase tracking-wider mb-2">Patient Information</p>
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <p className="text-xl font-bold text-neutral-900">{emergencyData.fullName || 'Emergency Contact'}</p>
-              </div>
-              {emergencyData.photo && (
-                <img
-                  src={emergencyData.photo}
-                  alt={emergencyData.fullName || 'Patient'}
-                  className="w-32 h-32 rounded-lg object-cover shadow-lg border-2 border-primary-200"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              )}
+            <p className="text-sm font-bold text-primary-700">Name</p>
+            <p className="text-xl font-bold text-neutral-900 mt-1">{emergencyData.fullName || 'Emergency Contact'}</p>
+          </div>
+        )}
+
+        {/* Phone */}
+        {emergencyData?.phoneNumber && (
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-primary-600 p-4">
+            <p className="text-sm font-bold text-primary-700">Phone Number</p>
+            <p className="text-lg font-semibold text-neutral-900 mt-1">{emergencyData.phoneNumber}</p>
+          </div>
+        )}
+
+        {/* Emergency Contacts */}
+        {emergencyData?.emergencyContacts && emergencyData.emergencyContacts.length > 0 && (
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-success-600 p-4">
+            <p className="text-sm font-bold text-green-600 mb-3 flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Emergency Contacts
+            </p>
+            <div className="space-y-2">
+              {emergencyData.emergencyContacts.map((contact, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-success-50 p-3 rounded-lg">
+                  <div>
+                    <p className="font-semibold text-neutral-900">{contact.name || 'Contact'}</p>
+                    <p className="text-xs text-neutral-600">{contact.relationship}</p>
+                  </div>
+                  {contact.phone && (
+                    <button
+                      onClick={() => window.location.href = `tel:${contact.phone}`}
+                      className="bg-green-600 text-white px-3 py-2 rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center gap-1"
+                    >
+                      <Phone className="h-4 w-4" /> Call
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
+          </div>
+        )}
+
+        {/* Blood Group */}
+        {emergencyData.bloodType && (
+          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
+            <p className="text-xs font-bold text-red-600 mb-1">
+              <Droplet className="inline h-3 w-3" /> Blood Group
+            </p>
+            <p className="text-lg font-bold text-red-700">{emergencyData.bloodType}</p>
           </div>
         )}
 
         {/* Medical Information Grid */}
         {emergencyData && (
           <div className="grid grid-cols-2 gap-3">
-            {emergencyData.bloodType && (
-              <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-red-600 mb-1">
-                  <Droplet className="inline h-3 w-3" /> Blood Type
-                </p>
-                <p className="text-lg font-bold text-red-700">{emergencyData.bloodType}</p>
-              </div>
-            )}
             {emergencyData.dateOfBirth && (
               <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-3">
                 <p className="text-xs font-bold text-purple-600 mb-1">Date of Birth</p>
@@ -395,34 +436,6 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
                 </p>
                 {locationError && <p className="text-sm mt-2 text-yellow-100">⚠️ {locationError}</p>}
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Emergency Contacts */}
-        {emergencyData?.emergencyContacts && emergencyData.emergencyContacts.length > 0 && (
-          <div className="bg-white rounded-xl shadow-md border-l-4 border-success-600 p-4">
-            <p className="text-sm font-bold text-green-600 mb-3 flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Emergency Contacts
-            </p>
-            <div className="space-y-2">
-              {emergencyData.emergencyContacts.map((contact, idx) => (
-                <div key={idx} className="flex items-center justify-between bg-success-50 p-3 rounded-lg">
-                  <div>
-                    <p className="font-semibold text-neutral-900">{contact.name || 'Contact'}</p>
-                    <p className="text-xs text-neutral-600">{contact.relationship}</p>
-                  </div>
-                  {contact.phone && (
-                    <button
-                      onClick={() => window.location.href = `tel:${contact.phone}`}
-                      className="bg-green-600 text-white px-3 py-2 rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center gap-1"
-                    >
-                      <Phone className="h-4 w-4" /> Call
-                    </button>
-                  )}
-                </div>
-              ))}
             </div>
           </div>
         )}

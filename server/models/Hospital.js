@@ -93,5 +93,6 @@ const HospitalSchema = new mongoose.Schema(
 // Create geospatial index for location-based queries
 HospitalSchema.index({ location: '2dsphere' });
 HospitalSchema.index({ city: 1, type: 1 });
+HospitalSchema.index({ acceptsEmergency: 1, city: 1, type: 1 });
 
 export default mongoose.model('Hospital', HospitalSchema);

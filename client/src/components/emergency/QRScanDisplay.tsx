@@ -36,6 +36,8 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>('');
   const [deviceIdCopied, setDeviceIdCopied] = useState(false);
+  const fallbackPhotoDataUrl =
+    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
 
   // Get user location on component mount
   useEffect(() => {
@@ -306,26 +308,34 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
 
       {/* Main Content */}
       <div className="max-w-2xl mx-auto p-4 space-y-4">
-        {/* Patient Info with Photo */}
+        {/* Photo (provided or dummy fallback) */}
+        {emergencyData && (
+          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4">
+            <p className="text-sm font-bold text-neutral-700 mb-3">Photo</p>
+            <img
+              src={emergencyData.photo || fallbackPhotoDataUrl}
+              alt={emergencyData.fullName || 'Emergency profile photo'}
+              className="w-40 h-40 rounded-lg object-cover shadow-lg border-2 border-blue-200"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = fallbackPhotoDataUrl;
+              }}
+            />
+          </div>
+        )}
+
+        {/* Name */}
         {emergencyData && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
-            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2">Patient Information</p>
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <p className="text-xl font-bold text-gray-900">{emergencyData.fullName}</p>
-                {emergencyData.phoneNumber && <p className="text-sm text-gray-700 mt-1">Phone: {emergencyData.phoneNumber}</p>}
-              </div>
-              {emergencyData.photo && (
-                <img
-                  src={emergencyData.photo}
-                  alt={emergencyData.fullName}
-                  className="w-32 h-32 rounded-lg object-cover shadow-lg border-2 border-blue-200"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              )}
-            </div>
+            <p className="text-sm font-bold text-blue-700">Name</p>
+            <p className="text-xl font-semibold text-gray-900 mt-1">{emergencyData.fullName || 'INcase User'}</p>
+          </div>
+        )}
+
+        {/* Phone Number */}
+        {emergencyData?.phoneNumber && (
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
+            <p className="text-sm font-bold text-blue-700">Phone Number</p>
+            <p className="text-lg font-semibold text-gray-900 mt-1">{emergencyData.phoneNumber}</p>
           </div>
         )}
 
@@ -357,21 +367,23 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
           </div>
         )}
 
-        {/* Medical Information Grid */}
+        {/* Blood Group */}
+        {emergencyData?.bloodType && (
+          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
+            <p className="text-xs font-bold text-red-600 mb-1">
+              <Droplet className="inline h-3 w-3" /> Blood Group
+            </p>
+            <p className="text-lg font-bold text-red-700">{emergencyData.bloodType}</p>
+          </div>
+        )}
+
+        {/* Other Details */}
         {emergencyData && (
           <div className="grid grid-cols-2 gap-3">
             {emergencyData.email && (
               <div className="bg-indigo-50 border-2 border-indigo-300 rounded-lg p-3">
                 <p className="text-xs font-bold text-indigo-600 mb-1">Email</p>
                 <p className="text-sm font-bold text-indigo-700 break-all">{emergencyData.email}</p>
-              </div>
-            )}
-            {emergencyData.bloodType && (
-              <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-red-600 mb-1">
-                  <Droplet className="inline h-3 w-3" /> Blood Type
-                </p>
-                <p className="text-lg font-bold text-red-700">{emergencyData.bloodType}</p>
               </div>
             )}
             {emergencyData.dateOfBirth && (

@@ -24,5 +24,6 @@ const UserSchema = new mongoose.Schema(
 );
 
 // Unique index is already ensured by the field definition above
+UserSchema.index({ role: 1, createdAt: -1 });
 
 export default mongoose.model('User', UserSchema);

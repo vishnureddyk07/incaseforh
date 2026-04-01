@@ -633,8 +633,8 @@ export default function EmergencyInfoDisplay() {
 
       <div className="max-w-4xl mx-auto p-4 space-y-4">
         {info && (
-          <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
-            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3">Photo</p>
+          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4">
+            <p className="text-sm font-bold text-neutral-700 mb-3">Photo</p>
             <img
               src={info.photo || fallbackPhotoDataUrl}
               alt={info.fullName || 'Emergency profile photo'}
@@ -643,6 +643,13 @@ export default function EmergencyInfoDisplay() {
                 (e.currentTarget as HTMLImageElement).src = fallbackPhotoDataUrl;
               }}
             />
+          </div>
+        )}
+
+        {info && (
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
+            <p className="text-sm font-bold text-blue-700">Name</p>
+            <p className="text-xl font-semibold text-gray-900 mt-1">{info.fullName || 'INcase User'}</p>
           </div>
         )}
 
@@ -686,6 +693,50 @@ export default function EmergencyInfoDisplay() {
               <Droplet className="inline h-3 w-3" /> Blood Group
             </p>
             <p className="text-lg font-bold text-red-700">{info.bloodType}</p>
+          </div>
+        )}
+
+        {info && (
+          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4 space-y-4">
+            <p className="text-sm font-bold text-neutral-700">Other Details</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              {info.email && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                  <p className="text-neutral-500">Email</p>
+                  <p className="font-medium text-neutral-900 break-all">{info.email}</p>
+                </div>
+              )}
+              {info.dateOfBirth && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                  <p className="text-neutral-500">Date of Birth</p>
+                  <p className="font-medium text-neutral-900">{info.dateOfBirth}</p>
+                </div>
+              )}
+              {info.address && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
+                  <p className="text-neutral-500">Address</p>
+                  <p className="font-medium text-neutral-900">{info.address}</p>
+                </div>
+              )}
+              {info.allergies && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
+                  <p className="text-neutral-500">Allergies</p>
+                  <p className="font-medium text-neutral-900">{info.allergies}</p>
+                </div>
+              )}
+              {info.medications && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
+                  <p className="text-neutral-500">Medications</p>
+                  <p className="font-medium text-neutral-900">{info.medications}</p>
+                </div>
+              )}
+              {info.medicalConditions && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
+                  <p className="text-neutral-500">Medical Conditions</p>
+                  <p className="font-medium text-neutral-900">{info.medicalConditions}</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
