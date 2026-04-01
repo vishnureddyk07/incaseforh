@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import multer from 'multer';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import archiver from 'archiver';
+import QRCode from 'qrcode';
 import EmergencyInfo from './models/EmergencyInfo.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -10,6 +12,9 @@ import User from './models/User.js';
 import ActionLog from './models/ActionLog.js';
 import Hospital from './models/Hospital.js';
 import SosAlert from './models/SosAlert.js';
+import QRSticker from './models/QRSticker.js';
+import QRBatch from './models/QRBatch.js';
+import { v4 as uuidv4 } from 'uuid';
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -27,8 +32,35 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod';
 const ADMIN_SETUP_KEY = process.env.ADMIN_SETUP_KEY || null;
 const GEONAMES_USERNAME = process.env.GEONAMES_USERNAME || '';
+const FRONTEND_APP_URL = (process.env.FRONTEND_APP_URL || 'https://incaseforh.vercel.app').replace(/\/+$/, '');
+const BACKEND_APP_URL = (process.env.BACKEND_APP_URL || '').replace(/\/+$/, '');
+
+const resolveFrontendUrl = (req) => {
+  if (FRONTEND_APP_URL) return FRONTEND_APP_URL;
+  const origin = String(req.headers.origin || '').trim();
+  if (origin.startsWith('http://') || origin.startsWith('https://')) {
+    return origin.replace(/\/+$/, '');
+  }
+  return 'https://incaseforh.vercel.app';
+};
+
+const resolveBackendUrl = (req) => {
+  if (BACKEND_APP_URL) return BACKEND_APP_URL;
+  return `${req.protocol}://${req.get('host')}`.replace(/\/+$/, '');
+};
+
+const redirectLegacyEmergencyInfoRoute = (req, res, next) => {
+  const path = req.path || '';
+  const legacyPattern = /^\/(?:emergencyinfo|emergency-info|emrgencyinfo|emrgency-info|emrgency info)\/([^/?#]+)$/i;
+  const match = path.match(legacyPattern);
+  if (!match) return next();
+
+  const identifier = decodeURIComponent(match[1]);
+  return res.redirect(302, `${resolveFrontendUrl(req)}/emergencyinfo/${encodeURIComponent(identifier)}`);
+};
 
 // Middleware
+app.use(redirectLegacyEmergencyInfoRoute);
 app.use((req, res, next) => {
   console.log(`Request: ${req.method} ${req.url}`);
   const allowedOrigins = [
@@ -46,7 +78,7 @@ app.use((req, res, next) => {
   if (allowed) {
     res.header('Access-Control-Allow-Origin', origin);
   }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   if (req.method === 'OPTIONS') {
     console.log('Handling OPTIONS');
@@ -157,12 +189,21 @@ const sanitizeUser = (user) => ({
 
 // Middleware: require valid JWT
 const requireAuth = (req, res, next) => {
+  // First check Authorization header (for fetch/axios requests)
+  let token = '';
   const authHeader = req.headers.authorization || '';
-  if (!authHeader.startsWith('Bearer ')) {
+  
+  if (authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query.token) {
+    // Fallback: check query parameter (for EventSource which can't set custom headers)
+    token = req.query.token;
+  }
+  
+  if (!token) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const token = authHeader.split(' ')[1];
   try {
     const payload = jwt.verify(token, JWT_SECRET);
     req.user = payload;
@@ -176,6 +217,14 @@ const requireAuth = (req, res, next) => {
 const requireAdmin = (req, res, next) => {
   if (!req.user || req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+};
+
+// Middleware: allow police or ambulance
+const requirePoliceOrAmbulance = (req, res, next) => {
+  if (!req.user || (req.user.role !== 'police' && req.user.role !== 'ambulance')) {
+    return res.status(403).json({ error: 'Police or ambulance access required' });
   }
   next();
 };
@@ -219,6 +268,65 @@ const sanitizeContacts = (raw) => {
 const sanitizeStringParam = (val) => {
   if (typeof val !== 'string') return '';
   return val.trim();
+};
+
+const normalizeOptionalString = (val, maxLen = 500) => {
+  const safe = sanitizeMongoValue(val);
+  if (safe === null) return '';
+  return stripHtml(safe).slice(0, maxLen);
+};
+
+const parsePositiveInt = (value, fallback = 0) => {
+  const n = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return n;
+};
+
+const ALLOWED_QR_TYPES = new Set(['b2c', 'b2b', 'b2g']);
+
+const formatSerialNumber = (sequence) => `INC-2026-${String(sequence).padStart(6, '0')}`;
+
+const parseSerialSequence = (serialNumber) => {
+  const match = String(serialNumber || '').match(/INC-\d{4}-(\d{6})$/);
+  if (!match) return 0;
+  return Number.parseInt(match[1], 10) || 0;
+};
+
+const getNextSerialSequence = async () => {
+  const latestSticker = await QRSticker.findOne({})
+    .sort({ serialNumber: -1 })
+    .select('serialNumber')
+    .lean();
+
+  if (!latestSticker?.serialNumber) return 1;
+  return parseSerialSequence(latestSticker.serialNumber) + 1;
+};
+
+const buildBatchId = async (type = 'b2c') => {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const dateCode = `${yy}${mm}${dd}`;
+  const typeCode = String(type || 'b2c').toUpperCase();
+
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  const batchCountToday = await QRBatch.countDocuments({
+    type,
+    createdAt: { $gte: dayStart, $lte: dayEnd },
+  });
+
+  let seq = batchCountToday + 1;
+  let batchId = `INC-${typeCode}-${dateCode}-${String(seq).padStart(3, '0')}`;
+
+  // Avoid rare collisions during near-simultaneous requests.
+  while (await QRBatch.exists({ batchId })) {
+    seq += 1;
+    batchId = `INC-${typeCode}-${dateCode}-${String(seq).padStart(3, '0')}`;
+  }
+
+  return batchId;
 };
 
 // ── End sanitization helpers ─────────────────────────────────────────
@@ -398,6 +506,42 @@ if (!MONGODB_URI) {
 app.get('/', (req, res) => {
   res.send('Server is running and connected to MongoDB');
 });
+
+// ── Real-time SOS alerts via Server-Sent Events ──────────────────────
+// Set to store all connected SSE clients for broadcasting new SOS alerts
+const sseClients = new Set();
+
+const broadcastNewSosAlert = (alert) => {
+  console.log(`📡 Broadcasting new SOS alert to ${sseClients.size} connected clients`);
+  const sseMessage = `data: ${JSON.stringify({
+    type: 'new_alert',
+    alert: {
+      _id: alert._id.toString(),
+      victimName: alert.victimName,
+      victimPhone: alert.victimPhone,
+      victimBloodType: alert.victimBloodType,
+      victimAllergies: alert.victimAllergies,
+      victimMedications: alert.victimMedications,
+      victimEmergencyContacts: alert.victimEmergencyContacts,
+      responderDeviceId: alert.responderDeviceId,
+      responderLocation: alert.responderLocation,
+      responderLocationAccuracy: alert.responderLocationAccuracy,
+      responderLocationMeta: alert.responderLocationMeta,
+      responderUserAgent: alert.responderUserAgent,
+      triggeredAt: alert.triggeredAt,
+      status: alert.status,
+    },
+  })}\n\n`;
+  
+  sseClients.forEach((client) => {
+    try {
+      client.write(sseMessage);
+    } catch (e) {
+      console.warn('Failed to write to SSE client:', e.message);
+      sseClients.delete(client);
+    }
+  });
+};
 
 // ── Versioned API router ─────────────────────────────────────────────
 import { Router } from 'express';
@@ -611,6 +755,64 @@ router.post('/manager/users', requireAuth, requireManagerOrAdmin, async (req, re
   }
 });
 
+// Admin: create police credentials
+router.post('/admin/users/police', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({ email: normalizedEmail, passwordHash, role: 'police' });
+
+    logAction({ actor: req.user, action: 'create_police', details: { email: normalizedEmail } });
+
+    res.status(201).json({ user: sanitizeUser(user) });
+  } catch (error) {
+    console.error('Error creating police user:', error);
+    res.status(500).json({ error: 'Failed to create police user' });
+  }
+});
+
+// Admin: create ambulance credentials
+router.post('/admin/users/ambulance', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return res.status(409).json({ error: 'User already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({ email: normalizedEmail, passwordHash, role: 'ambulance' });
+
+    logAction({ actor: req.user, action: 'create_ambulance', details: { email: normalizedEmail } });
+
+    res.status(201).json({ user: sanitizeUser(user) });
+  } catch (error) {
+    console.error('Error creating ambulance user:', error);
+    res.status(500).json({ error: 'Failed to create ambulance user' });
+  }
+});
+
 // AI: Extract medical info from document (public endpoint)
 // ===== COMMENTED OUT: Medical Document Upload API Endpoint (Will be implemented later) =====
 /*
@@ -819,7 +1021,13 @@ router.get('/emergency/:email', readLimiter, async (req, res) => {
     const scannerIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
     console.log('📍 QR Scanned from IP:', scannerIP);
     
-    const emergency = await EmergencyInfo.findOne({ email: { $eq: needle } }).collation({ locale: 'en', strength: 2 });
+    let emergency = await EmergencyInfo.findOne({ email: { $eq: needle } }).collation({ locale: 'en', strength: 2 });
+    
+    // Fallback: try lookup by ObjectId if needle looks like a MongoDB ObjectId
+    if (!emergency && needle.match(/^[0-9a-f]{24}$/i)) {
+      emergency = await EmergencyInfo.findById(needle);
+    }
+    
     if (!emergency) {
       return res.status(404).json({ error: 'Emergency info not found' });
     }
@@ -866,7 +1074,13 @@ router.get('/emergency/phone/:phoneNumber', readLimiter, async (req, res) => {
     const scannerIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
     console.log('📍 QR Scanned from IP:', scannerIP);
     
-    const emergency = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } });
+    let emergency = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } });
+    
+    // Fallback: try lookup by ObjectId if needle looks like a MongoDB ObjectId
+    if (!emergency && needle.match(/^[0-9a-f]{24}$/i)) {
+      emergency = await EmergencyInfo.findById(needle);
+    }
+    
     if (!emergency) {
       return res.status(404).json({ error: 'Emergency info not found' });
     }
@@ -969,12 +1183,51 @@ router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (re
 router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) => {
   try {
     console.log('Fetching all emergency records...');
-    const allEmergencies = await EmergencyInfo.find({})
-      .sort({ createdAt: -1 })
-      .select('fullName email qrCode photo createdAt phoneNumber dateOfBirth address bloodType emergencyContact')
-      .lean();
+    const includeQr = String(req.query.includeQr || '').toLowerCase() === 'true' || String(req.query.includeQr) === '1';
+    const includePhoto = String(req.query.includePhoto || '').toLowerCase() === 'true' || String(req.query.includePhoto) === '1';
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limitRaw = parseInt(req.query.limit, 10);
+    const hasLimit = Number.isFinite(limitRaw) && limitRaw > 0;
+    const limit = hasLimit ? Math.min(limitRaw, 100) : null;
+    const skip = hasLimit ? (page - 1) * limit : 0;
+
+    const projectStage = {
+      _id: 1,
+      fullName: 1,
+      email: 1,
+      createdAt: 1,
+      phoneNumber: 1,
+      dateOfBirth: 1,
+      address: 1,
+      bloodType: 1,
+      emergencyContact: 1,
+      hasPhoto: {
+        $gt: [
+          {
+            $strLenCP: {
+              $ifNull: ['$photo', ''],
+            },
+          },
+          0,
+        ],
+      },
+    };
+
+    if (includeQr) {
+      projectStage.qrCode = 1;
+    }
+    if (includePhoto) {
+      projectStage.photo = 1;
+    }
+
+    const pipeline = [{ $sort: { createdAt: -1 } }];
+    if (hasLimit) {
+      pipeline.push({ $skip: skip }, { $limit: limit });
+    }
+    pipeline.push({ $project: projectStage });
+
+    const allEmergencies = await EmergencyInfo.aggregate(pipeline);
     console.log(`Found ${allEmergencies.length} records`);
-    console.log('Sample photo URLs:', allEmergencies.slice(0, 2).map(e => ({ name: e.fullName, photo: e.photo })));
     res.json(allEmergencies);
   } catch (error) {
     console.error('Error fetching emergency records:', error);
@@ -998,6 +1251,33 @@ app.get('/health', async (req, res) => {
   } catch (error) {
     res.status(500).json({ status: 'unhealthy', mongodb: 'disconnected' });
   }
+});
+
+// Backward compatibility for older QR codes that used backend host.
+app.get([
+  '/emergencyinfo/:identifier',
+  '/emergency-info/:identifier',
+  '/emrgencyinfo/:identifier',
+  '/emrgency-info/:identifier',
+  '/emrgency info/:identifier',
+], (req, res) => {
+  const { identifier } = req.params;
+  return res.redirect(302, `${resolveFrontendUrl(req)}/emergencyinfo/${encodeURIComponent(identifier)}`);
+});
+
+// Legacy QR fixer: old printed stickers may point to backend paths like /activate/:uuid.
+// Forward all known legacy scan paths into the canonical API scan route.
+app.get([
+  '/activate/:uuid',
+  '/scan/:uuid',
+  '/qr/:uuid',
+  '/q/:uuid',
+], (req, res) => {
+  const uuid = sanitizeStringParam(req.params.uuid);
+  if (!uuid) {
+    return res.status(400).json({ error: 'UUID is required' });
+  }
+  return res.redirect(302, `${resolveBackendUrl(req)}/api/v1/qr/activate/${encodeURIComponent(uuid)}`);
 });
 
 // Environment check endpoint (does not leak secrets)
@@ -1101,6 +1381,801 @@ router.get('/hospitals/nearby', externalApiLimiter, async (req, res) => {
   }
 });
 
+// Admin: generate a new QR sticker batch
+router.post('/admin/qr/generate', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const quantity = parsePositiveInt(req.body?.quantity, 0);
+    const requestedType = normalizeOptionalString(req.body?.type || 'b2c', 20).toLowerCase();
+    const type = ALLOWED_QR_TYPES.has(requestedType) ? requestedType : 'b2c';
+    const organizationName = normalizeOptionalString(req.body?.organizationName, 200);
+    const notes = normalizeOptionalString(req.body?.notes, 1000);
+
+    if (!quantity || quantity > 500) {
+      return res.status(400).json({ error: 'Quantity is required and must be between 1 and 500' });
+    }
+
+    const batchId = await buildBatchId(type);
+    const startSequence = await getNextSerialSequence();
+    const stickers = [];
+    const serialNumbers = [];
+    const uuids = [];
+
+    for (let i = 0; i < quantity; i += 1) {
+      const serialNumber = formatSerialNumber(startSequence + i);
+      const uuid = uuidv4();
+
+      serialNumbers.push(serialNumber);
+      uuids.push(uuid);
+
+      stickers.push({
+        uuid,
+        serialNumber,
+        status: 'generated',
+        type,
+        batchId,
+      });
+    }
+
+    await QRSticker.insertMany(stickers, { ordered: true });
+
+    await QRBatch.create({
+      batchId,
+      quantity,
+      type,
+      createdBy: req.user?.email || 'admin@unknown',
+      organizationName: organizationName || '',
+      notes,
+    });
+
+    return res.status(201).json({
+      batchId,
+      quantity,
+      serialNumbers,
+      uuids,
+    });
+  } catch (error) {
+    console.error('Error generating QR batch:', error);
+    return res.status(500).json({ error: 'Failed to generate QR batch' });
+  }
+});
+
+// Admin: list all QR batches with aggregate stats
+router.get('/admin/qr/batches', requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const batches = await QRBatch.find({}).sort({ createdAt: -1 }).lean();
+    const batchIds = batches.map((b) => b.batchId);
+
+    const stats = await QRSticker.aggregate([
+      { $match: { batchId: { $in: batchIds } } },
+      {
+        $group: {
+          _id: '$batchId',
+          total: { $sum: 1 },
+          active: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'active'] }, 1, 0],
+            },
+          },
+          unactivated: {
+            $sum: {
+              $cond: [{ $in: ['$status', ['generated', 'distributed', 'unactivated']] }, 1, 0],
+            },
+          },
+        },
+      },
+    ]);
+
+    const statsByBatch = new Map(stats.map((s) => [s._id, s]));
+    const response = batches.map((batch) => {
+      const stat = statsByBatch.get(batch.batchId) || { total: 0, active: 0, unactivated: 0 };
+      return {
+        ...batch,
+        total: stat.total,
+        activeCount: stat.active,
+        unactivatedCount: stat.unactivated,
+      };
+    });
+
+    return res.json(response);
+  } catch (error) {
+    console.error('Error listing QR batches:', error);
+    return res.status(500).json({ error: 'Failed to list QR batches' });
+  }
+});
+
+// Admin: get a single batch with sticker details
+router.get('/admin/qr/batch/:batchId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const batchId = sanitizeStringParam(req.params.batchId);
+    if (!batchId) {
+      return res.status(400).json({ error: 'batchId is required' });
+    }
+
+    const batch = await QRBatch.findOne({ batchId }).lean();
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    const stickers = await QRSticker.find({ batchId })
+      .sort({ serialNumber: 1 })
+      .populate('activatedBy', 'fullName email phoneNumber bloodType')
+      .lean();
+
+    return res.json({ batch, stickers });
+  } catch (error) {
+    console.error('Error fetching QR batch:', error);
+    return res.status(500).json({ error: 'Failed to fetch QR batch' });
+  }
+});
+
+// Admin: edit batch metadata and optional batch type
+router.patch('/admin/qr/batch/:batchId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const batchId = sanitizeStringParam(req.params.batchId);
+    if (!batchId) {
+      return res.status(400).json({ error: 'batchId is required' });
+    }
+
+    const updates = {};
+    const organizationName = normalizeOptionalString(req.body?.organizationName, 200);
+    const notes = normalizeOptionalString(req.body?.notes, 1000);
+    const requestedType = normalizeOptionalString(req.body?.type, 20).toLowerCase();
+
+    if (organizationName || req.body?.organizationName === '') updates.organizationName = organizationName;
+    if (notes || req.body?.notes === '') updates.notes = notes;
+    if (requestedType) {
+      if (!ALLOWED_QR_TYPES.has(requestedType)) {
+        return res.status(400).json({ error: 'Invalid type. Use b2c, b2b, or b2g' });
+      }
+      updates.type = requestedType;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided for update' });
+    }
+
+    const batch = await QRBatch.findOneAndUpdate({ batchId }, { $set: updates }, { new: true }).lean();
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    if (updates.type) {
+      await QRSticker.updateMany({ batchId }, { $set: { type: updates.type } });
+    }
+
+    return res.json({ success: true, batch });
+  } catch (error) {
+    console.error('Error updating QR batch:', error);
+    return res.status(500).json({ error: 'Failed to update QR batch' });
+  }
+});
+
+// Admin: delete a batch and all stickers in that batch (blocks by default if active stickers exist)
+router.delete('/admin/qr/batch/:batchId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const batchId = sanitizeStringParam(req.params.batchId);
+    if (!batchId) {
+      return res.status(400).json({ error: 'batchId is required' });
+    }
+
+    const forceDelete = String(req.query.force || '').toLowerCase() === 'true';
+    const activeCount = await QRSticker.countDocuments({ batchId, status: 'active' });
+    if (activeCount > 0 && !forceDelete) {
+      return res.status(409).json({
+        error: 'Batch has active stickers. Use force=true to delete anyway.',
+        activeCount,
+      });
+    }
+
+    const batch = await QRBatch.findOne({ batchId }).lean();
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    const stickerDeleteResult = await QRSticker.deleteMany({ batchId });
+    await QRBatch.deleteOne({ batchId });
+
+    return res.json({
+      success: true,
+      batchId,
+      deletedStickers: stickerDeleteResult.deletedCount || 0,
+    });
+  } catch (error) {
+    console.error('Error deleting QR batch:', error);
+    return res.status(500).json({ error: 'Failed to delete QR batch' });
+  }
+});
+
+// Admin: download batch activation manifest
+router.get('/admin/qr/download/:batchId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const frontendUrl = resolveFrontendUrl(req);
+    const backendUrl = resolveBackendUrl(req);
+    const batchId = sanitizeStringParam(req.params.batchId);
+    if (!batchId) {
+      return res.status(400).json({ error: 'batchId is required' });
+    }
+
+    const batch = await QRBatch.findOneAndUpdate(
+      { batchId },
+      { $inc: { downloadCount: 1 } },
+      { new: true }
+    ).lean();
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    const stickers = await QRSticker.find({ batchId })
+      .sort({ serialNumber: 1 })
+      .select('uuid serialNumber')
+      .lean();
+
+    const payload = stickers.map((sticker) => ({
+      uuid: sticker.uuid,
+      serialNumber: sticker.serialNumber,
+      activationUrl: `${frontendUrl}/activate/${sticker.uuid}`,
+      scanUrl: `${backendUrl}/api/v1/qr/activate/${sticker.uuid}`,
+    }));
+
+    return res.json(payload);
+  } catch (error) {
+    console.error('Error downloading QR batch manifest:', error);
+    return res.status(500).json({ error: 'Failed to download QR batch manifest' });
+  }
+});
+
+// Admin: download QR batch as ZIP file with QR code images
+router.get('/admin/qr/download-zip/:batchId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const frontendUrl = resolveFrontendUrl(req);
+    const batchId = sanitizeStringParam(req.params.batchId);
+    if (!batchId) {
+      return res.status(400).json({ error: 'batchId is required' });
+    }
+
+    const batch = await QRBatch.findOneAndUpdate(
+      { batchId },
+      { $inc: { downloadCount: 1 } },
+      { new: true }
+    ).lean();
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    const stickers = await QRSticker.find({ batchId })
+      .sort({ serialNumber: 1 })
+      .select('uuid serialNumber')
+      .lean();
+
+    if (stickers.length === 0) {
+      return res.status(404).json({ error: 'No stickers found in batch' });
+    }
+
+    const zipDate = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const zipType = String(batch.type || 'b2c').toUpperCase();
+    const zipName = `INCASE-QR-${zipType}-${batchId}-${String(stickers.length).padStart(3, '0')}PCS-${zipDate}.zip`;
+
+    // Set response headers for ZIP file download
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+
+    // Create archiver and pipe to response
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', (err) => {
+      console.error('Archive error:', err);
+      res.status(500).json({ error: 'Failed to create ZIP file' });
+    });
+
+    archive.pipe(res);
+
+    // Generate QR codes for each sticker and add to ZIP
+    const qrPromises = stickers.map(async (sticker) => {
+      try {
+        const activationUrl = `${frontendUrl}/activate/${sticker.uuid}`;
+        const qrImage = await QRCode.toBuffer(activationUrl, {
+          errorCorrectionLevel: 'H',
+          type: 'image/png',
+          width: 300,
+          margin: 2,
+        });
+        archive.append(qrImage, { name: `QR-${sticker.serialNumber}.png` });
+      } catch (err) {
+        console.error(`Error generating QR for ${sticker.uuid}:`, err);
+      }
+    });
+
+    await Promise.all(qrPromises);
+
+    // Add a README file with sticker information
+    const readmeContent = `INcase Emergency QR Stickers - ${batchId}
+=====================================
+
+Total Stickers: ${stickers.length}
+Generated: ${new Date().toLocaleString()}
+
+INSTRUCTIONS:
+1. Unzip this file to extract all QR code images
+2. Print the QR code images on sticker sheets or labels
+3. Cut the stickers and distribute to customers
+4. First scan opens activation form to fill emergency details
+5. Next scans open the saved emergency profile with SOS actions
+
+STICKER DETAILS:
+${stickers.map((s) => `- ${s.serialNumber}: ${s.uuid}`).join('\n')}
+
+For support, contact INcase team.
+`;
+    archive.append(readmeContent, { name: 'README.txt' });
+
+    // Finalize archive
+    await archive.finalize();
+  } catch (error) {
+    console.error('Error downloading QR batch as ZIP:', error);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Failed to download QR batch as ZIP' });
+    }
+  }
+});
+
+// Admin: paginated/searchable sticker list for dashboard
+router.get('/admin/qr/stickers', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const page = Math.max(parsePositiveInt(req.query.page, 1), 1);
+    const limit = Math.min(Math.max(parsePositiveInt(req.query.limit, 50), 1), 100);
+    const status = normalizeOptionalString(req.query.status, 30).toLowerCase();
+    const type = normalizeOptionalString(req.query.type, 10).toLowerCase();
+    const search = normalizeOptionalString(req.query.search, 120);
+
+    const query = {};
+    if (status && status !== 'all') query.status = status;
+    if (type && type !== 'all') query.type = type;
+    if (search) {
+      query.$or = [
+        { serialNumber: { $regex: search, $options: 'i' } },
+        { uuid: { $regex: search, $options: 'i' } },
+        { 'assignedTo.name': { $regex: search, $options: 'i' } },
+        { 'assignedTo.email': { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      QRSticker.find(query)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('activatedBy', 'fullName email phoneNumber')
+        .lean(),
+      QRSticker.countDocuments(query),
+    ]);
+
+    return res.json({
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(Math.ceil(total / limit), 1),
+    });
+  } catch (error) {
+    console.error('Error listing QR stickers:', error);
+    return res.status(500).json({ error: 'Failed to list QR stickers' });
+  }
+});
+
+// Public: check activation state for a pre-printed sticker
+router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
+  try {
+    const frontendUrl = resolveFrontendUrl(req);
+    const wantsJson = String(req.query?.format || '').toLowerCase() === 'json'
+      || String(req.headers.accept || '').includes('application/json');
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOneAndUpdate(
+      { uuid },
+      { $set: { lastScannedAt: new Date() }, $inc: { scanCount: 1 } },
+      { new: true }
+    ).lean();
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    if (sticker.status === 'deactivated') {
+      const activateUrl = `${frontendUrl}/activate/${sticker.uuid}`;
+      if (!wantsJson) {
+        return res.redirect(302, activateUrl);
+      }
+      return res.status(410).json({
+        status: 'deactivated',
+        reason: sticker.deactivatedReason || 'This sticker has been deactivated',
+        sticker,
+      });
+    }
+
+    if (sticker.status === 'active' && sticker.activatedBy) {
+      const activatedBy = await EmergencyInfo.findById(sticker.activatedBy)
+        .select('fullName email phoneNumber bloodType')
+        .lean();
+      const identifier =
+        activatedBy?.email || activatedBy?.phoneNumber || String(sticker.activatedBy);
+
+      const redirectTo = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
+      if (!wantsJson) {
+        return res.redirect(302, redirectTo);
+      }
+
+      return res.json({
+        status: 'active',
+        sticker: {
+          ...sticker,
+          activatedBy,
+        },
+        redirectTo,
+      });
+    }
+
+    const activateUrl = `${frontendUrl}/activate/${sticker.uuid}`;
+    if (!wantsJson) {
+      return res.redirect(302, activateUrl);
+    }
+
+    return res.json({
+      status: sticker.status,
+      sticker,
+      activateUrl,
+    });
+  } catch (error) {
+    console.error('Error fetching sticker activation state:', error);
+    return res.status(500).json({ error: 'Failed to check sticker activation status' });
+  }
+});
+
+// Public: activate pre-printed sticker with emergency profile data
+router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (req, res) => {
+  try {
+    const frontendUrl = resolveFrontendUrl(req);
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+    if (sticker.status === 'deactivated') {
+      return res.status(410).json({ error: sticker.deactivatedReason || 'Sticker is deactivated' });
+    }
+    if (sticker.status === 'active') {
+      return res.status(409).json({ error: 'Sticker is already active' });
+    }
+
+    const fullName = normalizeOptionalString(req.body?.fullName, 200);
+    const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
+    const dateOfBirth = normalizeOptionalString(req.body?.dateOfBirth, 40);
+    const email = normalizeOptionalString(req.body?.email, 200).toLowerCase();
+
+    let photoDataUrl = null;
+    if (req.file && req.file.buffer) {
+      const mime = req.file.mimetype || 'application/octet-stream';
+      const base64 = req.file.buffer.toString('base64');
+      photoDataUrl = `data:${mime};base64,${base64}`;
+    } else if (typeof req.body?.photo === 'string' && req.body.photo.startsWith('data:')) {
+      photoDataUrl = req.body.photo;
+    }
+
+    let emergencyContacts = [];
+    if (Array.isArray(req.body?.emergencyContacts)) {
+      emergencyContacts = sanitizeContacts(req.body.emergencyContacts);
+    } else if (typeof req.body?.emergencyContacts === 'string' && req.body.emergencyContacts.trim()) {
+      try {
+        emergencyContacts = sanitizeContacts(JSON.parse(req.body.emergencyContacts));
+      } catch {
+        emergencyContacts = [];
+      }
+    }
+
+    const validContacts = emergencyContacts.filter((c) => c?.name && c?.phone);
+    if (validContacts.length === 0) {
+      return res.status(400).json({ error: 'At least one emergency contact (name + phone) is required' });
+    }
+
+    const payload = {
+      fullName: fullName || 'INcase User',
+      phoneNumber: phoneNumber || null,
+      dateOfBirth: dateOfBirth || null,
+      email: email || null,
+      bloodType: normalizeOptionalString(req.body?.bloodType, 20),
+      allergies: normalizeOptionalString(req.body?.allergies, 1000),
+      medications: normalizeOptionalString(req.body?.medications, 1000),
+      medicalConditions: normalizeOptionalString(req.body?.medicalConditions, 1000),
+      emergencyContacts: validContacts,
+      address: normalizeOptionalString(req.body?.address, 500),
+      photo: photoDataUrl,
+      qrCode: `${frontendUrl}/activate/${uuid}`,
+    };
+
+    const existing = await EmergencyInfo.findOne(
+      email ? { $or: [{ email }, { phoneNumber }] } : { phoneNumber }
+    );
+
+    let emergencyInfo;
+    if (existing) {
+      payload.photo = photoDataUrl || existing.photo || null;
+      emergencyInfo = await EmergencyInfo.findByIdAndUpdate(existing._id, payload, {
+        new: true,
+        runValidators: true,
+      });
+    } else {
+      emergencyInfo = await EmergencyInfo.create(payload);
+    }
+
+    sticker.status = 'active';
+    sticker.activatedBy = emergencyInfo._id;
+    sticker.activatedAt = new Date();
+    if (sticker.deactivatedAt) sticker.deactivatedAt = null;
+    if (sticker.deactivatedReason) sticker.deactivatedReason = '';
+    await sticker.save();
+
+    // Use email/phone for profile URL, with ObjectId as fallback
+    const profileIdentifier = emergencyInfo.email || emergencyInfo.phoneNumber || emergencyInfo._id.toString();
+
+    return res.status(201).json({
+      success: true,
+      emergencyInfo,
+      sticker,
+      profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(profileIdentifier)}`,
+    });
+  } catch (error) {
+    console.error('Error activating sticker:', error);
+    return res.status(500).json({ error: 'Failed to activate sticker' });
+  }
+});
+
+// Admin: deactivate a sticker
+router.post('/admin/qr/deactivate/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const reason = normalizeOptionalString(req.body?.deactivatedReason, 500);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOneAndUpdate(
+      { uuid },
+      {
+        $set: {
+          status: 'deactivated',
+          deactivatedAt: new Date(),
+          deactivatedReason: reason || 'Deactivated by admin',
+        },
+      },
+      { new: true }
+    );
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    return res.json({ success: true, sticker });
+  } catch (error) {
+    console.error('Error deactivating sticker:', error);
+    return res.status(500).json({ error: 'Failed to deactivate sticker' });
+  }
+});
+
+// Admin: reactivate a previously deactivated sticker
+router.post('/admin/qr/reactivate/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    // If profile exists, restore active; otherwise keep it usable as unactivated.
+    sticker.status = sticker.activatedBy ? 'active' : 'unactivated';
+    sticker.deactivatedAt = null;
+    sticker.deactivatedReason = '';
+    await sticker.save();
+
+    return res.json({ success: true, sticker });
+  } catch (error) {
+    console.error('Error reactivating sticker:', error);
+    return res.status(500).json({ error: 'Failed to reactivate sticker' });
+  }
+});
+
+// Admin: reassign an existing sticker for another user/organization
+router.post('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const assignedTo = {
+      name: normalizeOptionalString(req.body?.name, 200),
+      email: normalizeOptionalString(req.body?.email, 200),
+      phone: normalizeOptionalString(req.body?.phone, 40),
+      organizationName: normalizeOptionalString(req.body?.organizationName, 200),
+    };
+
+    const sticker = await QRSticker.findOneAndUpdate(
+      { uuid },
+      {
+        $set: {
+          status: 'unactivated',
+          assignedTo,
+          activatedBy: null,
+          activatedAt: null,
+          deactivatedAt: null,
+          deactivatedReason: '',
+        },
+      },
+      { new: true }
+    );
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    return res.json({ success: true, sticker });
+  } catch (error) {
+    console.error('Error reassigning sticker:', error);
+    return res.status(500).json({ error: 'Failed to reassign sticker' });
+  }
+});
+
+// Admin: fetch sticker + linked emergency profile for reassign edit page
+router.get('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid })
+      .populate('activatedBy', 'fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo')
+      .lean();
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    return res.json({
+      success: true,
+      sticker,
+      emergencyInfo: sticker.activatedBy || null,
+    });
+  } catch (error) {
+    console.error('Error fetching reassign profile:', error);
+    return res.status(500).json({ error: 'Failed to fetch sticker profile' });
+  }
+});
+
+// Admin: update linked emergency profile for a sticker
+router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'Sticker not found' });
+    }
+
+    if (!sticker.activatedBy) {
+      return res.status(400).json({ error: 'This sticker does not have an activated profile yet' });
+    }
+
+    const emergencyInfo = await EmergencyInfo.findById(sticker.activatedBy);
+    if (!emergencyInfo) {
+      return res.status(404).json({ error: 'Linked emergency profile not found' });
+    }
+
+    const normalizedEmail = normalizeOptionalString(req.body?.email, 200).toLowerCase();
+
+    emergencyInfo.fullName = normalizeOptionalString(req.body?.fullName, 200) || emergencyInfo.fullName || 'INcase User';
+    emergencyInfo.phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
+    emergencyInfo.dateOfBirth = normalizeOptionalString(req.body?.dateOfBirth, 40);
+    emergencyInfo.email = normalizedEmail || '';
+    emergencyInfo.bloodType = normalizeOptionalString(req.body?.bloodType, 20);
+    emergencyInfo.allergies = normalizeOptionalString(req.body?.allergies, 1000);
+    emergencyInfo.medications = normalizeOptionalString(req.body?.medications, 1000);
+    emergencyInfo.medicalConditions = normalizeOptionalString(req.body?.medicalConditions, 1000);
+    emergencyInfo.address = normalizeOptionalString(req.body?.address, 500);
+    if (typeof req.body?.photo === 'string') {
+      const incomingPhoto = req.body.photo.trim();
+      if (!incomingPhoto) {
+        emergencyInfo.photo = '';
+      } else if (incomingPhoto.startsWith('data:') || incomingPhoto.startsWith('http')) {
+        emergencyInfo.photo = incomingPhoto;
+      }
+    }
+
+    if (Array.isArray(req.body?.emergencyContacts)) {
+      emergencyInfo.emergencyContacts = sanitizeContacts(req.body.emergencyContacts);
+    }
+
+    await emergencyInfo.save();
+
+    return res.json({
+      success: true,
+      message: 'Emergency profile updated',
+      emergencyInfo,
+    });
+  } catch (error) {
+    console.error('Error updating reassign profile:', error);
+    return res.status(500).json({ error: 'Failed to update sticker profile' });
+  }
+});
+
+// Admin: overall sticker statistics + recent activations
+router.get('/admin/qr/stats', requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const [statusRows, typeRows, recentActivations] = await Promise.all([
+      QRSticker.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+      QRSticker.aggregate([{ $group: { _id: '$type', count: { $sum: 1 } } }]),
+      QRSticker.find({ status: 'active', activatedAt: { $ne: null } })
+        .sort({ activatedAt: -1 })
+        .limit(10)
+        .populate('activatedBy', 'fullName email phoneNumber bloodType')
+        .lean(),
+    ]);
+
+    const countByStatus = Object.fromEntries(statusRows.map((r) => [r._id, r.count]));
+    const countByType = Object.fromEntries(typeRows.map((r) => [r._id, r.count]));
+
+    const totalGenerated =
+      (countByStatus.generated || 0) +
+      (countByStatus.distributed || 0) +
+      (countByStatus.unactivated || 0) +
+      (countByStatus.active || 0) +
+      (countByStatus.deactivated || 0);
+
+    return res.json({
+      totalGenerated,
+      totalActive: countByStatus.active || 0,
+      totalUnactivated:
+        (countByStatus.generated || 0) +
+        (countByStatus.distributed || 0) +
+        (countByStatus.unactivated || 0),
+      totalDeactivated: countByStatus.deactivated || 0,
+      byType: {
+        b2c: countByType.b2c || 0,
+        b2b: countByType.b2b || 0,
+        b2g: countByType.b2g || 0,
+      },
+      recentActivations,
+    });
+  } catch (error) {
+    console.error('Error fetching QR stats:', error);
+    return res.status(500).json({ error: 'Failed to fetch QR stats' });
+  }
+});
+
+// Police/Ambulance: Get all active SOS alerts
+router.get('/sos', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
+  try {
+    const alerts = await SosAlert.find({})
+      .sort({ triggeredAt: -1 })
+      .lean();
+    return res.json(alerts);
+  } catch (error) {
+    console.error('Error fetching SOS alerts:', error);
+    return res.status(500).json({ error: 'Failed to fetch SOS alerts' });
+  }
+});
+
 // Public: Trigger SOS alert
 router.post('/sos/trigger', sosLimiter, async (req, res) => {
   try {
@@ -1111,7 +2186,10 @@ router.post('/sos/trigger', sosLimiter, async (req, res) => {
       victimAllergies,
       victimMedications,
       victimEmergencyContacts,
+      responderDeviceId,
       responderLocation,
+      responderLocationAccuracy,
+      responderLocationMeta,
       responderUserAgent,
       triggeredAt,
     } = req.body || {};
@@ -1139,7 +2217,23 @@ router.post('/sos/trigger', sosLimiter, async (req, res) => {
       victimAllergies: stripHtml(sanitizeMongoValue(victimAllergies) || ''),
       victimMedications: stripHtml(sanitizeMongoValue(victimMedications) || ''),
       victimEmergencyContacts: safeEmergencyContacts,
+      responderDeviceId: stripHtml(sanitizeMongoValue(responderDeviceId) || ''),
       responderLocation: { lat, lng },
+      responderLocationAccuracy: Number.isFinite(Number(responderLocationAccuracy))
+        ? Number(responderLocationAccuracy)
+        : null,
+      responderLocationMeta: {
+        altitude: Number.isFinite(Number(responderLocationMeta?.altitude))
+          ? Number(responderLocationMeta.altitude)
+          : null,
+        heading: Number.isFinite(Number(responderLocationMeta?.heading))
+          ? Number(responderLocationMeta.heading)
+          : null,
+        speed: Number.isFinite(Number(responderLocationMeta?.speed))
+          ? Number(responderLocationMeta.speed)
+          : null,
+        capturedAt: responderLocationMeta?.capturedAt ? new Date(responderLocationMeta.capturedAt) : null,
+      },
       responderUserAgent: stripHtml(sanitizeMongoValue(responderUserAgent) || ''),
       responderIP: req.ip || '',
       triggeredAt: triggeredAt ? new Date(triggeredAt) : new Date(),
@@ -1163,10 +2257,79 @@ router.post('/sos/trigger', sosLimiter, async (req, res) => {
     console.log(`   Victim: ${alert.victimName || 'Unknown'} (${alert.victimPhone || 'No phone'})`);
     console.log(`   Location: ${lat}, ${lng}`);
 
+    // Broadcast to all connected SSE clients immediately
+    broadcastNewSosAlert(alert);
+
     return res.status(201).json(alert);
   } catch (error) {
     console.error('Error triggering SOS:', error);
     return res.status(500).json({ error: 'Failed to trigger SOS alert' });
+  }
+});
+
+// Police/Ambulance: close an active SOS case
+router.patch('/sos/:id/close', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid alert ID' });
+    }
+
+    const updated = await SosAlert.findOneAndUpdate(
+      { _id: id, status: 'active' },
+      {
+        $set: {
+          status: 'resolved',
+          resolvedAt: new Date(),
+          closedByRole: req.user?.role || '',
+          closedByEmail: req.user?.email || '',
+        },
+      },
+      { new: true }
+    );
+
+    if (!updated) {
+      const existing = await SosAlert.findById(id).lean();
+      if (!existing) {
+        return res.status(404).json({ error: 'SOS alert not found' });
+      }
+      return res.status(409).json({ error: 'This SOS case is already closed' });
+    }
+
+    await logAction({
+      actor: req.user,
+      action: 'sos_close',
+      details: {
+        alertId: updated._id.toString(),
+        closedBy: req.user?.email || '',
+      },
+    });
+
+    // Broadcast alert status update to all connected clients
+    console.log(`📡 Broadcasting SOS alert status update to ${sseClients.size} connected clients`);
+    const updateMessage = `data: ${JSON.stringify({
+      type: 'alert_updated',
+      alert: {
+        _id: updated._id.toString(),
+        status: updated.status,
+        resolvedAt: updated.resolvedAt,
+        closedByRole: updated.closedByRole,
+        closedByEmail: updated.closedByEmail,
+      },
+    })}\n\n`;
+    
+    sseClients.forEach((client) => {
+      try {
+        client.write(updateMessage);
+      } catch (e) {
+        sseClients.delete(client);
+      }
+    });
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('Error closing SOS case:', error);
+    return res.status(500).json({ error: 'Failed to close SOS case' });
   }
 });
 
@@ -1186,6 +2349,48 @@ router.get('/sos/:id', readLimiter, async (req, res) => {
     console.error('Error fetching SOS alert:', error);
     return res.status(500).json({ error: 'Failed to fetch SOS alert' });
   }
+});
+
+// Real-time SOS alerts stream (Server-Sent Events)
+// Police/Ambulance: Subscribe to real-time SOS alerts
+router.get('/sos/stream/subscribe', requireAuth, requirePoliceOrAmbulance, (req, res) => {
+  console.log(`📡 [SSE] New subscriber connected: ${req.user?.email}`);
+  
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  
+  // Send initial connection confirmation
+  res.write(`:Connected - ready for real-time SOS alerts\n\n`);
+  
+  // Add this response object to the clients set
+  sseClients.add(res);
+  
+  // Keep-alive: send periodic heartbeat to prevent connection timeout
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(':heartbeat\n\n');
+    } catch (e) {
+      clearInterval(heartbeat);
+      sseClients.delete(res);
+    }
+  }, 30000); // Every 30 seconds
+  
+  // Clean up when client disconnects
+  req.on('close', () => {
+    console.log(`📡 [SSE] Subscriber disconnected: ${req.user?.email}`);
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+    res.end();
+  });
+  
+  req.on('error', (err) => {
+    console.warn(`📡 [SSE] Error from subscriber ${req.user?.email}:`, err.message);
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+  });
 });
 
 // Admin: Get all hospitals (for management)

@@ -258,7 +258,12 @@ export default function EmergencyQRCode() {
   };
 
   const resolveBaseUrl = () => {
-    return 'https://incaseforh.onrender.com';
+    const configuredPublicBase = import.meta.env.VITE_PUBLIC_APP_URL?.trim();
+    if (configuredPublicBase && /^https?:\/\//i.test(configuredPublicBase)) {
+      return configuredPublicBase.replace(/\/+$/, '');
+    }
+    // Always fall back to the public production site, not preview/staging origin.
+    return 'https://incaseforh.vercel.app';
   };
 
   const generateQRData = () => {

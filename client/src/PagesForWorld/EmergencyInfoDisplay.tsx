@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users } from 'lucide-react';
+import { Phone, AlertCircle, Loader, Droplet, Users, Copy } from 'lucide-react';
+import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../utils/deviceId';
 
 interface Hospital {
   id: string;
@@ -49,6 +50,11 @@ export default function EmergencyInfoDisplay() {
   const [sosAlertId, setSosAlertId] = useState<string | null>(null);
   const [sosSuccessMessage, setSosSuccessMessage] = useState<string | null>(null);
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string>('');
+  const [deviceIdCopied, setDeviceIdCopied] = useState(false);
+
+  const fallbackPhotoDataUrl =
+    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
@@ -78,6 +84,11 @@ export default function EmergencyInfoDisplay() {
   };
 
   useEffect(() => {
+    // Initialize device ID
+    const id = getOrCreateDeviceId();
+    setDeviceId(id);
+    console.log('📱 Device ID initialized:', id);
+
     const fetchEmergencyInfo = async () => {
       try {
         if (!identifierParam) {
@@ -86,21 +97,57 @@ export default function EmergencyInfoDisplay() {
           return;
         }
 
-        const isEmail = identifierParam.includes('@');
-        const endpoint = isEmail
-          ? `${API_BASE}/api/v1/emergency/${encodeURIComponent(identifierParam)}`
-          : `${API_BASE}/api/v1/emergency/phone/${encodeURIComponent(identifierParam)}`;
+        const trimmedIdentifier = identifierParam.trim();
+        const encodedIdentifier = encodeURIComponent(trimmedIdentifier);
+        const isEmail = trimmedIdentifier.includes('@');
+        const isMongoId = /^[0-9a-fA-F]{24}$/.test(trimmedIdentifier);
+        const endpoints = isEmail
+          ? [`${API_BASE}/api/v1/emergency/${encodedIdentifier}`]
+          : isMongoId
+            ? [
+                `${API_BASE}/api/v1/emergency/${encodedIdentifier}`,
+                `${API_BASE}/api/v1/emergency/phone/${encodedIdentifier}`,
+              ]
+            : [
+                `${API_BASE}/api/v1/emergency/phone/${encodedIdentifier}`,
+                `${API_BASE}/api/v1/emergency/${encodedIdentifier}`,
+              ];
 
-        console.log('📡 Fetching emergency info from:', endpoint);
-        const res = await fetch(endpoint);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        let data: EmergencyInfo | null = null;
+        let lastStatus: number | null = null;
+
+        for (const endpoint of endpoints) {
+          console.log('📡 Fetching emergency info from:', endpoint);
+          const res = await fetch(endpoint);
+          if (res.ok) {
+            data = await res.json();
+            break;
+          }
+          lastStatus = res.status;
+          if (res.status !== 404) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+        }
+
+        if (!data) {
+          throw new Error(`HTTP ${lastStatus ?? 404}`);
+        }
         console.log('✅ Emergency info loaded:', data.fullName);
         setInfo(data);
+        setLoading(false);
+
+        // Fetch location and hospitals in background so profile data appears immediately.
+        void (async () => {
+          const loc = await getAccurateLocation();
+          if (loc) {
+            setLocation(loc);
+            reverseGeocode(loc.lat, loc.lng);
+            fetchNearbyHospitals(loc.lat, loc.lng);
+          }
+        })();
       } catch (err) {
         console.error('❌ Error fetching emergency info:', err);
         setError(err instanceof Error ? err.message : 'Error fetching data');
-      } finally {
         setLoading(false);
       }
     };
@@ -157,9 +204,9 @@ export default function EmergencyInfoDisplay() {
             if (err.code === 1) {
               setLocationError('Location permission denied. Please enable location access.');
             } else if (err.code === 2) {
-              setLocationError('Location unavailable. Using approximate location.');
+              setLocationError('Location unavailable. Move outdoors or enable precise GPS and retry.');
             } else {
-              setLocationError('Location timeout. Retrying...');
+              setLocationError('Location timeout. Retrying for accurate GPS...');
               
               // Retry with lower accuracy requirements
               navigator.geolocation.getCurrentPosition(
@@ -172,43 +219,58 @@ export default function EmergencyInfoDisplay() {
                   fetchNearbyHospitals(latitude, longitude);
                 },
                 () => {
-                  console.error('❌ GPS retry failed, using fallback');
-                  const mockLat = 17.3850;
-                  const mockLng = 78.4867;
-                  setLocation({ lat: mockLat, lng: mockLng });
-                  setLocationError('Using approximate location (Hyderabad)');
-                  reverseGeocode(mockLat, mockLng);
-                  fetchNearbyHospitals(mockLat, mockLng);
+                  console.error('❌ GPS retry failed');
+                  setLocation(null);
+                  setLocationError('Unable to get accurate location. Please enable precise GPS and retry SOS.');
                 },
-                { timeout: 30000, enableHighAccuracy: false, maximumAge: 60000 }
+                { timeout: 35000, enableHighAccuracy: true, maximumAge: 0 }
               );
               return;
             }
-            const mockLat = 17.3850;
-            const mockLng = 78.4867;
-            setLocation({ lat: mockLat, lng: mockLng });
-            reverseGeocode(mockLat, mockLng);
-            fetchNearbyHospitals(mockLat, mockLng);
+            setLocation(null);
           },
-          { timeout: 20000, enableHighAccuracy: true, maximumAge: 0 }
+          { timeout: 30000, enableHighAccuracy: true, maximumAge: 0 }
         );
       } else {
         console.warn('❌ Geolocation not supported');
         setLocationError('Location services not available on this device');
-        const mockLat = 17.3850;
-        const mockLng = 78.4867;
-        setLocation({ lat: mockLat, lng: mockLng });
-        reverseGeocode(mockLat, mockLng);
-        fetchNearbyHospitals(mockLat, mockLng);
+        setLocation(null);
       }
     };
 
     fetchEmergencyInfo();
-    getUserLocation();
-    
-    // Force location permission prompt on page load
-    console.log('🌍 Initializing location services...');
   }, [identifierParam, API_BASE]);
+
+  const getAccurateLocation = async (): Promise<{ lat: number; lng: number } | null> => {
+    return new Promise((resolve) => {
+      if (!('geolocation' in navigator)) {
+        console.warn('❌ Geolocation not supported');
+        resolve(null);
+        return;
+      }
+
+      console.log('📍 Requesting high-accuracy GPS location for display...');
+      
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+          console.log('✅ GPS location obtained:', {
+            lat: latitude,
+            lng: longitude,
+            accuracy: `${accuracy.toFixed(0)}m`,
+          });
+          
+          setLocationError(accuracy > 100 ? `Location accuracy: ±${accuracy.toFixed(0)}m` : null);
+          resolve({ lat: latitude, lng: longitude });
+        },
+        () => {
+          console.warn('⚠️ GPS failed after page load');
+          resolve(null);
+        },
+        { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 }
+      );
+    });
+  };
 
   const fetchNearbyHospitals = async (lat: number, lng: number) => {
     console.log('🏥 Fetching hospitals near:', lat, lng);
@@ -227,38 +289,130 @@ export default function EmergencyInfoDisplay() {
     }
   };
 
-  const getResponderLocation = async () => {
+  const getResponderLocation = async (): Promise<{
+    lat: number;
+    lng: number;
+    accuracy: number | null;
+    altitude: number | null;
+    heading: number | null;
+    speed: number | null;
+    capturedAt: string;
+  } | null> => {
     if ('geolocation' in navigator) {
       try {
-        const coords = await new Promise<{ lat: number; lng: number }>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              resolve({ lat: position.coords.latitude, lng: position.coords.longitude });
+        const coords = await new Promise<{
+          lat: number;
+          lng: number;
+          accuracy: number | null;
+          altitude: number | null;
+          heading: number | null;
+          speed: number | null;
+          capturedAt: string;
+        }>((resolve, reject) => {
+          let bestFix: {
+            lat: number;
+            lng: number;
+            accuracy: number | null;
+            altitude: number | null;
+            heading: number | null;
+            speed: number | null;
+            capturedAt: string;
+          } | null = null;
+
+          const acceptFix = (position: GeolocationPosition) => {
+            const candidate = {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              accuracy: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+              altitude: Number.isFinite(position.coords.altitude) ? position.coords.altitude : null,
+              heading: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
+              speed: Number.isFinite(position.coords.speed) ? position.coords.speed : null,
+              capturedAt: new Date(position.timestamp).toISOString(),
+            };
+
+            if (!bestFix || (candidate.accuracy ?? Number.POSITIVE_INFINITY) < (bestFix.accuracy ?? Number.POSITIVE_INFINITY)) {
+              bestFix = candidate;
+              console.log('📍 Better GPS fix found:', `Accuracy: ${candidate.accuracy?.toFixed(0)}m`);
+            }
+
+            // Accept if accuracy is good enough (≤25m)
+            if ((candidate.accuracy ?? Number.POSITIVE_INFINITY) <= 25) {
+              console.log('✅ Excellent GPS accuracy achieved: ≤25m');
+              cleanup();
+              resolve(candidate);
+            }
+          };
+
+          const cleanup = () => {
+            if (watchId !== null) {
+              navigator.geolocation.clearWatch(watchId);
+            }
+            clearTimeout(timeoutId);
+          };
+
+          const watchId = navigator.geolocation.watchPosition(
+            acceptFix,
+            (error) => {
+              console.warn('⚠️ GPS watch error:', error.message);
+              cleanup();
+              if (bestFix) {
+                console.log('Using best fix from watch:', `Accuracy: ${bestFix.accuracy?.toFixed(0)}m`);
+                resolve(bestFix);
+                return;
+              }
+              reject(new Error('Unable to acquire GPS fix: ' + error.message));
             },
-            reject,
-            { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
+            { timeout: 20000, enableHighAccuracy: true, maximumAge: 0 }
           );
+
+          const timeoutId = window.setTimeout(() => {
+            console.log('⏰ GPS watch timeout (12s) - using best fix if available');
+            cleanup();
+            if (bestFix) {
+              console.log('✅ Returning best fix: Accuracy ' + bestFix.accuracy?.toFixed(0) + 'm');
+              resolve(bestFix);
+              return;
+            }
+            reject(new Error('GPS timed out and no fix available'));
+          }, 12000);
         });
         return coords;
       } catch (geoErr) {
-        console.warn('Unable to refresh responder GPS location, using current page location', geoErr);
+        console.warn('❌ GPS acquisition failed:', geoErr);
+        // If we have a stored location from page load, use it as fallback
+        if (location) {
+          console.log('📍 Using page load location as fallback for SOS');
+          return {
+            lat: location.lat,
+            lng: location.lng,
+            accuracy: null,
+            altitude: null,
+            heading: null,
+            speed: null,
+            capturedAt: new Date().toISOString(),
+          };
+        }
+        return null;
       }
     }
-    return location;
+    console.warn('❌ Geolocation not available');
+    return null;
   };
 
-  const triggerSOSAlert = async () => {
-    if (!info) return;
+  const triggerSOSAlert = useCallback(async () => {
+    if (!info || !deviceId) return;
     setIsTriggeringSos(true);
     setSosErrorMessage(null);
     setSosSuccessMessage(null);
 
     try {
-      const responderLocation = await getResponderLocation();
-      if (!responderLocation) {
+      console.log('🚨 [EmergencyInfoDisplay] Starting SOS trigger with device ID:', deviceId);
+      const responderDetails = await getResponderLocation();
+      if (!responderDetails) {
         throw new Error('Responder location is unavailable. Please enable location and try again.');
       }
 
+      console.log('📡 [EmergencyInfoDisplay] Sending SOS to:', `${API_BASE}/api/v1/sos/trigger`);
       const response = await fetch(`${API_BASE}/api/v1/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -269,7 +423,18 @@ export default function EmergencyInfoDisplay() {
           victimAllergies: info.allergies || '',
           victimMedications: info.medications || '',
           victimEmergencyContacts: info.emergencyContacts || [],
-          responderLocation,
+          responderDeviceId: deviceId,
+          responderLocation: {
+            lat: responderDetails.lat,
+            lng: responderDetails.lng,
+          },
+          responderLocationAccuracy: responderDetails.accuracy,
+          responderLocationMeta: {
+            altitude: responderDetails.altitude,
+            heading: responderDetails.heading,
+            speed: responderDetails.speed,
+            capturedAt: responderDetails.capturedAt,
+          },
           responderUserAgent: navigator.userAgent,
           triggeredAt: new Date().toISOString(),
         }),
@@ -277,7 +442,7 @@ export default function EmergencyInfoDisplay() {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || 'Failed to trigger SOS alert');
+        throw new Error(payload.error || `HTTP ${response.status}: Failed to trigger SOS alert`);
       }
 
       const alert = await response.json();
@@ -286,24 +451,25 @@ export default function EmergencyInfoDisplay() {
         throw new Error('SOS alert ID was not returned by the server');
       }
 
+      console.log('✅ [EmergencyInfoDisplay] SOS alert created:', alertId);
       setSosAlertId(alertId);
-      setSosSuccessMessage('SOS alert sent. Police and ambulance have been notified.');
-
-      const policeUrl = `${window.location.origin}/sos/police?alertId=${encodeURIComponent(alertId)}`;
-      const ambulanceUrl = `${window.location.origin}/sos/ambulance?alertId=${encodeURIComponent(alertId)}`;
-      window.open(policeUrl, '_blank', 'noopener,noreferrer');
-      window.open(ambulanceUrl, '_blank', 'noopener,noreferrer');
+      setSosSuccessMessage('🚨 SOS alert sent! Alert has been logged with your device ID for evidence.');
     } catch (err) {
-      console.error('Error triggering SOS:', err);
+      console.error('❌ [EmergencyInfoDisplay] Error triggering SOS:', err);
       const message = err instanceof Error ? err.message : 'Failed to trigger SOS alert';
       setSosErrorMessage(message);
     } finally {
       setIsTriggeringSos(false);
     }
-  };
+  }, [info, API_BASE, deviceId]);
 
   const startSosCountdown = () => {
-    if (isTriggeringSos) return;
+    console.log('🔴 [EmergencyInfoDisplay] SOS button clicked! isTriggeringSos:', isTriggeringSos);
+    if (isTriggeringSos) {
+      console.log('⚠️ [EmergencyInfoDisplay] Already triggering, ignoring click');
+      return;
+    }
+    console.log('✅ [EmergencyInfoDisplay] Starting 10-second countdown...');
     setSosErrorMessage(null);
     setSosSuccessMessage(null);
     setSosAlertId(null);
@@ -311,25 +477,46 @@ export default function EmergencyInfoDisplay() {
   };
 
   const cancelSosCountdown = () => {
+    console.log('❌ [EmergencyInfoDisplay] Countdown cancelled');
     setSosCountdown(null);
     setSosErrorMessage(null);
   };
 
   useEffect(() => {
-    if (sosCountdown === null || isTriggeringSos) return;
+    console.log('⏲️ [EmergencyInfoDisplay] Countdown effect running. sosCountdown:', sosCountdown, 'isTriggeringSos:', isTriggeringSos);
+    
+    if (sosCountdown === null || isTriggeringSos) {
+      console.log('⏸️ [EmergencyInfoDisplay] Skipping countdown (null or triggering)');
+      return;
+    }
 
     if (sosCountdown === 0) {
+      console.log('⏰ [EmergencyInfoDisplay] Countdown reached zero, triggering SOS...');
       setSosCountdown(null);
       triggerSOSAlert();
       return;
     }
 
+    console.log('⏱️ [EmergencyInfoDisplay] Setting timer for countdown:', sosCountdown);
     const timer = window.setTimeout(() => {
-      setSosCountdown((prev) => (prev === null ? null : prev - 1));
+      setSosCountdown((prev) => {
+        const newValue = prev === null ? null : prev - 1;
+        console.log('📉 [EmergencyInfoDisplay] Countdown updated:', prev, '→', newValue);
+        return newValue;
+      });
     }, 1000);
 
-    return () => window.clearTimeout(timer);
-  }, [sosCountdown, isTriggeringSos]);
+    return () => {
+      console.log('🧹 [EmergencyInfoDisplay] Cleaning up timer');
+      window.clearTimeout(timer);
+    };
+  }, [sosCountdown, isTriggeringSos, triggerSOSAlert]);
+
+  const copyDeviceIdToClipboard = () => {
+    navigator.clipboard.writeText(deviceId);
+    setDeviceIdCopied(true);
+    setTimeout(() => setDeviceIdCopied(false), 2000);
+  };
 
   const callHospital = (phone: string) => {
     window.location.href = `tel:${phone}`;
@@ -380,6 +567,24 @@ export default function EmergencyInfoDisplay() {
 
       <div className="sticky top-16 z-40 bg-white/95 backdrop-blur p-3 shadow-lg border-b-2 border-red-500">
         <div className="max-w-4xl mx-auto">
+          {deviceId && (
+            <div className="mb-3 bg-blue-50 border border-blue-300 rounded-md p-2 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-blue-600 mb-1">📱 Your Device ID (Emergency Evidence)</p>
+                <p className="text-sm font-mono text-blue-900">{formatDeviceIdForDisplay(deviceId)}</p>
+                <p className="text-xs text-blue-600 mt-1">This uniquely identifies your device for police evidence</p>
+              </div>
+              <button
+                onClick={copyDeviceIdToClipboard}
+                className="ml-2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                title="Copy full device ID"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+              {deviceIdCopied && <span className="ml-2 text-xs text-green-600 font-semibold">✓ Copied!</span>}
+            </div>
+          )}
+
           {sosCountdown === null ? (
             <button
               onClick={startSosCountdown}
@@ -417,7 +622,10 @@ export default function EmergencyInfoDisplay() {
             </p>
           )}
           {sosAlertId && (
-            <p className="mt-2 text-center text-xs font-medium text-gray-600">Alert ID: {sosAlertId}</p>
+            <div className="mt-4 space-y-3">
+              <p className="text-center text-xs font-medium text-gray-600">✅ SOS Alert Logged - ID: {sosAlertId}</p>
+              <p className="text-center text-xs font-medium text-green-600">Police and ambulance have been notified</p>
+            </div>
           )}
           <p className="text-xs text-gray-600 text-center mt-2 font-medium">Notifies police, ambulance, and emergency contacts with location</p>
         </div>
@@ -426,81 +634,22 @@ export default function EmergencyInfoDisplay() {
       <div className="max-w-4xl mx-auto p-4 space-y-4">
         {info && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
-            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2">Patient Information</p>
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <p className="text-xl font-bold text-gray-900">{info.fullName}</p>
-              </div>
-              {info.photo && (
-                <img
-                  src={info.photo}
-                  alt={info.fullName}
-                  className="w-32 h-32 rounded-lg object-cover shadow-lg border-2 border-blue-200"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              )}
-            </div>
+            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3">Photo</p>
+            <img
+              src={info.photo || fallbackPhotoDataUrl}
+              alt={info.fullName || 'Emergency profile photo'}
+              className="w-40 h-40 rounded-lg object-cover shadow-lg border-2 border-blue-200"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = fallbackPhotoDataUrl;
+              }}
+            />
           </div>
         )}
 
-        {info && (
-          <div className="grid grid-cols-2 gap-3">
-            {info.bloodType && (
-              <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-red-600 mb-1">
-                  <Droplet className="inline h-3 w-3" /> Blood Type
-                </p>
-                <p className="text-lg font-bold text-red-700">{info.bloodType}</p>
-              </div>
-            )}
-            {info.dateOfBirth && (
-              <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-purple-600 mb-1">Date of Birth</p>
-                <p className="text-lg font-bold text-purple-700">{info.dateOfBirth}</p>
-              </div>
-            )}
-            {info.allergies && (
-              <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-yellow-600 mb-1">Allergies</p>
-                <p className="text-sm font-bold text-yellow-700">{info.allergies}</p>
-              </div>
-            )}
-            {info.medications && (
-              <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-blue-600 mb-1">
-                  <Pill className="inline h-3 w-3" /> Medications
-                </p>
-                <p className="text-sm font-bold text-blue-700">{info.medications}</p>
-              </div>
-            )}
-            {info.medicalConditions && (
-              <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3 col-span-2">
-                <p className="text-xs font-bold text-green-600 mb-1">
-                  <Heart className="inline h-3 w-3" /> Medical Conditions
-                </p>
-                <p className="text-sm font-bold text-green-700">{info.medicalConditions}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {location && (
-          <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-4 shadow-md text-white">
-            <div className="flex items-start gap-3">
-              <MapPin className="h-6 w-6 mt-1 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="font-bold text-lg mb-1">📍 Live Location</p>
-                <p className="text-sm font-semibold mb-1">
-                  {locationName || 'Fetching location...'}
-                </p>
-                <p className="text-xs opacity-90">
-                  <span className="font-mono">{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</span>
-                </p>
-                {locationError && <p className="text-sm mt-2 text-yellow-100">⚠️ {locationError}</p>}
-              </div>
-            </div>
+        {info?.phoneNumber && (
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
+            <p className="text-sm font-bold text-blue-700">Phone Number</p>
+            <p className="text-lg font-semibold text-gray-900 mt-1">{info.phoneNumber}</p>
           </div>
         )}
 
@@ -531,56 +680,21 @@ export default function EmergencyInfoDisplay() {
           </div>
         )}
 
+        {info?.bloodType && (
+          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
+            <p className="text-xs font-bold text-red-600 mb-1">
+              <Droplet className="inline h-3 w-3" /> Blood Group
+            </p>
+            <p className="text-lg font-bold text-red-700">{info.bloodType}</p>
+          </div>
+        )}
+
         <button
           onClick={() => window.location.href = 'tel:108'}
           className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-lg font-bold text-lg transition-colors shadow-md"
         >
           📞 Call Emergency Services (108)
         </button>
-
-        {hospitals.length > 0 && (
-          <div>
-            <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
-              <span className="bg-red-500 w-1 h-6 rounded-full"></span>
-              🏥 Nearest Hospitals
-            </h2>
-            <div className="space-y-3">
-              {hospitals.map((hospital) => (
-                <div key={hospital.id} className="bg-white rounded-lg shadow-md border-l-4 border-indigo-600 p-4">
-                  <h3 className="font-bold text-gray-900 text-base">{hospital.name}</h3>
-                  <p className="text-sm text-gray-600 mt-1">{hospital.address}</p>
-                  <div className="flex items-center justify-between mt-3">
-                    <p className="text-sm font-semibold text-blue-600">{hospital.distance} km away</p>
-                    {hospital.rating && <p className="text-sm text-yellow-600">⭐ {hospital.rating.toFixed(1)}</p>}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mt-3">
-                    {hospital.phone && (
-                      <button
-                        onClick={() => callHospital(hospital.phone || '')}
-                        className="bg-green-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center justify-center gap-1"
-                      >
-                        <Phone className="h-4 w-4" /> Call
-                      </button>
-                    )}
-                    <button
-                      onClick={() => navigateToHospital(hospital.lat, hospital.lng, hospital.name)}
-                      className="bg-blue-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-blue-700 flex items-center justify-center gap-1"
-                    >
-                      <Navigation className="h-4 w-4" /> Navigate
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {hospitals.length === 0 && !loading && (
-          <div className="flex items-center justify-center py-8 bg-gray-50 rounded-lg">
-            <Loader className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-            <span className="text-gray-600 font-medium">Searching for nearby hospitals...</span>
-          </div>
-        )}
 
         <div className="text-center py-6 border-t border-gray-200">
           <p className="font-bold text-gray-900">INcase - Emergency Response System</p>

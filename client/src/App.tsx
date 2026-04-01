@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
@@ -19,6 +19,28 @@ import ManagerDashboard from './components/manager/ManagerDashboard';
 import EmployeeLogin from './components/auth/EmployeeLogin';
 import SosPolice from './pages/SosPolice';
 import SosAmbulance from './pages/SosAmbulance';
+import PoliceLogin from './pages/PoliceLogin';
+import PoliceDashboard from './pages/PoliceDashboard';
+import AmbulanceLogin from './pages/AmbulanceLogin';
+import AmbulanceDashboard from './pages/AmbulanceDashboard';
+import ActivateQR from './pages/ActivateQR';
+import StickerActivationSuccess from './pages/StickerActivationSuccess';
+import AdminQRReassign from './pages/AdminQRReassign';
+
+function RouteNormalizer() {
+  const { pathname } = useLocation();
+  const parts = pathname.split('/').filter(Boolean);
+
+  if (parts[0] === 'activate' && parts[1]) {
+    return <Navigate to={`/activate/${parts[1]}`} replace />;
+  }
+
+  if (parts[0] === 'emergencyinfo' && parts[1]) {
+    return <Navigate to={`/emergencyinfo/${parts[1]}`} replace />;
+  }
+
+  return <Navigate to="/" replace />;
+}
 
 function MainContent() {
   return (
@@ -69,17 +91,27 @@ function AppContent() {
     <Routes>
       <Route path="/" element={<MainContent />} />
       <Route path="/emergencyinfo/:email" element={<EmergencyInfoDisplay />} />
+      <Route path="/emergencyinfo/:email/*" element={<EmergencyInfoDisplay />} />
+      <Route path="/activate/:uuid" element={<ActivateQR />} />
+      <Route path="/activate/:uuid/*" element={<ActivateQR />} />
+      <Route path="/activation-success" element={<StickerActivationSuccess />} />
       <Route path="/qrs" element={<QRList />} />
       <Route path="/admin" element={<AdminLogin />} />
       <Route path="/admin/dashboard" element={<AdminDashboard />} />
+      <Route path="/admin/qr/reassign/:uuid" element={<AdminQRReassign />} />
       <Route path="/manager" element={<ManagerLogin />} />
       <Route path="/manager/dashboard" element={<ManagerDashboard />} />
       <Route path="/employee" element={<EmployeeLogin />} />
+      <Route path="/police/login" element={<PoliceLogin />} />
+      <Route path="/police/dashboard" element={<PoliceDashboard />} />
+      <Route path="/ambulance/login" element={<AmbulanceLogin />} />
+      <Route path="/ambulance/dashboard" element={<AmbulanceDashboard />} />
       <Route path="/change-password" element={<ChangePassword />} />
       <Route path="/emer" element={<div>hi</div>} />
       <Route path="/assist" element={<EmergencyAssistPage />} />
       <Route path="/sos/police" element={<SosPolice />} />
       <Route path="/sos/ambulance" element={<SosAmbulance />} />
+      <Route path="*" element={<RouteNormalizer />} />
     </Routes>
   );
 }

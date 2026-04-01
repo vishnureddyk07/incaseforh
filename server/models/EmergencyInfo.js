@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const emergencyInfoSchema = new mongoose.Schema({
-  fullName: { type: String, required: true },
+  fullName: { type: String },
   email: { type: String, index: true }, // Email no longer required
   bloodType: { type: String },
   emergencyContacts: [{
@@ -12,9 +12,9 @@ const emergencyInfoSchema = new mongoose.Schema({
   medications: { type: String },
   medicalConditions: { type: String },
   photo: { type: String },
-  dateOfBirth: { type: String, required: true }, // Now required
+  dateOfBirth: { type: String },
   address: { type: String },
-  phoneNumber: { type: String, required: true, index: true }, // Required; keep index (avoid unique to prevent migration failures)
+  phoneNumber: { type: String, index: true },
   alternateNumber1: { type: String, required: false },
   alternateNumber2: { type: String, required: false },
   qrCode: { type: String }, // Store the QR code URL

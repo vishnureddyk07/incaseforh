@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import QRStickerManagement from './QRStickerManagement';
+import { ShieldCheck } from 'lucide-react';
 
 interface UserRow {
   id: string;
   email: string;
-  role: 'admin' | 'manager' | 'user';
+  role: 'admin' | 'manager' | 'user' | 'police' | 'ambulance';
   createdAt?: string;
 }
 
@@ -29,6 +31,12 @@ export default function AdminDashboard() {
   const [newManagerEmail, setNewManagerEmail] = useState('');
   const [newManagerPassword, setNewManagerPassword] = useState('');
   const [isCreatingManager, setIsCreatingManager] = useState(false);
+  const [newPoliceEmail, setNewPoliceEmail] = useState('');
+  const [newPolicePassword, setNewPolicePassword] = useState('');
+  const [isCreatingPolice, setIsCreatingPolice] = useState(false);
+  const [newAmbulanceEmail, setNewAmbulanceEmail] = useState('');
+  const [newAmbulancePassword, setNewAmbulancePassword] = useState('');
+  const [isCreatingAmbulance, setIsCreatingAmbulance] = useState(false);
   const [systemActionLogs, setSystemActionLogs] = useState<LogEntry[]>([]);
   const [isFetchingActivityLogs, setIsFetchingActivityLogs] = useState(false);
   const [totalEmergencyRecords, setTotalEmergencyRecords] = useState(0);
@@ -95,8 +103,8 @@ export default function AdminDashboard() {
       });
       if (!res.ok) throw new Error('Failed to fetch emergency records');
       const data = await res.json();
-      const records = Array.isArray(data) ? data : data?.records || data?.data || [];
-      setTotalEmergencyRecords(Array.isArray(records) ? records.length : 0);
+      const records = Array.isArray(data) ? data : Array.isArray(data?.records) ? data.records : [];
+      setTotalEmergencyRecords(records.length);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to fetch emergency records';
       setAdminDashboardError(msg);
@@ -137,6 +145,62 @@ export default function AdminDashboard() {
       setAdminDashboardError(msg);
     } finally {
       setIsCreatingManager(false);
+    }
+  };
+
+  const createPolice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPoliceEmail || !newPolicePassword) return;
+    setIsCreatingPolice(true);
+    setAdminDashboardError(null);
+    try {
+      const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/users/police`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: newPoliceEmail, password: newPolicePassword }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to create police account');
+      }
+      setNewPoliceEmail('');
+      setNewPolicePassword('');
+      fetchUsers();
+      fetchLogs();
+      showToast('✅ Police account created successfully!');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create police account';
+      setAdminDashboardError(msg);
+    } finally {
+      setIsCreatingPolice(false);
+    }
+  };
+
+  const createAmbulance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAmbulanceEmail || !newAmbulancePassword) return;
+    setIsCreatingAmbulance(true);
+    setAdminDashboardError(null);
+    try {
+      const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/users/ambulance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: newAmbulanceEmail, password: newAmbulancePassword }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to create ambulance account');
+      }
+      setNewAmbulanceEmail('');
+      setNewAmbulancePassword('');
+      fetchUsers();
+      fetchLogs();
+      showToast('✅ Ambulance account created successfully!');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create ambulance account';
+      setAdminDashboardError(msg);
+    } finally {
+      setIsCreatingAmbulance(false);
     }
   };
 
@@ -181,11 +245,11 @@ export default function AdminDashboard() {
 
   const getActionBadgeClass = (action: string) => {
     if (action.includes('sos')) return 'bg-red-100 text-red-700 border-red-200';
-    if (action === 'qr_scan') return 'bg-orange-100 text-orange-700 border-orange-200';
+    if (action === 'qr_scan') return 'bg-primary-100 text-primary-700 border-primary-200';
     if (action === 'login') return 'bg-blue-100 text-blue-700 border-blue-200';
     if (action.includes('delete')) return 'bg-red-100 text-red-700 border-red-200';
     if (action.includes('create')) return 'bg-green-100 text-green-700 border-green-200';
-    return 'bg-gray-100 text-gray-700 border-gray-200';
+    return 'bg-neutral-100 text-neutral-700 border-neutral-200';
   };
 
   const getActionLabel = (action: string) => {
@@ -289,45 +353,51 @@ export default function AdminDashboard() {
       label: 'Audit Logs',
       value: systemActionLogs.length,
       icon: '🔍',
-      color: 'bg-orange-50 border-orange-100',
-      textColor: 'text-orange-700',
+      color: 'bg-primary-50 border-primary-100',
+      textColor: 'text-primary-700',
     },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-neutral-100">
       {/* Success Toast */}
       {successToast && (
-        <div className="fixed top-4 right-4 z-50 rounded-lg bg-gray-900 px-5 py-3 text-sm font-medium text-white shadow-lg">
+        <div className="fixed top-4 right-4 z-50 rounded-lg bg-neutral-900 px-5 py-3 text-sm font-medium text-white shadow-lg">
           {successToast}
         </div>
       )}
 
       <div className="mx-auto flex max-w-[1600px]">
         {/* Sidebar */}
-        <aside className="sticky top-0 h-screen w-64 bg-gray-900 px-6 py-8 text-white shadow-xl flex flex-col">
+        <aside className="sticky top-0 h-screen w-64 bg-neutral-900 px-6 py-8 text-white shadow-xl flex flex-col">
           <div>
-            <p className="text-xs uppercase tracking-widest text-gray-400">INcase Admin</p>
+            <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary-600/20 text-primary-300 ring-1 ring-primary-500/40">
+              <ShieldCheck className="h-6 w-6" />
+            </div>
+            <p className="text-xs uppercase tracking-widest text-neutral-400">INcase Admin</p>
             <h1 className="mt-2 text-2xl font-semibold">Control Center</h1>
             {user?.email && (
-              <p className="mt-2 text-xs text-gray-400 truncate">Logged in as: {user.email}</p>
+              <p className="mt-2 text-xs text-neutral-400 truncate">Logged in as: {user.email}</p>
             )}
           </div>
 
           <nav className="mt-10 space-y-1 text-sm flex-1">
-            <a href="#dashboard" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
+            <a href="#dashboard" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
               <span>🏠</span> Dashboard
             </a>
-            <Link to="/qrs" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
+            <Link to="/qrs" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
               <span>📋</span> Emergency Records
             </Link>
-            <a href="#users" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
+            <a href="#users" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
               <span>👥</span> Users
             </a>
-            <a href="#audit-logs" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
+            <a href="#qr-management" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
+              <span>🏷️</span> QR Management
+            </a>
+            <a href="#audit-logs" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
               <span>🔍</span> Audit Logs
             </a>
-            <Link to="/change-password" className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-200 hover:bg-gray-800">
+            <Link to="/change-password" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
               <span>🔑</span> Change Password
             </Link>
           </nav>
@@ -343,21 +413,21 @@ export default function AdminDashboard() {
         {/* Main Content */}
         <main className="w-full p-6 md:p-10">
           {/* Header */}
-          <div id="dashboard" className="mb-8 flex flex-col gap-4 rounded-2xl bg-white p-6 shadow-sm md:flex-row md:items-center md:justify-between">
+          <div id="dashboard" className="mb-8 flex flex-col gap-4 card-elevated p-6 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-3xl font-semibold text-gray-900">Admin Dashboard</h2>
-              <p className="mt-1 text-sm text-gray-500">Monitor users, managers, emergency records, and security activity.</p>
+              <h2 className="text-3xl font-semibold text-neutral-900">Admin Dashboard</h2>
+              <p className="mt-1 text-sm text-neutral-500">Monitor users, managers, emergency records, and security activity.</p>
             </div>
             <div className="flex gap-3">
               <button
                 onClick={exportUsersCsv}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="btn-secondary-md"
               >
                 ⬇️ Export Users
               </button>
               <button
                 onClick={exportLogsCsv}
-                className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+                className="btn-primary-md"
               >
                 ⬇️ Export Logs
               </button>
@@ -377,7 +447,7 @@ export default function AdminDashboard() {
             {statCards.map((card) => (
               <div key={card.label} className={`rounded-xl border p-5 shadow-sm ${card.color}`}>
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-gray-600">{card.label}</p>
+                  <p className="text-sm text-neutral-600">{card.label}</p>
                   <span className="text-2xl">{card.icon}</span>
                 </div>
                 <p className={`mt-3 text-3xl font-bold ${card.textColor}`}>{card.value}</p>
@@ -385,27 +455,29 @@ export default function AdminDashboard() {
             ))}
           </section>
 
+          <QRStickerManagement token={token} backendApiBaseUrl={backendApiBaseUrl} />
+
           {/* Create Manager */}
-          <section className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
-            <h3 className="text-lg font-semibold text-gray-900">➕ Create Manager Account</h3>
-            <p className="mt-1 text-sm text-gray-500">New managers can log in and manage emergency records.</p>
+          <section className="mt-8 card-elevated p-6">
+            <h3 className="text-lg font-semibold text-neutral-900">➕ Create Manager Account</h3>
+            <p className="mt-1 text-sm text-neutral-500">New managers can log in and manage emergency records.</p>
             <form onSubmit={createManager} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3 md:items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Manager Email</label>
+                <label className="label">Manager Email</label>
                 <input
                   value={newManagerEmail}
                   onChange={(e) => setNewManagerEmail(e.target.value)}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="input"
                   placeholder="manager@example.com"
                   type="email"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Temporary Password</label>
+                <label className="label">Temporary Password</label>
                 <input
                   value={newManagerPassword}
                   onChange={(e) => setNewManagerPassword(e.target.value)}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="input"
                   placeholder="min 6 characters"
                   type="password"
                 />
@@ -413,43 +485,113 @@ export default function AdminDashboard() {
               <button
                 type="submit"
                 disabled={isCreatingManager || !newManagerEmail || !newManagerPassword}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 font-medium"
+                className="btn-primary-md disabled:opacity-50"
               >
                 {isCreatingManager ? 'Creating...' : '➕ Create Manager'}
               </button>
             </form>
           </section>
 
+          {/* Create Police Account */}
+          <section className="mt-8 card-elevated p-6 border-l-4 border-primary-500">
+            <h3 className="text-lg font-semibold text-neutral-900">👮 Create Police Account</h3>
+            <p className="mt-1 text-sm text-neutral-500">Police officers can monitor SOS alerts in real-time via the control room.</p>
+            <form onSubmit={createPolice} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3 md:items-end">
+              <div>
+                <label className="label">Police Email</label>
+                <input
+                  value={newPoliceEmail}
+                  onChange={(e) => setNewPoliceEmail(e.target.value)}
+                  className="input"
+                  placeholder="officer@police.gov"
+                  type="email"
+                />
+              </div>
+              <div>
+                <label className="label">Temporary Password</label>
+                <input
+                  value={newPolicePassword}
+                  onChange={(e) => setNewPolicePassword(e.target.value)}
+                  className="input"
+                  placeholder="min 6 characters"
+                  type="password"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isCreatingPolice || !newPoliceEmail || !newPolicePassword}
+                className="btn-primary-md disabled:opacity-50"
+              >
+                {isCreatingPolice ? 'Creating...' : '👮 Create Police'}
+              </button>
+            </form>
+          </section>
+
+          {/* Create Ambulance Account */}
+          <section className="mt-8 card-elevated p-6 border-l-4 border-primary-500">
+            <h3 className="text-lg font-semibold text-neutral-900">🚑 Create Ambulance Account</h3>
+            <p className="mt-1 text-sm text-neutral-500">Paramedics can access emergency medical information and dispatch management.</p>
+            <form onSubmit={createAmbulance} className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3 md:items-end">
+              <div>
+                <label className="label">Ambulance Email</label>
+                <input
+                  value={newAmbulanceEmail}
+                  onChange={(e) => setNewAmbulanceEmail(e.target.value)}
+                  className="input"
+                  placeholder="paramedic@ambulance.org"
+                  type="email"
+                />
+              </div>
+              <div>
+                <label className="label">Temporary Password</label>
+                <input
+                  value={newAmbulancePassword}
+                  onChange={(e) => setNewAmbulancePassword(e.target.value)}
+                  className="input"
+                  placeholder="min 6 characters"
+                  type="password"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isCreatingAmbulance || !newAmbulanceEmail || !newAmbulancePassword}
+                className="btn-primary-md disabled:opacity-50"
+              >
+                {isCreatingAmbulance ? 'Creating...' : '🚑 Create Ambulance'}
+              </button>
+            </form>
+          </section>
+
           {/* Users Table */}
-          <section id="users" className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
+          <section id="users" className="mt-8 card-elevated p-6">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">👥 Users ({filteredUsers.length})</h3>
+              <h3 className="text-lg font-semibold text-neutral-900">👥 Users ({filteredUsers.length})</h3>
               <div className="flex gap-2">
                 <input
                   value={userSearchQuery}
                   onChange={(e) => setUserSearchQuery(e.target.value)}
                   placeholder="Search by email or role..."
-                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 w-56"
+                  className="input-sm w-56"
                 />
-                <button onClick={fetchUsers} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                <button onClick={fetchUsers} className="btn-secondary-sm">
                   🔄
                 </button>
               </div>
             </div>
 
             {isFetchingUsers ? (
-              <div className="flex items-center gap-2 text-sm text-gray-500 py-8 justify-center">
+              <div className="flex items-center gap-2 text-sm text-neutral-500 py-8 justify-center">
                 <span className="animate-spin">⏳</span> Loading users...
               </div>
             ) : filteredUsers.length === 0 ? (
-              <div className="py-10 text-center text-sm text-gray-400">
+              <div className="py-10 text-center text-sm text-neutral-400">
                 {userSearchQuery ? '🔍 No users match your search.' : '👥 No users found.'}
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b bg-gray-50 text-gray-500">
+                    <tr className="border-b bg-neutral-50 text-neutral-500">
                       <th className="py-3 px-2 font-medium">Email</th>
                       <th className="py-3 px-2 font-medium">Role</th>
                       <th className="py-3 px-2 font-medium">Created</th>
@@ -458,19 +600,19 @@ export default function AdminDashboard() {
                   </thead>
                   <tbody>
                     {filteredUsers.map((userAccount) => (
-                      <tr key={userAccount.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                        <td className="py-3 px-2 text-gray-900">{userAccount.email}</td>
+                      <tr key={userAccount.id} className="border-b border-neutral-100 hover:bg-neutral-50 transition-colors">
+                        <td className="py-3 px-2 text-neutral-900">{userAccount.email}</td>
                         <td className="py-3 px-2">
                           <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getRoleBadgeClass(userAccount.role)}`}>
                             {userAccount.role}
                           </span>
                         </td>
-                        <td className="py-3 px-2 text-gray-500 text-xs">{formatDateTime(userAccount.createdAt)}</td>
+                        <td className="py-3 px-2 text-neutral-500 text-xs">{formatDateTime(userAccount.createdAt)}</td>
                         <td className="py-3 px-2">
                           {userAccount.role !== 'admin' && (
                             <button
                               onClick={() => deleteUser(userAccount.id)}
-                              className="rounded-md bg-red-50 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-100 transition-colors"
+                              className="btn-danger-sm"
                             >
                               🗑️ Delete
                             </button>
@@ -485,35 +627,35 @@ export default function AdminDashboard() {
           </section>
 
           {/* Audit Logs Table */}
-          <section id="audit-logs" className="mt-8 mb-10 rounded-2xl bg-white p-6 shadow-sm">
+          <section id="audit-logs" className="mt-8 mb-10 card-elevated p-6">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">🔍 Audit Logs ({filteredLogs.length})</h3>
+              <h3 className="text-lg font-semibold text-neutral-900">🔍 Audit Logs ({filteredLogs.length})</h3>
               <div className="flex gap-2">
                 <input
                   value={logSearchQuery}
                   onChange={(e) => setLogSearchQuery(e.target.value)}
                   placeholder="Search by email or action..."
-                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 w-56"
+                  className="input-sm w-56"
                 />
-                <button onClick={fetchLogs} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                <button onClick={fetchLogs} className="btn-secondary-sm">
                   🔄
                 </button>
               </div>
             </div>
 
             {isFetchingActivityLogs ? (
-              <div className="flex items-center gap-2 text-sm text-gray-500 py-8 justify-center">
+              <div className="flex items-center gap-2 text-sm text-neutral-500 py-8 justify-center">
                 <span className="animate-spin">⏳</span> Loading logs...
               </div>
             ) : filteredLogs.length === 0 ? (
-              <div className="py-10 text-center text-sm text-gray-400">
+              <div className="py-10 text-center text-sm text-neutral-400">
                 {logSearchQuery ? '🔍 No logs match your search.' : '📋 No audit logs yet.'}
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b bg-gray-50 text-gray-500">
+                    <tr className="border-b bg-neutral-50 text-neutral-500">
                       <th className="py-3 px-2 font-medium">When</th>
                       <th className="py-3 px-2 font-medium">Actor</th>
                       <th className="py-3 px-2 font-medium">Role</th>
@@ -529,9 +671,9 @@ export default function AdminDashboard() {
                       const renderedDetails = isLong && !isExpanded ? `${detailsText.slice(0, 120)}...` : detailsText;
 
                       return (
-                        <tr key={activityLog.id} className="border-b border-gray-100 align-top hover:bg-gray-50 transition-colors">
-                          <td className="py-3 px-2 text-gray-500 text-xs whitespace-nowrap">{formatDateTime(activityLog.createdAt)}</td>
-                          <td className="py-3 px-2 text-gray-900 text-xs">{activityLog.actorEmail}</td>
+                        <tr key={activityLog.id} className="border-b border-neutral-100 align-top hover:bg-neutral-50 transition-colors">
+                          <td className="py-3 px-2 text-neutral-500 text-xs whitespace-nowrap">{formatDateTime(activityLog.createdAt)}</td>
+                          <td className="py-3 px-2 text-neutral-900 text-xs">{activityLog.actorEmail}</td>
                           <td className="py-3 px-2">
                             <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getRoleBadgeClass(activityLog.actorRole)}`}>
                               {activityLog.actorRole}
@@ -543,7 +685,7 @@ export default function AdminDashboard() {
                             </span>
                           </td>
                           <td className="py-3 px-2">
-                            <p className="max-w-lg whitespace-pre-wrap break-words text-xs text-gray-600">{renderedDetails}</p>
+                            <p className="max-w-lg whitespace-pre-wrap break-words text-xs text-neutral-600">{renderedDetails}</p>
                             {isLong && (
                               <button
                                 onClick={() => toggleDetails(activityLog.id)}

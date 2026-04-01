@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users } from 'lucide-react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users, Copy } from 'lucide-react';
 import type { EmergencyInfo } from '../../types/emergency';
+import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../../utils/deviceId';
 
 interface QRScanDisplayProps {
   emergencyData: EmergencyInfo;
@@ -28,10 +29,21 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
   const [isFetchingHospitals, setIsFetchingHospitals] = useState(true);
   const [hospitalFetchError, setHospitalFetchError] = useState<string | null>(null);
   const [gpsAccessError, setGpsAccessError] = useState<string | null>(null);
-  const [emergencyAlertActivated, setEmergencyAlertActivated] = useState(false);
+  const [sosCountdown, setSosCountdown] = useState<number | null>(null);
+  const [isTriggeringSos, setIsTriggeringSos] = useState(false);
+  const [sosAlertId, setSosAlertId] = useState<string | null>(null);
+  const [sosSuccessMessage, setSosSuccessMessage] = useState<string | null>(null);
+  const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string>('');
+  const [deviceIdCopied, setDeviceIdCopied] = useState(false);
 
   // Get user location on component mount
   useEffect(() => {
+    // Initialize device ID
+    const id = getOrCreateDeviceId();
+    setDeviceId(id);
+    console.log('📱 Device ID initialized:', id);
+
     const trackRescuerGPSLocation = async () => {
       setIsFetchingHospitals(true);
       setGpsAccessError(null);
@@ -45,22 +57,17 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
             findClosestEmergencyHospitals(latitude, longitude);
           },
           (gpsError) => {
-            console.warn('GPS failed, trying IP-based location:', gpsError);
-            setGpsAccessError('GPS unavailable. Using approximate location.');
-            // Fallback to Hyderabad coordinates for testing
-            const hyderabadLatitude = 17.3850;
-            const hyderabadLongitude = 78.4867;
-            setRescuerCurrentLocation({ lat: hyderabadLatitude, lng: hyderabadLongitude });
-            findClosestEmergencyHospitals(hyderabadLatitude, hyderabadLongitude);
+            console.warn('GPS failed:', gpsError);
+            setRescuerCurrentLocation(null);
+            setGpsAccessError('Unable to get accurate GPS. Enable precise location and try again.');
+            setIsFetchingHospitals(false);
           },
-          { timeout: 5000, enableHighAccuracy: true }
+          { timeout: 30000, enableHighAccuracy: true, maximumAge: 0 }
         );
       } else {
         setGpsAccessError('Location services not available');
-        const hyderabadLatitude = 17.3850;
-        const hyderabadLongitude = 78.4867;
-        setRescuerCurrentLocation({ lat: hyderabadLatitude, lng: hyderabadLongitude });
-        findClosestEmergencyHospitals(hyderabadLatitude, hyderabadLongitude);
+        setRescuerCurrentLocation(null);
+        setIsFetchingHospitals(false);
       }
     };
 
@@ -87,42 +94,118 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
     }
   };
 
-  const initiateEmergencySOSAlert = () => {
-    setEmergencyAlertActivated(true);
-    console.log('🚨 SOS button pressed. Triggering alerts...');
-    // Trigger SOS alert to emergency contacts
-    sendSOSNotificationToContacts();
-    // Auto-call 108 after 1 second
-    setTimeout(() => {
-      console.log('📞 Auto-calling 108');
-      window.location.href = 'tel:108';
-    }, 1000);
+  const startSosCountdown = () => {
+    console.log('🔴 [QRScanDisplay] SOS button clicked! isTriggeringSos:', isTriggeringSos);
+    if (isTriggeringSos) {
+      console.log('⚠️ [QRScanDisplay] Already triggering, ignoring click');
+      return;
+    }
+    console.log('✅ [QRScanDisplay] Starting 10-second countdown...');
+    setSosErrorMessage(null);
+    setSosSuccessMessage(null);
+    setSosAlertId(null);
+    setSosCountdown(10);
   };
 
-  const sendSOSNotificationToContacts = async () => {
-    if (!rescuerCurrentLocation || !emergencyData) return;
+  const cancelSosCountdown = () => {
+    console.log('❌ [QRScanDisplay] Countdown cancelled');
+    setSosCountdown(null);
+    setSosErrorMessage(null);
+  };
+
+  const sendSOSNotificationToContacts = useCallback(async () => {
+    if (!rescuerCurrentLocation || !emergencyData || !deviceId) {
+      console.error('❌ [QRScanDisplay] Location, emergency details, or device ID unavailable');
+      setSosErrorMessage('Location or emergency details unavailable. Please try again.');
+      return;
+    }
+
+    setIsTriggeringSos(true);
+    setSosErrorMessage(null);
 
     try {
       const backendApiUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
-      await fetch(`${backendApiUrl}/api/v1/sos/trigger`, {
+      console.log('🚨 [QRScanDisplay] Sending SOS with device ID:', deviceId);
+      const response = await fetch(`${backendApiUrl}/api/v1/sos/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          location: rescuerCurrentLocation,
-          timestamp: new Date().toISOString(),
-          emergencyContacts: emergencyData.emergencyContacts || [],
           victimName: emergencyData.fullName,
-          victimPhone: emergencyData.phoneNumber,
+          victimPhone: emergencyData.phoneNumber || '',
+          victimBloodType: emergencyData.bloodType || '',
+          victimAllergies: emergencyData.allergies || '',
+          victimMedications: emergencyData.medications || '',
+          victimEmergencyContacts: emergencyData.emergencyContacts || [],
+          responderDeviceId: deviceId,
+          responderLocation: {
+            lat: rescuerCurrentLocation.lat,
+            lng: rescuerCurrentLocation.lng,
+          },
+          responderLocationAccuracy: null,
+          responderLocationMeta: {
+            altitude: null,
+            heading: null,
+            speed: null,
+            capturedAt: new Date().toISOString(),
+          },
+          responderUserAgent: navigator.userAgent,
+          triggeredAt: new Date().toISOString(),
         }),
-      }).catch(() => {
-        // Fail silently - don't block the emergency response
-        console.log('SOS notification sent');
       });
-      console.log('✅ SOS payload sent to backend');
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `HTTP ${response.status}: Failed to trigger SOS`);
+      }
+
+      const alert = await response.json();
+      const alertId = alert?._id as string | undefined;
+      setSosAlertId(alertId || null);
+      setSosSuccessMessage('🚨 SOS alert sent! Alert has been logged with your device ID for evidence.');
+      console.log('✅ [QRScanDisplay] SOS alert created:', alertId);
+
+      setTimeout(() => {
+        console.log('📞 [QRScanDisplay] Auto-calling 108');
+        window.location.href = 'tel:108';
+      }, 1000);
     } catch (sosError) {
-      console.error('Error triggering SOS:', sosError);
+      console.error('❌ [QRScanDisplay] Error triggering SOS:', sosError);
+      const message = sosError instanceof Error ? sosError.message : 'Failed to trigger SOS alert';
+      setSosErrorMessage(message);
+    } finally {
+      setIsTriggeringSos(false);
     }
-  };
+  }, [rescuerCurrentLocation, emergencyData, deviceId]);
+
+  useEffect(() => {
+    console.log('⏲️ [QRScanDisplay] Countdown effect running. sosCountdown:', sosCountdown, 'isTriggeringSos:', isTriggeringSos);
+    
+    if (sosCountdown === null || isTriggeringSos) {
+      console.log('⏸️ [QRScanDisplay] Skipping countdown (null or triggering)');
+      return;
+    }
+
+    if (sosCountdown === 0) {
+      console.log('⏰ [QRScanDisplay] Countdown reached zero, triggering SOS...');
+      setSosCountdown(null);
+      sendSOSNotificationToContacts();
+      return;
+    }
+
+    console.log('⏱️ [QRScanDisplay] Setting timer for countdown:', sosCountdown);
+    const timer = window.setTimeout(() => {
+      setSosCountdown((prev) => {
+        const newValue = prev === null ? null : prev - 1;
+        console.log('📉 [QRScanDisplay] Countdown updated:', prev, '→', newValue);
+        return newValue;
+      });
+    }, 1000);
+
+    return () => {
+      console.log('🧹 [QRScanDisplay] Cleaning up timer');
+      window.clearTimeout(timer);
+    };
+  }, [sosCountdown, isTriggeringSos, sendSOSNotificationToContacts]);
 
   const dialHospitalAmbulanceNumber = (hospitalPhoneNumber: string) => {
     console.log('📞 Calling hospital:', hospitalPhoneNumber);
@@ -138,6 +221,12 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
       console.log('🧭 Opening Google Maps to hospital', hospitalName);
       window.location.href = `https://www.google.com/maps/dir/?api=1&destination=${hospitalLatitude},${hospitalLongitude}`;
     }
+  };
+
+  const copyDeviceIdToClipboard = () => {
+    navigator.clipboard.writeText(deviceId);
+    setDeviceIdCopied(true);
+    setTimeout(() => setDeviceIdCopied(false), 2000);
   };
 
   return (
@@ -158,17 +247,59 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
       {/* SOS Button - Large and Prominent */}
       <div className="sticky top-16 z-40 bg-white border-b-4 border-red-600 p-4 shadow-md">
         <div className="max-w-2xl mx-auto">
-          <button
-            onClick={initiateEmergencySOSAlert}
-            disabled={emergencyAlertActivated}
-            className={`w-full py-6 rounded-lg font-bold text-lg transition-all transform active:scale-95 ${
-              emergencyAlertActivated
-                ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
-                : 'bg-red-600 text-white hover:bg-red-700 shadow-lg hover:shadow-2xl'
-            }`}
-          >
-            {emergencyAlertActivated ? '✓ SOS Sent to Emergency Contacts' : '🚨 EMERGENCY SOS'}
-          </button>
+          {deviceId && (
+            <div className="mb-3 bg-blue-50 border border-blue-300 rounded-md p-2 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-blue-600 mb-1">📱 Your Device ID (Emergency Evidence)</p>
+                <p className="text-sm font-mono text-blue-900">{formatDeviceIdForDisplay(deviceId)}</p>
+                <p className="text-xs text-blue-600 mt-1">This uniquely identifies your device for police evidence</p>
+              </div>
+              <button
+                onClick={copyDeviceIdToClipboard}
+                className="ml-2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                title="Copy full device ID"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+              {deviceIdCopied && <span className="ml-2 text-xs text-green-600 font-semibold">✓ Copied!</span>}
+            </div>
+          )}
+          {sosCountdown === null ? (
+            <button
+              onClick={startSosCountdown}
+              disabled={isTriggeringSos}
+              className="w-full py-6 rounded-lg font-bold text-lg transition-all transform active:scale-95 bg-red-600 text-white hover:bg-red-700 shadow-lg hover:shadow-2xl disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isTriggeringSos ? '🚨 Sending SOS Alert...' : '🚨 EMERGENCY SOS'}
+            </button>
+          ) : (
+            <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-red-700">
+                Warning: Triggering false SOS is a criminal offence. Alert will be sent in {sosCountdown} seconds.
+              </p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-2xl font-extrabold text-red-700 tabular-nums">{sosCountdown}</p>
+                <button
+                  type="button"
+                  onClick={cancelSosCountdown}
+                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {sosSuccessMessage && (
+            <p className="mt-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
+              {sosSuccessMessage}
+            </p>
+          )}
+          {sosErrorMessage && (
+            <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {sosErrorMessage}
+            </p>
+          )}
+          {sosAlertId && <p className="mt-2 text-center text-xs font-medium text-gray-600">Alert ID: {sosAlertId}</p>}
           <p className="text-xs text-gray-600 text-center mt-2">Alerts family & emergency contacts with your location</p>
         </div>
       </div>
@@ -182,6 +313,7 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
             <div className="flex gap-4">
               <div className="flex-1">
                 <p className="text-xl font-bold text-gray-900">{emergencyData.fullName}</p>
+                {emergencyData.phoneNumber && <p className="text-sm text-gray-700 mt-1">Phone: {emergencyData.phoneNumber}</p>}
               </div>
               {emergencyData.photo && (
                 <img
@@ -197,9 +329,43 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
           </div>
         )}
 
+        {/* Emergency Contacts */}
+        {emergencyData?.emergencyContacts && emergencyData.emergencyContacts.length > 0 && (
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-green-600 p-4">
+            <p className="text-sm font-bold text-green-600 mb-3 flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Emergency Contacts
+            </p>
+            <div className="space-y-2">
+              {emergencyData.emergencyContacts.map((contact, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-green-50 p-3 rounded-lg">
+                  <div>
+                    <p className="font-semibold text-gray-900">{contact.name || 'Contact'}</p>
+                    <p className="text-xs text-gray-600">{contact.relationship}</p>
+                  </div>
+                  {contact.phone && (
+                    <button
+                      onClick={() => window.location.href = `tel:${contact.phone}`}
+                      className="bg-green-600 text-white px-3 py-2 rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center gap-1"
+                    >
+                      <Phone className="h-4 w-4" /> Call
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Medical Information Grid */}
         {emergencyData && (
           <div className="grid grid-cols-2 gap-3">
+            {emergencyData.email && (
+              <div className="bg-indigo-50 border-2 border-indigo-300 rounded-lg p-3">
+                <p className="text-xs font-bold text-indigo-600 mb-1">Email</p>
+                <p className="text-sm font-bold text-indigo-700 break-all">{emergencyData.email}</p>
+              </div>
+            )}
             {emergencyData.bloodType && (
               <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
                 <p className="text-xs font-bold text-red-600 mb-1">
@@ -255,34 +421,6 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
           </div>
         )}
 
-        {/* Emergency Contacts */}
-        {emergencyData?.emergencyContacts && emergencyData.emergencyContacts.length > 0 && (
-          <div className="bg-white rounded-xl shadow-md border-l-4 border-green-600 p-4">
-            <p className="text-sm font-bold text-green-600 mb-3 flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Emergency Contacts
-            </p>
-            <div className="space-y-2">
-              {emergencyData.emergencyContacts.map((contact, idx) => (
-                <div key={idx} className="flex items-center justify-between bg-green-50 p-3 rounded-lg">
-                  <div>
-                    <p className="font-semibold text-gray-900">{contact.name || 'Contact'}</p>
-                    <p className="text-xs text-gray-600">{contact.relationship}</p>
-                  </div>
-                  {contact.phone && (
-                    <button
-                      onClick={() => window.location.href = `tel:${contact.phone}`}
-                      className="bg-green-600 text-white px-3 py-2 rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center gap-1"
-                    >
-                      <Phone className="h-4 w-4" /> Call
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Emergency Call Button */}
         <button
           onClick={() => window.location.href = 'tel:108'}
@@ -299,22 +437,11 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
               🏥 Nearest Hospitals
             </h2>
 
-          {isFetchingHospitals && (
-            <div className="flex items-center justify-center py-8">
-              <Loader className="h-6 w-6 animate-spin text-orange-500 mr-2" />
-              <span className="text-gray-600">Finding hospitals...</span>
-            </div>
-          )}
-
           {hospitalFetchError && (
             <div className="bg-orange-50 border border-orange-200 rounded p-3 text-orange-700 text-sm">
               <p>⚠️ {hospitalFetchError}</p>
               <p className="text-xs mt-1">Using default hospital list...</p>
             </div>
-          )}
-
-          {!isFetchingHospitals && nearbyMedicalFacilities.length === 0 && !hospitalFetchError && (
-            <p className="text-gray-600 text-center py-4">Loading hospitals...</p>
           )}
 
             <div className="space-y-3">
@@ -345,13 +472,6 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {nearbyMedicalFacilities.length === 0 && !isFetchingHospitals && (
-          <div className="flex items-center justify-center py-8 bg-gray-50 rounded-lg">
-            <Loader className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-            <span className="text-gray-600 font-medium">Searching for nearby hospitals...</span>
           </div>
         )}
 
