@@ -16,6 +16,16 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function () {
+        if (typeof window === 'undefined') return;
+        var perf = window.performance || (window.performance = {});
+        if (typeof perf.clearMarks !== 'function') perf.clearMarks = function () {};
+        if (typeof perf.clearMeasures !== 'function') perf.clearMeasures = function () {};
+        if (typeof perf.mark !== 'function') perf.mark = function () {};
+        if (typeof perf.measure !== 'function') perf.measure = function () {};
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

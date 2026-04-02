@@ -1,0 +1,45 @@
+const CACHE_NAME = 'incase-emergency-v1';
+const EMERGENCY_PATH_PREFIX = '/emergencyinfo/';
+const API_PREFIX = '/api/v1/emergency/';
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+      await self.clients.claim();
+    })()
+  );
+});
+
+const shouldHandleRequest = (request) => {
+  if (request.method !== 'GET') return false;
+  const url = new URL(request.url);
+  return url.pathname.startsWith(EMERGENCY_PATH_PREFIX) || url.pathname.startsWith(API_PREFIX);
+};
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (!shouldHandleRequest(request)) return;
+
+  event.respondWith(
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      try {
+        const networkResponse = await fetch(request);
+        if (networkResponse && networkResponse.ok) {
+          await cache.put(request, networkResponse.clone());
+        }
+        return networkResponse;
+      } catch (err) {
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        throw err;
+      }
+    })()
+  );
+});
