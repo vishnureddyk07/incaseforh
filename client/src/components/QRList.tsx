@@ -447,6 +447,13 @@ export default function QRList() {
   );
   if (error) return <div className="max-w-2xl mx-auto p-6 text-red-600">{error}</div>;
 
+  if (error) return (
+    <div className="section">
+      <div className="container-sm">
+        <div className="alert-danger p-8 rounded-lg text-center">{error}</div>
+      </div>
+    </div>
+  );
   return (
     <div className="max-w-6xl mx-auto p-6">
       <div className="flex justify-between items-center mb-6">

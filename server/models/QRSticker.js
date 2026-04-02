@@ -41,5 +41,7 @@ qrStickerSchema.index({ serialNumber: 1 }, { unique: true });
 qrStickerSchema.index({ status: 1 });
 qrStickerSchema.index({ batchId: 1 });
 qrStickerSchema.index({ activatedAt: -1 });
+qrStickerSchema.index({ activatedBy: 1, activatedAt: -1 });
+qrStickerSchema.index({ createdAt: -1 });
 
 export default mongoose.model('QRSticker', qrStickerSchema);

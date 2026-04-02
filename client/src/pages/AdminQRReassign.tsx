@@ -19,6 +19,7 @@ type EmergencyInfo = {
   medicalConditions?: string;
   address?: string;
   emergencyContacts?: EmergencyContact[];
+  photo?: string;
 };
 
 type StickerPayload = {
@@ -52,6 +53,7 @@ export default function AdminQRReassign() {
   const [medicalConditions, setMedicalConditions] = useState('');
   const [address, setAddress] = useState('');
   const [contacts, setContacts] = useState<EmergencyContact[]>([{ name: '', phone: '' }]);
+  const [photoDataUrl, setPhotoDataUrl] = useState('');
 
   const authHeaders = useMemo(
     () => ({ Authorization: `Bearer ${token || ''}`, 'Content-Type': 'application/json' }),
@@ -116,6 +118,7 @@ export default function AdminQRReassign() {
         setMedications(info.medications || '');
         setMedicalConditions(info.medicalConditions || '');
         setAddress(info.address || '');
+        setPhotoDataUrl(info.photo || '');
 
         const existingContacts = Array.isArray(info.emergencyContacts)
           ? info.emergencyContacts.filter((c) => c && (c.name || c.phone)).map((c) => ({ name: c.name || '', phone: c.phone || '' }))
@@ -172,6 +175,7 @@ export default function AdminQRReassign() {
         medications,
         medicalConditions,
         address,
+        photo: photoDataUrl,
         emergencyContacts,
       };
 
@@ -196,23 +200,35 @@ export default function AdminQRReassign() {
   };
 
   if (loading) {
-    return <div className="min-h-screen grid place-items-center text-gray-600">Loading profile...</div>;
+    return <div className="min-h-screen grid place-items-center text-neutral-600">Loading profile...</div>;
   }
 
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      setPhotoDataUrl(result);
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-8">
-      <div className="mx-auto max-w-4xl rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div className="min-h-screen section bg-neutral-50">
+      <div className="container-lg card-elevated p-6">
         <div className="mb-6 flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Reassign Sticker Profile</h1>
-            <p className="text-sm text-gray-600">
+            <h1 className="text-3xl font-bold text-neutral-900">Reassign Sticker Profile</h1>
+            <p className="text-sm text-neutral-600 mt-1">
               Serial: <span className="font-semibold">{sticker?.serialNumber || '—'}</span>
               {' '}| Status: <span className="font-semibold uppercase">{sticker?.status || '—'}</span>
               {' '}| UUID: <span className="font-mono text-xs">{sticker?.uuid || uuid}</span>
             </p>
-            {profileId ? <p className="text-xs text-gray-500">Profile ID: {profileId}</p> : null}
+            {profileId ? <p className="text-xs text-neutral-500">Profile ID: {profileId}</p> : null}
           </div>
-          <Link to="/admin/dashboard" className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100">
+          <Link to="/admin/dashboard" className="btn-secondary-sm">
             Back to Dashboard
           </Link>
         </div>
@@ -222,53 +238,86 @@ export default function AdminQRReassign() {
 
         <form onSubmit={onSave} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name" className="rounded-lg border px-3 py-2" />
-            <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number" className="rounded-lg border px-3 py-2" />
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="rounded-lg border px-3 py-2" />
-            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="rounded-lg border px-3 py-2" />
-            <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="rounded-lg border px-3 py-2">
-              <option value="">Blood Type</option>
-              <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
-              <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
-            </select>
-            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" className="rounded-lg border px-3 py-2" />
+            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name" className="input" />
+            <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number" className="input" />
           </div>
 
-          <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies" className="w-full rounded-lg border px-3 py-2" rows={2} />
-          <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications" className="w-full rounded-lg border px-3 py-2" rows={2} />
-          <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions" className="w-full rounded-lg border px-3 py-2" rows={2} />
-
-          <div className="space-y-2 rounded-xl border border-gray-200 p-4">
-            <p className="font-semibold text-gray-700">Emergency Contacts</p>
+          <div className="space-y-2 rounded-xl border border-neutral-200 p-4">
+            <p className="font-semibold text-neutral-700">Emergency Contacts</p>
             {contacts.map((c, idx) => (
               <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-3">
                 <input
                   value={c.name}
                   onChange={(e) => updateContact(idx, 'name', e.target.value)}
                   placeholder="Name"
-                  className="rounded-lg border px-3 py-2"
+                  className="input"
                 />
                 <input
                   value={c.phone}
                   onChange={(e) => updateContact(idx, 'phone', e.target.value)}
                   placeholder="Phone"
-                  className="rounded-lg border px-3 py-2"
+                  className="input"
                 />
-                <button type="button" onClick={() => removeContact(idx)} className="rounded-lg border border-red-300 px-3 py-2 text-red-700 hover:bg-red-50">
+                <button type="button" onClick={() => removeContact(idx)} className="btn-danger-sm">
                   Remove
                 </button>
               </div>
             ))}
-            <button type="button" onClick={addContact} className="rounded-lg border border-amber-300 px-3 py-2 text-amber-700 hover:bg-amber-50">
+            <button type="button" onClick={addContact} className="btn-secondary-sm">
               + Add Contact
             </button>
           </div>
 
+          <div className="space-y-3 rounded-xl border border-neutral-200 p-4">
+            <p className="font-semibold text-neutral-700">Photo</p>
+            {photoDataUrl ? (
+              <img
+                src={photoDataUrl}
+                alt="Profile preview"
+                className="h-36 w-36 rounded-lg object-cover border border-neutral-200"
+              />
+            ) : (
+              <p className="text-sm text-neutral-500">No photo uploaded yet.</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoChange}
+                className="input max-w-sm"
+              />
+              {photoDataUrl && (
+                <button
+                  type="button"
+                  onClick={() => setPhotoDataUrl('')}
+                  className="btn-secondary-sm"
+                >
+                  Remove Photo
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input">
+              <option value="">Blood Type</option>
+              <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+              <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+            </select>
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="input" />
+            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" />
+            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" className="input" />
+          </div>
+
+          <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies" className="input" rows={2} />
+          <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications" className="input" rows={2} />
+          <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions" className="input" rows={2} />
+
           <div className="flex gap-3">
-            <button disabled={saving} type="submit" className="rounded-lg bg-orange-600 px-5 py-3 font-semibold text-white hover:bg-orange-700 disabled:opacity-60">
+            <button disabled={saving} type="submit" className="btn-primary-md disabled:opacity-60">
               {saving ? 'Saving...' : 'Save Profile'}
             </button>
-            <Link to="/admin/dashboard" className="rounded-lg border border-gray-300 px-5 py-3 font-semibold text-gray-700 hover:bg-gray-50">
+            <Link to="/admin/dashboard" className="btn-secondary-md">
               Cancel
             </Link>
           </div>

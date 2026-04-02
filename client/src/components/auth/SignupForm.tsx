@@ -56,61 +56,61 @@ export default function SignupForm({ onToggleForm }: SignupFormProps) {
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700">First Name</label>
+          <label className="label">First Name</label>
           <input
             type="text"
             name="firstName"
             value={formData.firstName}
             onChange={handleChange}
-            className="mt-1 block w-full px-4 py-2 border rounded-md"
+            className="input"
           />
           {errors.firstName && <p className="mt-1 text-sm text-red-600">{errors.firstName}</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700">Last Name</label>
+          <label className="label">Last Name</label>
           <input
             type="text"
             name="lastName"
             value={formData.lastName}
             onChange={handleChange}
-            className="mt-1 block w-full px-4 py-2 border rounded-md"
+            className="input"
           />
           {errors.lastName && <p className="mt-1 text-sm text-red-600">{errors.lastName}</p>}
         </div>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700">Email</label>
+        <label className="label">Email</label>
         <input
           type="email"
           name="email"
           value={formData.email}
           onChange={handleChange}
-          className="mt-1 block w-full px-4 py-2 border rounded-md"
+          className="input"
         />
         {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700">Password</label>
+        <label className="label">Password</label>
         <input
           type="password"
           name="password"
           value={formData.password}
           onChange={handleChange}
-          className="mt-1 block w-full px-4 py-2 border rounded-md"
+          className="input"
         />
         {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700">Confirm Password</label>
+        <label className="label">Confirm Password</label>
         <input
           type="password"
           name="confirmPassword"
           value={formData.confirmPassword}
           onChange={handleChange}
-          className="mt-1 block w-full px-4 py-2 border rounded-md"
+          className="input"
         />
         {errors.confirmPassword && (
           <p className="mt-1 text-sm text-red-600">{errors.confirmPassword}</p>
@@ -120,19 +120,19 @@ export default function SignupForm({ onToggleForm }: SignupFormProps) {
       <div>
         <button
           type="submit"
-          className="w-full bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600 transition-colors"
+          className="btn-primary-lg w-full"
         >
           Sign Up
         </button>
       </div>
 
       <div className="text-center">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-neutral-600">
           Already have an account?{' '}
           <button
             type="button"
             onClick={onToggleForm}
-            className="text-red-500 hover:text-red-600"
+            className="text-primary-600 hover:text-primary-700"
           >
             Sign in
           </button>

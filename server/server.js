@@ -5,6 +5,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import archiver from 'archiver';
 import QRCode from 'qrcode';
+import { createGzip, constants as zlibConstants } from 'node:zlib';
 import EmergencyInfo from './models/EmergencyInfo.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -158,6 +159,104 @@ const sosLimiter = rateLimit({
 });
 // ── End rate-limiting middleware ─────────────────────────────────────
 
+const setCacheHeaders = (res, { cacheControl, vary = '' } = {}) => {
+  if (cacheControl) {
+    res.setHeader('Cache-Control', cacheControl);
+  }
+  if (vary) {
+    res.setHeader('Vary', vary);
+  }
+};
+
+const parseListPagination = (req, { defaultLimit = null, maxLimit = 200 } = {}) => {
+  const toPositiveInt = (value, fallback) => {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+
+  const hasPage = req.query?.page !== undefined;
+  const hasLimit = req.query?.limit !== undefined;
+  if (!hasPage && !hasLimit && defaultLimit === null) {
+    return { page: 1, limit: null, skip: 0, paginated: false };
+  }
+
+  const page = Math.max(toPositiveInt(req.query?.page, 1), 1);
+  const requestedLimit = hasLimit ? toPositiveInt(req.query?.limit, defaultLimit || maxLimit) : defaultLimit;
+  if (!requestedLimit) {
+    return { page: 1, limit: null, skip: 0, paginated: false };
+  }
+
+  const limit = Math.min(requestedLimit, maxLimit);
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+    paginated: true,
+  };
+};
+
+const withPaginationMeta = (items, total, page, limit) => ({
+  items,
+  total,
+  page,
+  limit,
+  totalPages: Math.max(Math.ceil(total / limit), 1),
+});
+
+app.use((req, res, next) => {
+  const acceptEncoding = String(req.headers['accept-encoding'] || '').toLowerCase();
+  if (
+    req.method !== 'GET' ||
+    !acceptEncoding.includes('gzip') ||
+    req.path.includes('/stream/subscribe') ||
+    req.path.includes('/download-zip/') ||
+    req.path.includes('/download/')
+  ) {
+    return next();
+  }
+
+  const originalWrite = res.write.bind(res);
+  const originalEnd = res.end.bind(res);
+  let gzip;
+  let initialized = false;
+
+  const initCompression = () => {
+    if (initialized) return;
+    initialized = true;
+    setCacheHeaders(res, { vary: 'Accept-Encoding' });
+    res.setHeader('Content-Encoding', 'gzip');
+    res.removeHeader('Content-Length');
+    gzip = createGzip({ level: zlibConstants.Z_BEST_SPEED });
+    gzip.on('data', (chunk) => originalWrite(chunk));
+    gzip.on('end', () => originalEnd());
+    gzip.on('error', (error) => {
+      console.warn('Compression error:', error.message);
+      try {
+        originalEnd();
+      } catch (_err) {
+        // ignore secondary write errors
+      }
+    });
+  };
+
+  res.write = (chunk, encoding, callback) => {
+    initCompression();
+    return gzip.write(chunk, encoding, callback);
+  };
+
+  res.end = (chunk, encoding, callback) => {
+    initCompression();
+    if (chunk) {
+      gzip.end(chunk, encoding, callback);
+    } else {
+      gzip.end();
+    }
+    return res;
+  };
+
+  return next();
+});
+
 // In-memory uploads (avoid ephemeral filesystem on Render)
 const ALLOWED_MIME_TYPES = [
   'image/jpeg',
@@ -275,6 +374,8 @@ const normalizeOptionalString = (val, maxLen = 500) => {
   if (safe === null) return '';
   return stripHtml(safe).slice(0, maxLen);
 };
+
+const normalizePhoneForComparison = (value) => String(value || '').replace(/\D/g, '');
 
 const parsePositiveInt = (value, fallback = 0) => {
   const n = Number.parseInt(String(value), 10);
@@ -574,7 +675,7 @@ router.post('/auth/register-admin', authLimiter, async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    const existingUser = await User.findOne({ email: normalizedEmail }).select('_id').lean();
     if (existingUser) {
       return res.status(409).json({ error: 'User already exists' });
     }
@@ -609,7 +710,7 @@ router.post('/auth/login', authLimiter, async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: normalizedEmail });
+    const user = await User.findOne({ email: normalizedEmail }).select('_id email passwordHash role').lean();
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -709,7 +810,7 @@ router.post('/admin/users/manager', requireAuth, requireAdmin, async (req, res) 
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    const existingUser = await User.findOne({ email: normalizedEmail }).select('_id').lean();
     if (existingUser) {
       return res.status(409).json({ error: 'User already exists' });
     }
@@ -738,7 +839,7 @@ router.post('/manager/users', requireAuth, requireManagerOrAdmin, async (req, re
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    const existingUser = await User.findOne({ email: normalizedEmail }).select('_id').lean();
     if (existingUser) {
       return res.status(409).json({ error: 'User already exists' });
     }
@@ -767,7 +868,7 @@ router.post('/admin/users/police', requireAuth, requireAdmin, async (req, res) =
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    const existingUser = await User.findOne({ email: normalizedEmail }).select('_id').lean();
     if (existingUser) {
       return res.status(409).json({ error: 'User already exists' });
     }
@@ -796,7 +897,7 @@ router.post('/admin/users/ambulance', requireAuth, requireAdmin, async (req, res
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    const existingUser = await User.findOne({ email: normalizedEmail }).select('_id').lean();
     if (existingUser) {
       return res.status(409).json({ error: 'User already exists' });
     }
@@ -929,7 +1030,7 @@ router.post('/emergency', createLimiter, upload.single('photo'), async (req, res
 
     // If phone already exists, update that card instead of failing with duplicate error.
     const normalizedPhoneNumber = safeString(phoneNumber);
-    const existingByPhone = await EmergencyInfo.findOne({ phoneNumber: normalizedPhoneNumber });
+    const existingByPhone = await EmergencyInfo.findOne({ phoneNumber: normalizedPhoneNumber }).select('_id photo').lean();
 
     const emergencyData = {
       fullName: safeString(fullName),
@@ -1011,6 +1112,7 @@ router.post('/emergency', createLimiter, upload.single('photo'), async (req, res
 
 router.get('/emergency/:email', readLimiter, async (req, res) => {
   try {
+    setCacheHeaders(res, { cacheControl: 'no-store, max-age=0', vary: 'Accept, Accept-Encoding' });
     const raw = req.params.email || '';
     const decoded = (() => { try { return decodeURIComponent(raw); } catch { return raw; } })();
     const needle = sanitizeStringParam(decoded).toLowerCase();
@@ -1021,11 +1123,16 @@ router.get('/emergency/:email', readLimiter, async (req, res) => {
     const scannerIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
     console.log('📍 QR Scanned from IP:', scannerIP);
     
-    let emergency = await EmergencyInfo.findOne({ email: { $eq: needle } }).collation({ locale: 'en', strength: 2 });
+    let emergency = await EmergencyInfo.findOne({ email: { $eq: needle } })
+      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode createdAt')
+      .collation({ locale: 'en', strength: 2 })
+      .lean();
     
     // Fallback: try lookup by ObjectId if needle looks like a MongoDB ObjectId
     if (!emergency && needle.match(/^[0-9a-f]{24}$/i)) {
-      emergency = await EmergencyInfo.findById(needle);
+      emergency = await EmergencyInfo.findById(needle)
+        .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode createdAt')
+        .lean();
     }
     
     if (!emergency) {
@@ -1064,6 +1171,7 @@ router.get('/emergency/:email', readLimiter, async (req, res) => {
 // Fetch emergency info by phone number (case-insensitive exact match)
 router.get('/emergency/phone/:phoneNumber', readLimiter, async (req, res) => {
   try {
+    setCacheHeaders(res, { cacheControl: 'no-store, max-age=0', vary: 'Accept, Accept-Encoding' });
     const raw = req.params.phoneNumber || '';
     const decoded = (() => { try { return decodeURIComponent(raw); } catch { return raw; } })();
     const needle = sanitizeStringParam(decoded);
@@ -1074,11 +1182,15 @@ router.get('/emergency/phone/:phoneNumber', readLimiter, async (req, res) => {
     const scannerIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip;
     console.log('📍 QR Scanned from IP:', scannerIP);
     
-    let emergency = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } });
+    let emergency = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } })
+      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode createdAt')
+      .lean();
     
     // Fallback: try lookup by ObjectId if needle looks like a MongoDB ObjectId
     if (!emergency && needle.match(/^[0-9a-f]{24}$/i)) {
-      emergency = await EmergencyInfo.findById(needle);
+      emergency = await EmergencyInfo.findById(needle)
+        .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode createdAt')
+        .lean();
     }
     
     if (!emergency) {
@@ -1122,7 +1234,10 @@ router.put('/emergency/:email', requireAuth, requireAdmin, async (req, res) => {
     const needle = sanitizeStringParam(decoded).toLowerCase();
     if (!needle) return res.status(400).json({ error: 'Email parameter is required' });
     
-    const existing = await EmergencyInfo.findOne({ email: { $eq: needle } }).collation({ locale: 'en', strength: 2 });
+    const existing = await EmergencyInfo.findOne({ email: { $eq: needle } })
+      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode')
+      .collation({ locale: 'en', strength: 2 })
+      .lean();
     if (!existing) {
       return res.status(404).json({ error: 'Record not found' });
     }
@@ -1155,7 +1270,9 @@ router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (re
     const needle = sanitizeStringParam(decoded);
     if (!needle) return res.status(400).json({ error: 'Phone number parameter is required' });
 
-    const existing = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } });
+    const existing = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } })
+      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode')
+      .lean();
     if (!existing) {
       return res.status(404).json({ error: 'Record not found' });
     }
@@ -1306,6 +1423,7 @@ router.get('/hospitals/nearby', externalApiLimiter, async (req, res) => {
     const safeMaxDistance = Math.min(Math.abs(parseInt(maxDistance, 10) || 5000), 50000);
 
     // Geospatial query to find nearby hospitals
+    setCacheHeaders(res, { cacheControl: 'public, max-age=120, stale-while-revalidate=300', vary: 'Accept-Encoding' });
     const hospitals = await Hospital.find({
       location: {
         $near: {
@@ -1318,8 +1436,10 @@ router.get('/hospitals/nearby', externalApiLimiter, async (req, res) => {
       },
       acceptsEmergency: true,
     })
+      .select('_id name address city phone ambulancePhone type rating hasAmbulance hasICU hasOperatingTheatre website operatingHours location')
       .sort({ type: 1 }) // Prioritize trauma centers first
-      .limit(10);
+      .limit(10)
+      .lean();
 
     // Add distance calculation for each hospital
     const hospitalsWithDistance = hospitals.map((hospital) => {
@@ -1882,6 +2002,23 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
       return res.status(400).json({ error: 'At least one emergency contact (name + phone) is required' });
     }
 
+    const normalizedContactPhones = validContacts
+      .map((contact) => normalizePhoneForComparison(contact.phone))
+      .filter(Boolean);
+    if (new Set(normalizedContactPhones).size !== normalizedContactPhones.length) {
+      return res.status(400).json({ error: 'Emergency contact phone numbers must be unique' });
+    }
+
+    const normalizedPrimaryPhone = normalizePhoneForComparison(phoneNumber);
+    if (normalizedPrimaryPhone) {
+      const hasMatchingEmergencyContact = validContacts.some(
+        (contact) => normalizePhoneForComparison(contact.phone) === normalizedPrimaryPhone
+      );
+      if (hasMatchingEmergencyContact) {
+        return res.status(400).json({ error: 'Primary phone number must be different from emergency contact numbers' });
+      }
+    }
+
     const payload = {
       fullName: fullName || 'INcase User',
       phoneNumber: phoneNumber || null,
@@ -2166,7 +2303,9 @@ router.get('/admin/qr/stats', requireAuth, requireAdmin, async (_req, res) => {
 // Police/Ambulance: Get all active SOS alerts
 router.get('/sos', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
   try {
+    setCacheHeaders(res, { cacheControl: 'private, max-age=10, stale-while-revalidate=20', vary: 'Authorization, Accept-Encoding' });
     const alerts = await SosAlert.find({})
+      .select('_id victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail')
       .sort({ triggeredAt: -1 })
       .lean();
     return res.json(alerts);
@@ -2336,11 +2475,14 @@ router.patch('/sos/:id/close', requireAuth, requirePoliceOrAmbulance, async (req
 // Public: get SOS alert by id for police and ambulance pages
 router.get('/sos/:id', readLimiter, async (req, res) => {
   try {
+    setCacheHeaders(res, { cacheControl: 'private, max-age=10, stale-while-revalidate=20', vary: 'Accept, Accept-Encoding' });
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ error: 'Invalid alert ID' });
     }
-    const alert = await SosAlert.findById(id).lean();
+    const alert = await SosAlert.findById(id)
+      .select('_id victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail')
+      .lean();
     if (!alert) {
       return res.status(404).json({ error: 'SOS alert not found' });
     }
@@ -2396,7 +2538,11 @@ router.get('/sos/stream/subscribe', requireAuth, requirePoliceOrAmbulance, (req,
 // Admin: Get all hospitals (for management)
 router.get('/admin/hospitals', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const hospitals = await Hospital.find({}).sort({ type: 1, name: 1 });
+    setCacheHeaders(res, { cacheControl: 'private, max-age=120, stale-while-revalidate=300', vary: 'Authorization, Accept-Encoding' });
+    const hospitals = await Hospital.find({})
+      .select('_id name address city phone ambulancePhone type rating hasAmbulance location')
+      .sort({ type: 1, name: 1 })
+      .lean();
     res.json(
       hospitals.map((h) => ({
         id: h._id.toString(),
@@ -2432,8 +2578,25 @@ router.get('/admin/users', requireAuth, requireAdmin, async (req, res) => {
         return res.status(400).json({ error: 'Invalid role filter' });
       }
     }
-    const users = await User.find(query).select('_id email role createdAt');
-    res.json(users.map(u => ({ id: u._id.toString(), email: u.email, role: u.role, createdAt: u.createdAt })));
+    const pageRequested = req.query.page !== undefined;
+    const page = Math.max(parsePositiveInt(req.query.page, 1), 1);
+    const limit = Math.min(Math.max(parsePositiveInt(req.query.limit, 100), 1), 200);
+    const skip = (page - 1) * limit;
+    setCacheHeaders(res, { cacheControl: 'private, max-age=60, stale-while-revalidate=120', vary: 'Authorization, Accept-Encoding' });
+    if (pageRequested) {
+      const [users, total] = await Promise.all([
+        User.find(query).select('_id email role createdAt').sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+        User.countDocuments(query),
+      ]);
+      return res.json(withPaginationMeta(users.map(u => ({ id: u._id.toString(), email: u.email, role: u.role, createdAt: u.createdAt })), total, page, limit));
+    }
+
+    const queryBuilder = User.find(query).select('_id email role createdAt').sort({ createdAt: -1 });
+    if (req.query.limit !== undefined) {
+      queryBuilder.limit(limit);
+    }
+    const users = await queryBuilder.lean();
+    return res.json(users.map(u => ({ id: u._id.toString(), email: u.email, role: u.role, createdAt: u.createdAt })));
   } catch (error) {
     console.error('Error listing users:', error);
     res.status(500).json({ error: 'Failed to list users' });
@@ -2447,7 +2610,7 @@ router.delete('/admin/users/:id', requireAuth, requireAdmin, async (req, res) =>
     if (req.user.sub === id) {
       return res.status(400).json({ error: 'Cannot delete own account' });
     }
-    const user = await User.findById(id);
+    const user = await User.findById(id).select('_id email role').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.role === 'admin') {
       return res.status(403).json({ error: 'Cannot delete admin accounts' });
@@ -2464,9 +2627,42 @@ router.delete('/admin/users/:id', requireAuth, requireAdmin, async (req, res) =>
 // Admin: view recent manager/admin action logs
 router.get('/admin/logs', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 200);
-    const logs = await ActionLog.find({}).sort({ createdAt: -1 }).limit(limit);
-    res.json(
+    const pageRequested = req.query.page !== undefined;
+    const page = Math.max(parsePositiveInt(req.query.page, 1), 1);
+    const limit = Math.min(Math.max(parsePositiveInt(req.query.limit, 100), 1), 200);
+    const skip = (page - 1) * limit;
+    setCacheHeaders(res, { cacheControl: 'private, max-age=30, stale-while-revalidate=60', vary: 'Authorization, Accept-Encoding' });
+    if (pageRequested) {
+      const [logs, total] = await Promise.all([
+        ActionLog.find({})
+          .select('_id actorEmail actorRole action details createdAt')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        ActionLog.countDocuments({}),
+      ]);
+      return res.json(withPaginationMeta(
+        logs.map((log) => ({
+          id: log._id.toString(),
+          actorEmail: log.actorEmail,
+          actorRole: log.actorRole,
+          action: log.action,
+          details: log.details,
+          createdAt: log.createdAt,
+        })),
+        total,
+        page,
+        limit
+      ));
+    }
+
+    const logs = await ActionLog.find({})
+      .select('_id actorEmail actorRole action details createdAt')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+    return res.json(
       logs.map((log) => ({
         id: log._id.toString(),
         actorEmail: log.actorEmail,

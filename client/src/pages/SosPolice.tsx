@@ -13,7 +13,7 @@ interface SosAlert {
 
 const getStatusBadgeClass = (status: SosAlert['status']) => {
   if (status === 'resolved') return 'bg-green-100 text-green-700 border-green-200';
-  if (status === 'cancelled') return 'bg-gray-100 text-gray-700 border-gray-200';
+  if (status === 'cancelled') return 'bg-neutral-100 text-neutral-700 border-neutral-200';
   return 'bg-red-100 text-red-700 border-red-200';
 };
 
@@ -64,19 +64,19 @@ export default function SosPolice() {
   }, [alertId, apiBase]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-red-950 px-4 py-8">
-      <div className="mx-auto max-w-4xl rounded-2xl border border-blue-200/20 bg-white/95 p-6 shadow-2xl md:p-8">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+    <div className="min-h-screen gradient-primary px-4 py-8">
+      <div className="mx-auto max-w-4xl card-elevated p-6 md:p-8">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 pb-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Law Enforcement Portal</p>
-            <h1 className="mt-1 text-2xl font-bold text-slate-900 md:text-3xl">SOS Incident Alert</h1>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary-700">Law Enforcement Portal</p>
+            <h1 className="mt-1 text-2xl font-bold text-neutral-900 md:text-3xl">SOS Incident Alert</h1>
           </div>
-          <Link to="/" className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+          <Link to="/" className="btn-secondary-sm">
             Back to Home
           </Link>
         </div>
 
-        {loading && <p className="rounded-lg bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">Loading SOS alert...</p>}
+        {loading && <p className="rounded-lg bg-primary-50 px-4 py-3 text-sm font-medium text-primary-700">Loading SOS alert...</p>}
 
         {error && !loading && (
           <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
@@ -85,13 +85,13 @@ export default function SosPolice() {
         {alert && !loading && !error && (
           <div className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Alert ID</p>
-                <p className="mt-1 break-all font-mono text-sm text-slate-900">{alert._id}</p>
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Alert ID</p>
+                <p className="mt-1 break-all font-mono text-sm text-neutral-900">{alert._id}</p>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Triggered Time</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Triggered Time</p>
+                <p className="mt-1 text-sm font-semibold text-neutral-900">
                   {alert.triggeredAt ? new Date(alert.triggeredAt).toLocaleString() : 'Not available'}
                 </p>
               </div>
@@ -125,13 +125,13 @@ export default function SosPolice() {
               )}
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <h2 className="text-lg font-bold text-slate-900">Responder Device</h2>
-              <p className="mt-2 break-words text-sm text-slate-700">{alert.responderUserAgent || 'Not available'}</p>
+            <div className="rounded-xl border border-neutral-200 bg-white p-5">
+              <h2 className="text-lg font-bold text-neutral-900">Responder Device</h2>
+              <p className="mt-2 break-words text-sm text-neutral-700">{alert.responderUserAgent || 'Not available'}</p>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <h2 className="text-lg font-bold text-slate-900">Status</h2>
+            <div className="rounded-xl border border-neutral-200 bg-white p-5">
+              <h2 className="text-lg font-bold text-neutral-900">Status</h2>
               <span className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase ${getStatusBadgeClass(alert.status)}`}>
                 {alert.status || 'active'}
               </span>

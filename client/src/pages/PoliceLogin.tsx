@@ -44,13 +44,13 @@ export default function PoliceLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
+    <div className="min-h-screen gradient-primary flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="text-5xl mb-4">👮</div>
-          <h1 className="text-4xl font-bold text-white mb-2">Police Control</h1>
-          <p className="text-slate-400">Emergency Response Portal</p>
+          <h1 className="text-4xl font-bold text-neutral-900 mb-2">Police Control</h1>
+          <p className="text-neutral-600">Emergency Response Portal</p>
         </div>
 
         {/* Error Banner */}
@@ -61,10 +61,10 @@ export default function PoliceLogin() {
         )}
 
         {/* Login Form */}
-        <form onSubmit={handleSubmit} className="bg-slate-800 rounded-lg shadow-xl p-8 space-y-6">
+        <form onSubmit={handleSubmit} className="card-elevated p-8 space-y-6 border border-primary-200">
           {/* Email Field */}
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-2">
+            <label htmlFor="email" className="label mb-2">
               Police Email
             </label>
             <input
@@ -74,13 +74,13 @@ export default function PoliceLogin() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="officer@police.gov"
               required
-              className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+              className="input"
             />
           </div>
 
           {/* Password Field */}
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-2">
+            <label htmlFor="password" className="label mb-2">
               Password
             </label>
             <input
@@ -91,7 +91,7 @@ export default function PoliceLogin() {
               placeholder="••••••••"
               required
               minLength={6}
-              className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+              className="input"
             />
           </div>
 
@@ -99,37 +99,37 @@ export default function PoliceLogin() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-lg transition-colors duration-200"
+            className="btn-primary-lg w-full disabled:opacity-50"
           >
             {isLoading ? 'Logging in...' : 'Login to Police Portal'}
           </button>
         </form>
 
         {/* Info Box */}
-        <div className="mt-8 p-6 bg-slate-800/50 rounded-lg border border-slate-700">
-          <h3 className="text-slate-300 font-semibold mb-3">About This Portal</h3>
-          <ul className="space-y-2 text-slate-400 text-sm">
+        <div className="mt-8 p-6 card-elevated border border-primary-200">
+          <h3 className="text-neutral-900 font-semibold mb-3">About This Portal</h3>
+          <ul className="space-y-2 text-neutral-600 text-sm">
             <li className="flex items-start gap-2">
-              <span className="text-blue-400">•</span>
+              <span className="text-primary-600">•</span>
               <span>Real-time SOS alert monitoring</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-blue-400">•</span>
+              <span className="text-primary-600">•</span>
               <span>GPS location tracking</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-blue-400">•</span>
+              <span className="text-primary-600">•</span>
               <span>Incident response coordination</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-blue-400">•</span>
+              <span className="text-primary-600">•</span>
               <span>Alert history and reporting</span>
             </li>
           </ul>
         </div>
 
         {/* Footer */}
-        <p className="text-center text-slate-500 text-xs mt-8">
+        <p className="text-center text-neutral-500 text-xs mt-8">
           For authorized law enforcement personnel only
         </p>
       </div>

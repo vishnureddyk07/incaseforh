@@ -36,6 +36,8 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>('');
   const [deviceIdCopied, setDeviceIdCopied] = useState(false);
+  const fallbackPhotoDataUrl =
+    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
 
   // Get user location on component mount
   useEffect(() => {
@@ -306,37 +308,82 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
 
       {/* Main Content */}
       <div className="max-w-2xl mx-auto p-4 space-y-4">
-        {/* Patient Info with Photo */}
+        {/* Photo (provided or dummy fallback) */}
+        {emergencyData && (
+          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4">
+            <p className="text-sm font-bold text-neutral-700 mb-3">Photo</p>
+            <img
+              src={emergencyData.photo || fallbackPhotoDataUrl}
+              alt={emergencyData.fullName || 'Emergency profile photo'}
+              className="w-40 h-40 rounded-lg object-cover shadow-lg border-2 border-blue-200"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = fallbackPhotoDataUrl;
+              }}
+            />
+          </div>
+        )}
+
+        {/* Name */}
         {emergencyData && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
-            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2">Patient Information</p>
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <p className="text-xl font-bold text-gray-900">{emergencyData.fullName}</p>
-              </div>
-              {emergencyData.photo && (
-                <img
-                  src={emergencyData.photo}
-                  alt={emergencyData.fullName}
-                  className="w-32 h-32 rounded-lg object-cover shadow-lg border-2 border-blue-200"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              )}
+            <p className="text-sm font-bold text-blue-700">Name</p>
+            <p className="text-xl font-semibold text-gray-900 mt-1">{emergencyData.fullName || 'INcase User'}</p>
+          </div>
+        )}
+
+        {/* Phone Number */}
+        {emergencyData?.phoneNumber && (
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
+            <p className="text-sm font-bold text-blue-700">Phone Number</p>
+            <p className="text-lg font-semibold text-gray-900 mt-1">{emergencyData.phoneNumber}</p>
+          </div>
+        )}
+
+        {/* Emergency Contacts */}
+        {emergencyData?.emergencyContacts && emergencyData.emergencyContacts.length > 0 && (
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-green-600 p-4">
+            <p className="text-sm font-bold text-green-600 mb-3 flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Emergency Contacts
+            </p>
+            <div className="space-y-2">
+              {emergencyData.emergencyContacts.map((contact, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-green-50 p-3 rounded-lg">
+                  <div>
+                    <p className="font-semibold text-gray-900">{contact.name || 'Contact'}</p>
+                    <p className="text-xs text-gray-600">{contact.relationship}</p>
+                  </div>
+                  {contact.phone && (
+                    <button
+                      onClick={() => window.location.href = `tel:${contact.phone}`}
+                      className="bg-green-600 text-white px-3 py-2 rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center gap-1"
+                    >
+                      <Phone className="h-4 w-4" /> Call
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {/* Medical Information Grid */}
+        {/* Blood Group */}
+        {emergencyData?.bloodType && (
+          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
+            <p className="text-xs font-bold text-red-600 mb-1">
+              <Droplet className="inline h-3 w-3" /> Blood Group
+            </p>
+            <p className="text-lg font-bold text-red-700">{emergencyData.bloodType}</p>
+          </div>
+        )}
+
+        {/* Other Details */}
         {emergencyData && (
           <div className="grid grid-cols-2 gap-3">
-            {emergencyData.bloodType && (
-              <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-red-600 mb-1">
-                  <Droplet className="inline h-3 w-3" /> Blood Type
-                </p>
-                <p className="text-lg font-bold text-red-700">{emergencyData.bloodType}</p>
+            {emergencyData.email && (
+              <div className="bg-indigo-50 border-2 border-indigo-300 rounded-lg p-3">
+                <p className="text-xs font-bold text-indigo-600 mb-1">Email</p>
+                <p className="text-sm font-bold text-indigo-700 break-all">{emergencyData.email}</p>
               </div>
             )}
             {emergencyData.dateOfBirth && (
@@ -386,34 +433,6 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
           </div>
         )}
 
-        {/* Emergency Contacts */}
-        {emergencyData?.emergencyContacts && emergencyData.emergencyContacts.length > 0 && (
-          <div className="bg-white rounded-xl shadow-md border-l-4 border-green-600 p-4">
-            <p className="text-sm font-bold text-green-600 mb-3 flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Emergency Contacts
-            </p>
-            <div className="space-y-2">
-              {emergencyData.emergencyContacts.map((contact, idx) => (
-                <div key={idx} className="flex items-center justify-between bg-green-50 p-3 rounded-lg">
-                  <div>
-                    <p className="font-semibold text-gray-900">{contact.name || 'Contact'}</p>
-                    <p className="text-xs text-gray-600">{contact.relationship}</p>
-                  </div>
-                  {contact.phone && (
-                    <button
-                      onClick={() => window.location.href = `tel:${contact.phone}`}
-                      className="bg-green-600 text-white px-3 py-2 rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center gap-1"
-                    >
-                      <Phone className="h-4 w-4" /> Call
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Emergency Call Button */}
         <button
           onClick={() => window.location.href = 'tel:108'}
@@ -430,22 +449,11 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
               🏥 Nearest Hospitals
             </h2>
 
-          {isFetchingHospitals && (
-            <div className="flex items-center justify-center py-8">
-              <Loader className="h-6 w-6 animate-spin text-orange-500 mr-2" />
-              <span className="text-gray-600">Finding hospitals...</span>
-            </div>
-          )}
-
           {hospitalFetchError && (
             <div className="bg-orange-50 border border-orange-200 rounded p-3 text-orange-700 text-sm">
               <p>⚠️ {hospitalFetchError}</p>
               <p className="text-xs mt-1">Using default hospital list...</p>
             </div>
-          )}
-
-          {!isFetchingHospitals && nearbyMedicalFacilities.length === 0 && !hospitalFetchError && (
-            <p className="text-gray-600 text-center py-4">Loading hospitals...</p>
           )}
 
             <div className="space-y-3">
@@ -476,13 +484,6 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {nearbyMedicalFacilities.length === 0 && !isFetchingHospitals && (
-          <div className="flex items-center justify-center py-8 bg-gray-50 rounded-lg">
-            <Loader className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-            <span className="text-gray-600 font-medium">Searching for nearby hospitals...</span>
           </div>
         )}
 

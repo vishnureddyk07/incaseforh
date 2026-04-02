@@ -15,6 +15,8 @@ type ActivationCheckResponse = {
   };
 };
 
+const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, '');
+
 export default function ActivateQR() {
   const { uuid = '' } = useParams();
   const navigate = useNavigate();
@@ -76,7 +78,10 @@ export default function ActivateQR() {
   };
 
   const removeContact = (idx: number) => {
-    setContacts((prev) => prev.filter((_, i) => i !== idx));
+    setContacts((prev) => {
+      if (prev.length <= 1) return prev;
+      return prev.filter((_, i) => i !== idx);
+    });
   };
 
   const submitActivation = async (e: React.FormEvent) => {
@@ -88,6 +93,24 @@ export default function ActivateQR() {
       const validContacts = contacts.filter((c) => c.name.trim() && c.phone.trim());
       if (validContacts.length === 0) {
         throw new Error('Please add at least one emergency contact with name and phone number.');
+      }
+
+      const normalizedContactPhones = validContacts
+        .map((contact) => normalizePhoneForComparison(contact.phone))
+        .filter(Boolean);
+      const hasDuplicateEmergencyContactNumber = new Set(normalizedContactPhones).size !== normalizedContactPhones.length;
+      if (hasDuplicateEmergencyContactNumber) {
+        throw new Error('Emergency contact numbers must be unique.');
+      }
+
+      const normalizedPrimaryPhone = normalizePhoneForComparison(phoneNumber);
+      if (normalizedPrimaryPhone) {
+        const hasSameAsPrimaryPhone = validContacts.some(
+          (contact) => normalizePhoneForComparison(contact.phone) === normalizedPrimaryPhone
+        );
+        if (hasSameAsPrimaryPhone) {
+          throw new Error('Your phone number and emergency contact number cannot be the same.');
+        }
       }
 
       const formData = new FormData();
@@ -129,7 +152,7 @@ export default function ActivateQR() {
   };
 
   if (loading) {
-    return <div className="min-h-screen grid place-items-center text-gray-600">Loading sticker...</div>;
+    return <div className="min-h-screen grid place-items-center text-neutral-600">Loading sticker...</div>;
   }
 
   if (error) {
@@ -154,78 +177,94 @@ export default function ActivateQR() {
 
   if (check.status === 'active') {
     return (
-      <div className="min-h-screen bg-white px-4 py-10">
-        <div className="mx-auto max-w-xl rounded-2xl border border-orange-200 bg-orange-50 p-8 text-center">
-          <h1 className="text-2xl font-bold text-orange-700">This QR is already registered</h1>
-          <p className="mt-3 text-orange-700">Serial: {check.sticker?.serialNumber}</p>
-          {check.redirectTo ? <p className="mt-4 text-sm text-orange-800">Opening emergency profile...</p> : null}
+      <div className="min-h-screen section bg-neutral-50">
+        <div className="container-sm">
+          <div className="card-elevated text-center p-8 border border-primary-200">
+            <h1 className="text-2xl font-bold text-primary-700">This QR is already registered</h1>
+            <p className="mt-3 text-primary-700">Serial: {check.sticker?.serialNumber}</p>
+            {check.redirectTo ? <p className="mt-4 text-sm text-primary-800">Opening emergency profile...</p> : null}
           {check.redirectTo ? (
-            <a href={check.redirectTo} className="mt-4 inline-block text-sm font-semibold text-orange-700 underline hover:text-orange-800">
+            <a href={check.redirectTo} className="mt-4 inline-block text-sm font-semibold text-primary-700 underline hover:text-primary-800">
               Open manually if redirect does not happen
             </a>
           ) : null}
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 p-4">
-          <p className="text-sm font-semibold text-orange-700">Activating Sticker</p>
-          <p className="text-xl font-bold text-orange-900">{check.sticker?.serialNumber}</p>
-          <p className="text-xs text-orange-700">Fill your emergency details to protect yourself.</p>
+    <div className="min-h-screen bg-neutral-50 section">
+      <div className="container-md">
+        <div className="mb-6 rounded-xl border border-primary-200 bg-primary-50 p-4">
+          <p className="text-sm font-semibold text-primary-700">Activating Sticker</p>
+          <p className="text-xl font-bold text-primary-900">{check.sticker?.serialNumber}</p>
+          <p className="text-xs text-primary-700">Fill your emergency details to protect yourself.</p>
         </div>
 
-        <form onSubmit={submitActivation} className="space-y-4 rounded-2xl border border-gray-200 p-6 shadow-sm">
-          <h1 className="text-2xl font-bold text-gray-900">Activate Your INcase Sticker</h1>
+        <form onSubmit={submitActivation} className="space-y-4 card-elevated p-6">
+          <h1 className="text-2xl font-bold text-neutral-900">Activate Your INcase Sticker</h1>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name (optional)" className="rounded-lg border px-3 py-2" />
-            <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number (optional)" className="rounded-lg border px-3 py-2" />
-            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="rounded-lg border px-3 py-2" />
-            <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="rounded-lg border px-3 py-2">
+            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name (optional)" className="input" />
+            <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number (optional)" className="input" />
+          </div>
+
+          <div className="space-y-2">
+            <p className="font-semibold text-neutral-700">Emergency Contacts (at least 1 required)</p>
+            {contacts.map((c, idx) => (
+              <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                <input value={c.name} onChange={(e) => updateContact(idx, 'name', e.target.value)} placeholder="Name" className="input" />
+                <input value={c.phone} onChange={(e) => updateContact(idx, 'phone', e.target.value)} placeholder="Phone" className="input" />
+                <button
+                  type="button"
+                  onClick={() => removeContact(idx)}
+                  disabled={contacts.length <= 1}
+                  className="btn-danger-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={contacts.length <= 1 ? 'At least one contact is required' : 'Remove contact'}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button type="button" onClick={addContact} className="btn-secondary-sm">+ Add Contact</button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input">
               <option value="">Blood Type (optional)</option>
               <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
               <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
             </select>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" className="rounded-lg border px-3 py-2" />
-            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (optional)" className="rounded-lg border px-3 py-2" />
           </div>
 
-          <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies (optional)" className="w-full rounded-lg border px-3 py-2" />
-          <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications (optional)" className="w-full rounded-lg border px-3 py-2" />
-          <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions (optional)" className="w-full rounded-lg border px-3 py-2" />
-
-          <div className="space-y-2">
-            <p className="font-semibold text-gray-700">Emergency Contacts (at least 1 required)</p>
-            {contacts.map((c, idx) => (
-              <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                <input value={c.name} onChange={(e) => updateContact(idx, 'name', e.target.value)} placeholder="Name" className="rounded-lg border px-3 py-2" />
-                <input value={c.phone} onChange={(e) => updateContact(idx, 'phone', e.target.value)} placeholder="Phone" className="rounded-lg border px-3 py-2" />
-                <button type="button" onClick={() => removeContact(idx)} className="rounded-lg border border-red-200 bg-red-50 text-red-600">Remove</button>
-              </div>
-            ))}
-            <button type="button" onClick={addContact} className="rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-orange-700">+ Add Contact</button>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" className="input" />
+            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (optional)" className="input" />
           </div>
+
+          <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies (optional)" className="input" />
+          <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications (optional)" className="input" />
+          <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions (optional)" className="input" />
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Photo Upload (optional)</label>
-            <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="w-full rounded-lg border px-3 py-2" />
+            <label className="mb-1 block text-sm font-medium text-neutral-700">Photo Upload (optional)</label>
+            <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="input" />
           </div>
 
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-          <button disabled={submitting} type="submit" className="w-full rounded-lg bg-orange-600 px-4 py-3 font-semibold text-white hover:bg-orange-700 disabled:opacity-60">
+          <button disabled={submitting} type="submit" className="btn-primary-lg w-full disabled:opacity-60">
             {submitting ? 'Activating...' : 'Activate Sticker'}
           </button>
 
-          <p className="text-center text-sm text-gray-500">
+          <p className="text-center text-sm text-neutral-500">
             By activating, your emergency profile becomes available to first responders.
           </p>
           <div className="text-center">
-            <Link to="/" className="text-sm text-orange-600 hover:underline">Back to Home</Link>
+            <Link to="/" className="text-sm text-primary-600 hover:underline">Back to Home</Link>
           </div>
         </form>
       </div>

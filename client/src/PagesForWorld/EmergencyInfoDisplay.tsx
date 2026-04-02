@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users, Copy } from 'lucide-react';
+import { Phone, AlertCircle, Loader, Droplet, Users, Copy } from 'lucide-react';
 import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../utils/deviceId';
 
 interface Hospital {
@@ -52,6 +52,9 @@ export default function EmergencyInfoDisplay() {
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>('');
   const [deviceIdCopied, setDeviceIdCopied] = useState(false);
+
+  const fallbackPhotoDataUrl =
+    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
@@ -630,82 +633,30 @@ export default function EmergencyInfoDisplay() {
 
       <div className="max-w-4xl mx-auto p-4 space-y-4">
         {info && (
-          <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
-            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2">Patient Information</p>
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <p className="text-xl font-bold text-gray-900">{info.fullName}</p>
-              </div>
-              {info.photo && (
-                <img
-                  src={info.photo}
-                  alt={info.fullName}
-                  className="w-32 h-32 rounded-lg object-cover shadow-lg border-2 border-blue-200"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              )}
-            </div>
+          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4">
+            <p className="text-sm font-bold text-neutral-700 mb-3">Photo</p>
+            <img
+              src={info.photo || fallbackPhotoDataUrl}
+              alt={info.fullName || 'Emergency profile photo'}
+              className="w-40 h-40 rounded-lg object-cover shadow-lg border-2 border-blue-200"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = fallbackPhotoDataUrl;
+              }}
+            />
           </div>
         )}
 
         {info && (
-          <div className="grid grid-cols-2 gap-3">
-            {info.bloodType && (
-              <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-red-600 mb-1">
-                  <Droplet className="inline h-3 w-3" /> Blood Type
-                </p>
-                <p className="text-lg font-bold text-red-700">{info.bloodType}</p>
-              </div>
-            )}
-            {info.dateOfBirth && (
-              <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-purple-600 mb-1">Date of Birth</p>
-                <p className="text-lg font-bold text-purple-700">{info.dateOfBirth}</p>
-              </div>
-            )}
-            {info.allergies && (
-              <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-yellow-600 mb-1">Allergies</p>
-                <p className="text-sm font-bold text-yellow-700">{info.allergies}</p>
-              </div>
-            )}
-            {info.medications && (
-              <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-blue-600 mb-1">
-                  <Pill className="inline h-3 w-3" /> Medications
-                </p>
-                <p className="text-sm font-bold text-blue-700">{info.medications}</p>
-              </div>
-            )}
-            {info.medicalConditions && (
-              <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3 col-span-2">
-                <p className="text-xs font-bold text-green-600 mb-1">
-                  <Heart className="inline h-3 w-3" /> Medical Conditions
-                </p>
-                <p className="text-sm font-bold text-green-700">{info.medicalConditions}</p>
-              </div>
-            )}
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
+            <p className="text-sm font-bold text-blue-700">Name</p>
+            <p className="text-xl font-semibold text-gray-900 mt-1">{info.fullName || 'INcase User'}</p>
           </div>
         )}
 
-        {location && (
-          <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-4 shadow-md text-white">
-            <div className="flex items-start gap-3">
-              <MapPin className="h-6 w-6 mt-1 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="font-bold text-lg mb-1">📍 Live Location</p>
-                <p className="text-sm font-semibold mb-1">
-                  {locationName || 'Fetching location...'}
-                </p>
-                <p className="text-xs opacity-90">
-                  <span className="font-mono">{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</span>
-                </p>
-                {locationError && <p className="text-sm mt-2 text-yellow-100">⚠️ {locationError}</p>}
-              </div>
-            </div>
+        {info?.phoneNumber && (
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
+            <p className="text-sm font-bold text-blue-700">Phone Number</p>
+            <p className="text-lg font-semibold text-gray-900 mt-1">{info.phoneNumber}</p>
           </div>
         )}
 
@@ -736,56 +687,65 @@ export default function EmergencyInfoDisplay() {
           </div>
         )}
 
+        {info?.bloodType && (
+          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
+            <p className="text-xs font-bold text-red-600 mb-1">
+              <Droplet className="inline h-3 w-3" /> Blood group
+            </p>
+            <p className="text-lg font-bold text-red-700">{info.bloodType}</p>
+          </div>
+        )}
+
+        {info && (
+          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4 space-y-4">
+            <p className="text-sm font-bold text-neutral-700">Other Details</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              {info.email && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                  <p className="text-neutral-500">Email</p>
+                  <p className="font-medium text-neutral-900 break-all">{info.email}</p>
+                </div>
+              )}
+              {info.dateOfBirth && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                  <p className="text-neutral-500">Date of Birth</p>
+                  <p className="font-medium text-neutral-900">{info.dateOfBirth}</p>
+                </div>
+              )}
+              {info.address && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
+                  <p className="text-neutral-500">Address</p>
+                  <p className="font-medium text-neutral-900">{info.address}</p>
+                </div>
+              )}
+              {info.allergies && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
+                  <p className="text-neutral-500">Allergies</p>
+                  <p className="font-medium text-neutral-900">{info.allergies}</p>
+                </div>
+              )}
+              {info.medications && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
+                  <p className="text-neutral-500">Medications</p>
+                  <p className="font-medium text-neutral-900">{info.medications}</p>
+                </div>
+              )}
+              {info.medicalConditions && (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
+                  <p className="text-neutral-500">Medical Conditions</p>
+                  <p className="font-medium text-neutral-900">{info.medicalConditions}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <button
           onClick={() => window.location.href = 'tel:108'}
           className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-lg font-bold text-lg transition-colors shadow-md"
         >
           📞 Call Emergency Services (108)
         </button>
-
-        {hospitals.length > 0 && (
-          <div>
-            <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
-              <span className="bg-red-500 w-1 h-6 rounded-full"></span>
-              🏥 Nearest Hospitals
-            </h2>
-            <div className="space-y-3">
-              {hospitals.map((hospital) => (
-                <div key={hospital.id} className="bg-white rounded-lg shadow-md border-l-4 border-indigo-600 p-4">
-                  <h3 className="font-bold text-gray-900 text-base">{hospital.name}</h3>
-                  <p className="text-sm text-gray-600 mt-1">{hospital.address}</p>
-                  <div className="flex items-center justify-between mt-3">
-                    <p className="text-sm font-semibold text-blue-600">{hospital.distance} km away</p>
-                    {hospital.rating && <p className="text-sm text-yellow-600">⭐ {hospital.rating.toFixed(1)}</p>}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mt-3">
-                    {hospital.phone && (
-                      <button
-                        onClick={() => callHospital(hospital.phone || '')}
-                        className="bg-green-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center justify-center gap-1"
-                      >
-                        <Phone className="h-4 w-4" /> Call
-                      </button>
-                    )}
-                    <button
-                      onClick={() => navigateToHospital(hospital.lat, hospital.lng, hospital.name)}
-                      className="bg-blue-600 text-white py-2 rounded-lg font-semibold text-sm hover:bg-blue-700 flex items-center justify-center gap-1"
-                    >
-                      <Navigation className="h-4 w-4" /> Navigate
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {hospitals.length === 0 && !loading && (
-          <div className="flex items-center justify-center py-8 bg-gray-50 rounded-lg">
-            <Loader className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-            <span className="text-gray-600 font-medium">Searching for nearby hospitals...</span>
-          </div>
-        )}
 
         <div className="text-center py-6 border-t border-gray-200">
           <p className="font-bold text-gray-900">INcase - Emergency Response System</p>

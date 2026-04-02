@@ -144,18 +144,18 @@ export default function AdminLogin() {
 
   if (checkingSetup) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4">
         <div className="text-center">
-          <p className="text-gray-600">Checking admin status...</p>
+          <p className="text-neutral-600">Checking admin status...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="max-w-md w-full bg-white p-8 rounded-lg shadow">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">
+    <div className="min-h-screen flex items-center justify-center gradient-primary px-4">
+      <div className="max-w-md w-full card-elevated p-8 border border-primary-200">
+        <h1 className="text-2xl font-bold text-neutral-900 mb-6">
           {isSetupMode ? 'Create Admin Account' : 'Admin Login'}
         </h1>
         
@@ -167,20 +167,20 @@ export default function AdminLogin() {
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Admin Email</label>
+              <label className="label">Admin Email</label>
               <input
                 type="email"
-                className="mt-1 block w-full rounded-md border px-3 py-2"
+                className="input"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Password</label>
+              <label className="label">Password</label>
               <input
                 type="password"
-                className="mt-1 block w-full rounded-md border px-3 py-2"
+                className="input"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -188,10 +188,10 @@ export default function AdminLogin() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Confirm Password</label>
+              <label className="label">Confirm Password</label>
               <input
                 type="password"
-                className="mt-1 block w-full rounded-md border px-3 py-2"
+                className="input"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
@@ -199,10 +199,10 @@ export default function AdminLogin() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Setup Key (Optional)</label>
+              <label className="label">Setup Key (Optional)</label>
               <input
                 type="password"
-                className="mt-1 block w-full rounded-md border px-3 py-2"
+                className="input"
                 value={setupKey}
                 onChange={(e) => setSetupKey(e.target.value)}
                 placeholder="Leave blank if no setup key is configured"
@@ -212,7 +212,7 @@ export default function AdminLogin() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-orange-500 text-white py-2 rounded-md hover:bg-orange-600 disabled:opacity-50"
+              className="btn-primary-lg w-full disabled:opacity-50"
             >
               {loading ? 'Creating...' : 'Create Admin Account'}
             </button>
@@ -220,20 +220,20 @@ export default function AdminLogin() {
         ) : (
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Admin ID or Email</label>
+              <label className="label">Admin ID or Email</label>
               <input
                 type="text"
-                className="mt-1 block w-full rounded-md border px-3 py-2"
+                className="input"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Password</label>
+              <label className="label">Password</label>
               <input
                 type="password"
-                className="mt-1 block w-full rounded-md border px-3 py-2"
+                className="input"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -244,14 +244,14 @@ export default function AdminLogin() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-orange-500 text-white py-2 rounded-md hover:bg-orange-600 disabled:opacity-50"
+              className="btn-primary-lg w-full disabled:opacity-50"
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
         )}
 
-        <p className="mt-4 text-sm text-gray-600">
+        <p className="mt-4 text-sm text-neutral-600">
           {isSetupMode
             ? 'Create your admin account to manage QR codes and user access.'
             : 'Use your admin credentials. Managers will log in from their own page later.'}

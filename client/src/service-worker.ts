@@ -1,7 +1,6 @@
 /// <reference lib="webworker" />
 
 const CACHE_NAME = 'incase-emergency-v1';
-const EMERGENCY_PATH_PREFIX = '/emergencyinfo/';
 const API_PREFIX = '/api/v1/emergency/';
 
 declare const self: ServiceWorkerGlobalScope;
@@ -23,7 +22,8 @@ self.addEventListener('activate', (event) => {
 const shouldHandleRequest = (request: Request) => {
   if (request.method !== 'GET') return false;
   const url = new URL(request.url);
-  return url.pathname.startsWith(EMERGENCY_PATH_PREFIX) || url.pathname.startsWith(API_PREFIX);
+  // Cache only emergency API payloads, not UI routes, to avoid stale scan-page layouts.
+  return url.pathname.startsWith(API_PREFIX);
 };
 
 self.addEventListener('fetch', (event) => {
