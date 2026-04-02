@@ -690,7 +690,7 @@ export default function EmergencyInfoDisplay() {
         {info?.bloodType && (
           <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3">
             <p className="text-xs font-bold text-red-600 mb-1">
-              <Droplet className="inline h-3 w-3" /> Blood Group
+              <Droplet className="inline h-3 w-3" /> Blood group
             </p>
             <p className="text-lg font-bold text-red-700">{info.bloodType}</p>
           </div>
