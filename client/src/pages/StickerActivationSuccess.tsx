@@ -12,21 +12,6 @@ export default function StickerActivationSuccess() {
   const location = useLocation();
   const state = (location.state || {}) as SuccessState;
 
-  const downloadQrPng = async () => {
-    const data = state.qrActivationUrl || window.location.origin;
-    const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent(data)}`;
-    const response = await fetch(qrApi);
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${state.serialNumber || 'incase-qr'}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div className="min-h-screen gradient-primary px-4 py-10">
       <div className="mx-auto max-w-2xl card-elevated p-8 text-center">
@@ -59,9 +44,6 @@ export default function StickerActivationSuccess() {
               View your emergency profile
             </a>
           ) : null}
-          <button onClick={downloadQrPng} className="btn-secondary-md">
-            Download QR as PNG
-          </button>
           <Link to="/" className="btn-secondary-md">
             Go Home
           </Link>

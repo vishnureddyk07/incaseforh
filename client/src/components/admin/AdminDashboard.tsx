@@ -370,14 +370,16 @@ export default function AdminDashboard() {
       <div className="mx-auto flex max-w-[1600px]">
         {/* Sidebar */}
         <aside className="sticky top-0 h-screen w-64 bg-neutral-900 px-6 py-8 text-white shadow-xl flex flex-col">
-          <div>
-            <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary-600/20 text-primary-300 ring-1 ring-primary-500/40">
-              <ShieldCheck className="h-6 w-6" />
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-600/20 text-primary-300 ring-1 ring-primary-500/40">
+                <ShieldCheck className="h-6 w-6" />
+              </div>
+              <p className="text-xs uppercase tracking-widest text-neutral-400">INcase Admin</p>
             </div>
-            <p className="text-xs uppercase tracking-widest text-neutral-400">INcase Admin</p>
-            <h1 className="mt-2 text-2xl font-semibold">Control Center</h1>
+            <h1 className="text-xl font-semibold leading-tight text-neutral-100">Control Center</h1>
             {user?.email && (
-              <p className="mt-2 text-xs text-neutral-400 truncate">Logged in as: {user.email}</p>
+              <p className="text-xs text-neutral-400 truncate">Logged in as: {user.email}</p>
             )}
           </div>
 
