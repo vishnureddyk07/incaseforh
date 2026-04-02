@@ -1952,7 +1952,7 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
 
     if (sticker.status === 'active' && sticker.activatedBy) {
       const activatedBy = await EmergencyInfo.findById(sticker.activatedBy)
-        .select('fullName email phoneNumber bloodType')
+        .select('fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
         .lean();
       const identifier =
         activatedBy?.email || activatedBy?.phoneNumber || String(sticker.activatedBy);
@@ -2009,9 +2009,7 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
     if (sticker.status === 'deactivated') {
       return res.status(410).json({ error: sticker.deactivatedReason || 'Sticker is deactivated' });
     }
-    if (sticker.status === 'active') {
-      return res.status(409).json({ error: 'Sticker is already active' });
-    }
+    const isExistingActiveProfile = sticker.status === 'active' && Boolean(sticker.activatedBy);
 
     const fullName = normalizeOptionalString(req.body?.fullName, 200);
     const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
@@ -2084,9 +2082,15 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       qrCode: `${frontendUrl}/activate/${uuid}`,
     };
 
-    const existing = await EmergencyInfo.findOne(
-      email ? { $or: [{ email }, { phoneNumber }] } : { phoneNumber }
-    );
+    let existing = null;
+    if (isExistingActiveProfile) {
+      existing = await EmergencyInfo.findById(sticker.activatedBy);
+    }
+    if (!existing) {
+      existing = await EmergencyInfo.findOne(
+        email ? { $or: [{ email }, { phoneNumber }] } : { phoneNumber }
+      );
+    }
 
     let emergencyInfo;
     if (existing) {
@@ -2102,18 +2106,21 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       emergencyInfo = await EmergencyInfo.create(payload);
     }
 
-    sticker.status = 'active';
-    sticker.activatedBy = emergencyInfo._id;
-    sticker.activatedAt = new Date();
-    if (sticker.deactivatedAt) sticker.deactivatedAt = null;
-    if (sticker.deactivatedReason) sticker.deactivatedReason = '';
-    await sticker.save();
+    if (sticker.status !== 'active' || String(sticker.activatedBy || '') !== String(emergencyInfo._id)) {
+      sticker.status = 'active';
+      sticker.activatedBy = emergencyInfo._id;
+      if (!sticker.activatedAt) sticker.activatedAt = new Date();
+      if (sticker.deactivatedAt) sticker.deactivatedAt = null;
+      if (sticker.deactivatedReason) sticker.deactivatedReason = '';
+      await sticker.save();
+    }
 
     // Use email/phone for profile URL, with ObjectId as fallback
     const profileIdentifier = emergencyInfo.email || emergencyInfo.phoneNumber || emergencyInfo._id.toString();
 
-    return res.status(201).json({
+    return res.status(isExistingActiveProfile ? 200 : 201).json({
       success: true,
+      mode: isExistingActiveProfile ? 'updated' : 'activated',
       emergencyInfo,
       sticker,
       profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(profileIdentifier)}`,

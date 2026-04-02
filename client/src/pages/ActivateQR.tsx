@@ -12,6 +12,18 @@ type ActivationCheckResponse = {
     serialNumber: string;
     type: 'b2c' | 'b2b' | 'b2g';
     status: string;
+    activatedBy?: {
+      fullName?: string;
+      email?: string;
+      phoneNumber?: string;
+      dateOfBirth?: string;
+      bloodType?: string;
+      allergies?: string;
+      medications?: string;
+      medicalConditions?: string;
+      address?: string;
+      emergencyContacts?: EmergencyContact[];
+    };
   };
 };
 
@@ -67,8 +79,25 @@ export default function ActivateQR() {
   }, [apiBase, uuid]);
 
   useEffect(() => {
-    if (check?.status === 'active' && check.redirectTo) {
-      window.location.replace(check.redirectTo);
+    if (check?.status === 'active' && check.sticker?.activatedBy) {
+      const existing = check.sticker.activatedBy;
+      setFullName(existing.fullName || '');
+      setPhoneNumber(existing.phoneNumber || '');
+      setDateOfBirth(existing.dateOfBirth || '');
+      setBloodType(existing.bloodType || '');
+      setAllergies(existing.allergies || '');
+      setMedications(existing.medications || '');
+      setMedicalConditions(existing.medicalConditions || '');
+      setEmail(existing.email || '');
+      setAddress(existing.address || '');
+
+      const existingContacts = Array.isArray(existing.emergencyContacts)
+        ? existing.emergencyContacts
+            .filter((c) => (c?.name || '').trim() || (c?.phone || '').trim())
+            .map((c) => ({ name: c.name || '', phone: c.phone || '' }))
+        : [];
+
+      setContacts(existingContacts.length > 0 ? existingContacts : [{ name: '', phone: '' }]);
     }
   }, [check]);
 
@@ -141,6 +170,11 @@ export default function ActivateQR() {
         throw new Error(data.error || 'Activation failed');
       }
 
+      if (check?.status === 'active' && data?.profileUrl) {
+        window.location.assign(data.profileUrl);
+        return;
+      }
+
       navigate('/activation-success', {
         state: {
           riderName: data?.emergencyInfo?.fullName || fullName,
@@ -181,28 +215,15 @@ export default function ActivateQR() {
     );
   }
 
-  if (check.status === 'active') {
-    return (
-      <div className="min-h-screen section bg-neutral-50">
-        <div className="container-sm">
-          <div className="card-elevated text-center p-8 border border-primary-200">
-            <h1 className="text-2xl font-bold text-primary-700">This QR is already registered</h1>
-            <p className="mt-3 text-primary-700">Serial: {check.sticker?.serialNumber}</p>
-            {check.redirectTo ? <p className="mt-4 text-sm text-primary-800">Opening emergency profile...</p> : null}
-          {check.redirectTo ? (
-            <a href={check.redirectTo} className="mt-4 inline-block text-sm font-semibold text-primary-700 underline hover:text-primary-800">
-              Open manually if redirect does not happen
-            </a>
-          ) : null}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-neutral-50 section">
       <div className="container-md">
+        {check.status === 'active' ? (
+          <div className="mb-6 rounded-xl border border-green-200 bg-green-50 p-4">
+            <p className="text-sm font-semibold text-green-700">This sticker is already active.</p>
+            <p className="text-xs text-green-700 mt-1">You can update the profile details below anytime. Changes are saved for this same sticker.</p>
+          </div>
+        ) : null}
         <div className="mb-6 rounded-xl border border-primary-200 bg-primary-50 p-4">
           <p className="text-sm font-semibold text-primary-700">Activating Sticker</p>
           <p className="text-xl font-bold text-primary-900">{check.sticker?.serialNumber}</p>
@@ -327,7 +348,7 @@ export default function ActivateQR() {
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
           <button disabled={submitting} type="submit" className="btn-primary-lg w-full disabled:opacity-60">
-            {submitting ? 'Activating...' : 'Activate Sticker'}
+            {submitting ? (check.status === 'active' ? 'Updating...' : 'Activating...') : (check.status === 'active' ? 'Update Profile' : 'Activate Sticker')}
           </button>
 
           <p className="text-center text-sm text-neutral-500">
