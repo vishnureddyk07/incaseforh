@@ -2251,7 +2251,12 @@ router.get('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, re
 });
 
 // Admin: update linked emergency profile for a sticker
-router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, res) => {
+router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, upload.fields([
+  { name: 'photo', maxCount: 1 },
+  { name: 'bloodTypeReport', maxCount: 1 },
+  { name: 'prescriptionOrDischargeReport', maxCount: 1 },
+  { name: 'surgicalInfoReport', maxCount: 1 },
+]), async (req, res) => {
   try {
     const uuid = sanitizeStringParam(req.params.uuid);
     if (!uuid) {
@@ -2273,6 +2278,16 @@ router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, 
     }
 
     const normalizedEmail = normalizeOptionalString(req.body?.email, 200).toLowerCase();
+    const uploadedFiles = req.files || {};
+    const photoFile = Array.isArray(uploadedFiles.photo) ? uploadedFiles.photo[0] : null;
+    const bloodTypeReportFile = Array.isArray(uploadedFiles.bloodTypeReport) ? uploadedFiles.bloodTypeReport[0] : null;
+    const prescriptionReportFile = Array.isArray(uploadedFiles.prescriptionOrDischargeReport) ? uploadedFiles.prescriptionOrDischargeReport[0] : null;
+    const surgicalReportFile = Array.isArray(uploadedFiles.surgicalInfoReport) ? uploadedFiles.surgicalInfoReport[0] : null;
+
+    const photoDataUrl = uploadedFileToDataUrl(photoFile);
+    const bloodTypeReportDataUrl = uploadedFileToDataUrl(bloodTypeReportFile);
+    const prescriptionReportDataUrl = uploadedFileToDataUrl(prescriptionReportFile);
+    const surgicalReportDataUrl = uploadedFileToDataUrl(surgicalReportFile);
 
     emergencyInfo.fullName = normalizeOptionalString(req.body?.fullName, 200) || emergencyInfo.fullName || 'INcase User';
     emergencyInfo.phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
@@ -2283,7 +2298,9 @@ router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, 
     emergencyInfo.medications = normalizeOptionalString(req.body?.medications, 1000);
     emergencyInfo.medicalConditions = normalizeOptionalString(req.body?.medicalConditions, 1000);
     emergencyInfo.address = normalizeOptionalString(req.body?.address, 500);
-    if (typeof req.body?.photo === 'string') {
+    if (photoDataUrl) {
+      emergencyInfo.photo = photoDataUrl;
+    } else if (typeof req.body?.photo === 'string') {
       const incomingPhoto = req.body.photo.trim();
       if (!incomingPhoto) {
         emergencyInfo.photo = '';
@@ -2292,8 +2309,35 @@ router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, 
       }
     }
 
+    if (bloodTypeReportDataUrl) {
+      emergencyInfo.bloodTypeReport = bloodTypeReportDataUrl;
+    } else if (typeof req.body?.bloodTypeReport === 'string') {
+      const incomingBloodTypeReport = req.body.bloodTypeReport.trim();
+      emergencyInfo.bloodTypeReport = incomingBloodTypeReport;
+    }
+
+    if (prescriptionReportDataUrl) {
+      emergencyInfo.prescriptionOrDischargeReport = prescriptionReportDataUrl;
+    } else if (typeof req.body?.prescriptionOrDischargeReport === 'string') {
+      const incomingPrescription = req.body.prescriptionOrDischargeReport.trim();
+      emergencyInfo.prescriptionOrDischargeReport = incomingPrescription;
+    }
+
+    if (surgicalReportDataUrl) {
+      emergencyInfo.surgicalInfoReport = surgicalReportDataUrl;
+    } else if (typeof req.body?.surgicalInfoReport === 'string') {
+      const incomingSurgical = req.body.surgicalInfoReport.trim();
+      emergencyInfo.surgicalInfoReport = incomingSurgical;
+    }
+
     if (Array.isArray(req.body?.emergencyContacts)) {
       emergencyInfo.emergencyContacts = sanitizeContacts(req.body.emergencyContacts);
+    } else if (typeof req.body?.emergencyContacts === 'string' && req.body.emergencyContacts.trim()) {
+      try {
+        emergencyInfo.emergencyContacts = sanitizeContacts(JSON.parse(req.body.emergencyContacts));
+      } catch {
+        // Leave existing contacts unchanged for malformed payloads.
+      }
     }
 
     await emergencyInfo.save();

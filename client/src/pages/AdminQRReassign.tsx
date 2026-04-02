@@ -20,6 +20,9 @@ type EmergencyInfo = {
   address?: string;
   emergencyContacts?: EmergencyContact[];
   photo?: string;
+  bloodTypeReport?: string;
+  prescriptionOrDischargeReport?: string;
+  surgicalInfoReport?: string;
 };
 
 type StickerPayload = {
@@ -54,6 +57,13 @@ export default function AdminQRReassign() {
   const [address, setAddress] = useState('');
   const [contacts, setContacts] = useState<EmergencyContact[]>([{ name: '', phone: '' }]);
   const [photoDataUrl, setPhotoDataUrl] = useState('');
+  const [bloodTypeReportDataUrl, setBloodTypeReportDataUrl] = useState('');
+  const [prescriptionOrDischargeReportDataUrl, setPrescriptionOrDischargeReportDataUrl] = useState('');
+  const [surgicalInfoReportDataUrl, setSurgicalInfoReportDataUrl] = useState('');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [bloodTypeReportFile, setBloodTypeReportFile] = useState<File | null>(null);
+  const [prescriptionOrDischargeReportFile, setPrescriptionOrDischargeReportFile] = useState<File | null>(null);
+  const [surgicalInfoReportFile, setSurgicalInfoReportFile] = useState<File | null>(null);
 
   const authHeaders = useMemo(
     () => ({ Authorization: `Bearer ${token || ''}`, 'Content-Type': 'application/json' }),
@@ -119,6 +129,9 @@ export default function AdminQRReassign() {
         setMedicalConditions(info.medicalConditions || '');
         setAddress(info.address || '');
         setPhotoDataUrl(info.photo || '');
+        setBloodTypeReportDataUrl(info.bloodTypeReport || '');
+        setPrescriptionOrDischargeReportDataUrl(info.prescriptionOrDischargeReport || '');
+        setSurgicalInfoReportDataUrl(info.surgicalInfoReport || '');
 
         const existingContacts = Array.isArray(info.emergencyContacts)
           ? info.emergencyContacts.filter((c) => c && (c.name || c.phone)).map((c) => ({ name: c.name || '', phone: c.phone || '' }))
@@ -165,24 +178,46 @@ export default function AdminQRReassign() {
         .map((c) => ({ name: c.name.trim(), phone: c.phone.trim() }))
         .filter((c) => c.name || c.phone);
 
-      const payload = {
-        fullName,
-        email,
-        phoneNumber,
-        dateOfBirth,
-        bloodType,
-        allergies,
-        medications,
-        medicalConditions,
-        address,
-        photo: photoDataUrl,
-        emergencyContacts,
-      };
+      const payload = new FormData();
+      payload.append('fullName', fullName);
+      payload.append('email', email);
+      payload.append('phoneNumber', phoneNumber);
+      payload.append('dateOfBirth', dateOfBirth);
+      payload.append('bloodType', bloodType);
+      payload.append('allergies', allergies);
+      payload.append('medications', medications);
+      payload.append('medicalConditions', medicalConditions);
+      payload.append('address', address);
+      payload.append('emergencyContacts', JSON.stringify(emergencyContacts));
+
+      if (photoFile) {
+        payload.append('photo', photoFile);
+      } else {
+        payload.append('photo', photoDataUrl);
+      }
+
+      if (bloodTypeReportFile) {
+        payload.append('bloodTypeReport', bloodTypeReportFile);
+      } else {
+        payload.append('bloodTypeReport', bloodTypeReportDataUrl);
+      }
+
+      if (prescriptionOrDischargeReportFile) {
+        payload.append('prescriptionOrDischargeReport', prescriptionOrDischargeReportFile);
+      } else {
+        payload.append('prescriptionOrDischargeReport', prescriptionOrDischargeReportDataUrl);
+      }
+
+      if (surgicalInfoReportFile) {
+        payload.append('surgicalInfoReport', surgicalInfoReportFile);
+      } else {
+        payload.append('surgicalInfoReport', surgicalInfoReportDataUrl);
+      }
 
       const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/reassign/${encodeURIComponent(uuid)}`, {
         method: 'PATCH',
-        headers: authHeaders,
-        body: JSON.stringify(payload),
+        headers: { Authorization: `Bearer ${token || ''}` },
+        body: payload,
       });
       const data = await readApiPayload(res);
       if (!res.ok) throw new Error(data.error || 'Failed to save profile');
@@ -206,6 +241,8 @@ export default function AdminQRReassign() {
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setPhotoFile(file);
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -285,11 +322,16 @@ export default function AdminQRReassign() {
                 accept="image/*"
                 onChange={handlePhotoChange}
                 className="input max-w-sm"
+                title="Upload profile photo"
+                aria-label="Upload profile photo"
               />
               {photoDataUrl && (
                 <button
                   type="button"
-                  onClick={() => setPhotoDataUrl('')}
+                  onClick={() => {
+                    setPhotoDataUrl('');
+                    setPhotoFile(null);
+                  }}
                   className="btn-secondary-sm"
                 >
                   Remove Photo
@@ -298,14 +340,78 @@ export default function AdminQRReassign() {
             </div>
           </div>
 
+          <div className="space-y-3 rounded-xl border border-neutral-200 p-4">
+            <p className="font-semibold text-neutral-700">Medical Documents (Optional)</p>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-neutral-700">Blood Group Result</label>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setBloodTypeReportFile(e.target.files?.[0] || null)}
+                  className="input max-w-sm"
+                  title="Upload blood group result"
+                  aria-label="Upload blood group result"
+                />
+                {bloodTypeReportDataUrl ? (
+                  <a href={bloodTypeReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
+                ) : null}
+                {(bloodTypeReportDataUrl || bloodTypeReportFile) ? (
+                  <button type="button" onClick={() => { setBloodTypeReportDataUrl(''); setBloodTypeReportFile(null); }} className="btn-secondary-sm">Remove</button>
+                ) : null}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-neutral-700">Prescription / Discharge Report</label>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setPrescriptionOrDischargeReportFile(e.target.files?.[0] || null)}
+                  className="input max-w-sm"
+                  title="Upload prescription or discharge report"
+                  aria-label="Upload prescription or discharge report"
+                />
+                {prescriptionOrDischargeReportDataUrl ? (
+                  <a href={prescriptionOrDischargeReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
+                ) : null}
+                {(prescriptionOrDischargeReportDataUrl || prescriptionOrDischargeReportFile) ? (
+                  <button type="button" onClick={() => { setPrescriptionOrDischargeReportDataUrl(''); setPrescriptionOrDischargeReportFile(null); }} className="btn-secondary-sm">Remove</button>
+                ) : null}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-neutral-700">Surgical Info / Report</label>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setSurgicalInfoReportFile(e.target.files?.[0] || null)}
+                  className="input max-w-sm"
+                  title="Upload surgical info report"
+                  aria-label="Upload surgical info report"
+                />
+                {surgicalInfoReportDataUrl ? (
+                  <a href={surgicalInfoReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
+                ) : null}
+                {(surgicalInfoReportDataUrl || surgicalInfoReportFile) ? (
+                  <button type="button" onClick={() => { setSurgicalInfoReportDataUrl(''); setSurgicalInfoReportFile(null); }} className="btn-secondary-sm">Remove</button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input">
+            <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input" title="Blood type" aria-label="Blood type">
               <option value="">Blood Type</option>
               <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
               <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
             </select>
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="input" />
-            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" />
+            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" title="Date of birth" aria-label="Date of birth" />
             <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" className="input" />
           </div>
 
