@@ -1,5 +1,4 @@
-const CACHE_NAME = 'incase-emergency-v1';
-const EMERGENCY_PATH_PREFIX = '/emergencyinfo/';
+const CACHE_NAME = 'incase-emergency-v2';
 const API_PREFIX = '/api/v1/emergency/';
 
 self.addEventListener('install', (event) => {
@@ -19,7 +18,8 @@ self.addEventListener('activate', (event) => {
 const shouldHandleRequest = (request) => {
   if (request.method !== 'GET') return false;
   const url = new URL(request.url);
-  return url.pathname.startsWith(EMERGENCY_PATH_PREFIX) || url.pathname.startsWith(API_PREFIX);
+  // Cache only emergency API payloads, not UI routes, to avoid stale layouts after deploy.
+  return url.pathname.startsWith(API_PREFIX);
 };
 
 self.addEventListener('fetch', (event) => {

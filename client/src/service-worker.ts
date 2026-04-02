@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-const CACHE_NAME = 'incase-emergency-v1';
+const CACHE_NAME = 'incase-emergency-v2';
 const API_PREFIX = '/api/v1/emergency/';
 
 declare const self: ServiceWorkerGlobalScope;
