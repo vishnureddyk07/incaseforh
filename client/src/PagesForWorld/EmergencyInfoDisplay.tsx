@@ -32,6 +32,9 @@ type EmergencyInfo = {
   allergies?: string;
   medications?: string;
   medicalConditions?: string;
+  bloodTypeReport?: string;
+  prescriptionOrDischargeReport?: string;
+  surgicalInfoReport?: string;
   emergencyContacts?: EmergencyContact[];
   photo?: string;
 };
@@ -57,6 +60,11 @@ export default function EmergencyInfoDisplay() {
     'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+  const uploadedMedicalDocuments = [
+    { label: 'Blood Group Result', url: info?.bloodTypeReport },
+    { label: 'Prescription / Discharge Report', url: info?.prescriptionOrDischargeReport },
+    { label: 'Surgical Info / Report', url: info?.surgicalInfoReport },
+  ].filter((doc) => typeof doc.url === 'string' && doc.url.length > 0);
 
   const reverseGeocode = async (lat: number, lng: number) => {
     try {
@@ -693,6 +701,25 @@ export default function EmergencyInfoDisplay() {
               <Droplet className="inline h-3 w-3" /> Blood group
             </p>
             <p className="text-lg font-bold text-red-700">{info.bloodType}</p>
+          </div>
+        )}
+
+        {uploadedMedicalDocuments.length > 0 && (
+          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4">
+            <p className="text-sm font-bold text-neutral-700 mb-3">Uploaded Medical Documents</p>
+            <div className="space-y-2">
+              {uploadedMedicalDocuments.map((doc) => (
+                <a
+                  key={doc.label}
+                  href={doc.url as string}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                >
+                  Open {doc.label}
+                </a>
+              ))}
+            </div>
           </div>
         )}
 

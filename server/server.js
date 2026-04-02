@@ -279,6 +279,13 @@ const upload = multer({
   },
 });
 
+const uploadedFileToDataUrl = (file) => {
+  if (!file?.buffer) return null;
+  const mime = file.mimetype || 'application/octet-stream';
+  const base64 = file.buffer.toString('base64');
+  return `data:${mime};base64,${base64}`;
+};
+
 // Helper: sanitize user payload for responses
 const sanitizeUser = (user) => ({
   id: user._id.toString(),
@@ -1153,14 +1160,14 @@ router.get('/emergency/:email', readLimiter, async (req, res) => {
     console.log('📍 QR Scanned from IP:', scannerIP);
     
     let emergency = await EmergencyInfo.findOne({ email: { $eq: needle } })
-      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode createdAt')
+      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport qrCode createdAt')
       .collation({ locale: 'en', strength: 2 })
       .lean();
     
     // Fallback: try lookup by ObjectId if needle looks like a MongoDB ObjectId
     if (!emergency && needle.match(/^[0-9a-f]{24}$/i)) {
       emergency = await EmergencyInfo.findById(needle)
-        .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode createdAt')
+        .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport qrCode createdAt')
         .lean();
     }
     
@@ -1212,13 +1219,13 @@ router.get('/emergency/phone/:phoneNumber', readLimiter, async (req, res) => {
     console.log('📍 QR Scanned from IP:', scannerIP);
     
     let emergency = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } })
-      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode createdAt')
+      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport qrCode createdAt')
       .lean();
     
     // Fallback: try lookup by ObjectId if needle looks like a MongoDB ObjectId
     if (!emergency && needle.match(/^[0-9a-f]{24}$/i)) {
       emergency = await EmergencyInfo.findById(needle)
-        .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode createdAt')
+        .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport qrCode createdAt')
         .lean();
     }
     
@@ -1264,7 +1271,7 @@ router.put('/emergency/:email', requireAuth, requireAdmin, async (req, res) => {
     if (!needle) return res.status(400).json({ error: 'Email parameter is required' });
     
     const existing = await EmergencyInfo.findOne({ email: { $eq: needle } })
-      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode')
+      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport qrCode')
       .collation({ locale: 'en', strength: 2 })
       .lean();
     if (!existing) {
@@ -1300,7 +1307,7 @@ router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (re
     if (!needle) return res.status(400).json({ error: 'Phone number parameter is required' });
 
     const existing = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } })
-      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo qrCode')
+      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport qrCode')
       .lean();
     if (!existing) {
       return res.status(404).json({ error: 'Record not found' });
@@ -1982,7 +1989,12 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
 });
 
 // Public: activate pre-printed sticker with emergency profile data
-router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (req, res) => {
+router.post('/qr/activate/:uuid', createLimiter, upload.fields([
+  { name: 'photo', maxCount: 1 },
+  { name: 'bloodTypeReport', maxCount: 1 },
+  { name: 'prescriptionOrDischargeReport', maxCount: 1 },
+  { name: 'surgicalInfoReport', maxCount: 1 },
+]), async (req, res) => {
   try {
     const frontendUrl = resolveFrontendUrl(req);
     const uuid = sanitizeStringParam(req.params.uuid);
@@ -2006,14 +2018,20 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
     const dateOfBirth = normalizeOptionalString(req.body?.dateOfBirth, 40);
     const email = normalizeOptionalString(req.body?.email, 200).toLowerCase();
 
-    let photoDataUrl = null;
-    if (req.file && req.file.buffer) {
-      const mime = req.file.mimetype || 'application/octet-stream';
-      const base64 = req.file.buffer.toString('base64');
-      photoDataUrl = `data:${mime};base64,${base64}`;
-    } else if (typeof req.body?.photo === 'string' && req.body.photo.startsWith('data:')) {
+    const uploadedFiles = req.files || {};
+    const photoFile = Array.isArray(uploadedFiles.photo) ? uploadedFiles.photo[0] : null;
+    const bloodTypeReportFile = Array.isArray(uploadedFiles.bloodTypeReport) ? uploadedFiles.bloodTypeReport[0] : null;
+    const prescriptionReportFile = Array.isArray(uploadedFiles.prescriptionOrDischargeReport) ? uploadedFiles.prescriptionOrDischargeReport[0] : null;
+    const surgicalReportFile = Array.isArray(uploadedFiles.surgicalInfoReport) ? uploadedFiles.surgicalInfoReport[0] : null;
+
+    let photoDataUrl = uploadedFileToDataUrl(photoFile);
+    if (!photoDataUrl && typeof req.body?.photo === 'string' && req.body.photo.startsWith('data:')) {
       photoDataUrl = req.body.photo;
     }
+
+    const bloodTypeReportDataUrl = uploadedFileToDataUrl(bloodTypeReportFile);
+    const prescriptionReportDataUrl = uploadedFileToDataUrl(prescriptionReportFile);
+    const surgicalReportDataUrl = uploadedFileToDataUrl(surgicalReportFile);
 
     let emergencyContacts = [];
     if (Array.isArray(req.body?.emergencyContacts)) {
@@ -2060,6 +2078,9 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
       emergencyContacts: validContacts,
       address: normalizeOptionalString(req.body?.address, 500),
       photo: photoDataUrl,
+      bloodTypeReport: bloodTypeReportDataUrl,
+      prescriptionOrDischargeReport: prescriptionReportDataUrl,
+      surgicalInfoReport: surgicalReportDataUrl,
       qrCode: `${frontendUrl}/activate/${uuid}`,
     };
 
@@ -2070,6 +2091,9 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
     let emergencyInfo;
     if (existing) {
       payload.photo = photoDataUrl || existing.photo || null;
+      payload.bloodTypeReport = bloodTypeReportDataUrl || existing.bloodTypeReport || null;
+      payload.prescriptionOrDischargeReport = prescriptionReportDataUrl || existing.prescriptionOrDischargeReport || null;
+      payload.surgicalInfoReport = surgicalReportDataUrl || existing.surgicalInfoReport || null;
       emergencyInfo = await EmergencyInfo.findByIdAndUpdate(existing._id, payload, {
         new: true,
         runValidators: true,
@@ -2208,7 +2232,7 @@ router.get('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, re
     }
 
     const sticker = await QRSticker.findOne({ uuid })
-      .populate('activatedBy', 'fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo')
+      .populate('activatedBy', 'fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
       .lean();
 
     if (!sticker) {

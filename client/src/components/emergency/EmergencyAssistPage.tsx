@@ -27,6 +27,9 @@ interface EmergencyAssistPageProps {
     allergies?: string;
     medications?: string;
     medicalConditions?: string;
+    bloodTypeReport?: string;
+    prescriptionOrDischargeReport?: string;
+    surgicalInfoReport?: string;
     phoneNumber?: string;
     emergencyContacts?: Array<{ name: string; phone: string; relationship?: string }>;
   };
@@ -243,6 +246,12 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
     setTimeout(() => setDeviceIdCopied(false), 2000);
   };
 
+  const uploadedMedicalDocuments = [
+    { label: 'Blood Group Result', url: emergencyData?.bloodTypeReport },
+    { label: 'Prescription / Discharge Report', url: emergencyData?.prescriptionOrDischargeReport },
+    { label: 'Surgical Info / Report', url: emergencyData?.surgicalInfoReport },
+  ].filter((doc) => typeof doc.url === 'string' && doc.url.length > 0);
+
   return (
     <div className="min-h-screen gradient-primary pb-20">
       {/* Header - Emergency Mode */}
@@ -387,6 +396,25 @@ export default function EmergencyAssistPage({ emergencyData }: EmergencyAssistPa
               <Droplet className="inline h-3 w-3" /> Blood Group
             </p>
             <p className="text-lg font-bold text-red-700">{emergencyData.bloodType}</p>
+          </div>
+        )}
+
+        {uploadedMedicalDocuments.length > 0 && (
+          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4">
+            <p className="text-sm font-bold text-neutral-700 mb-3">Uploaded Medical Documents</p>
+            <div className="space-y-2">
+              {uploadedMedicalDocuments.map((doc) => (
+                <a
+                  key={doc.label}
+                  href={doc.url as string}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                >
+                  Open {doc.label}
+                </a>
+              ))}
+            </div>
           </div>
         )}
 

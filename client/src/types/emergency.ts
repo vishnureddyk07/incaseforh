@@ -12,6 +12,9 @@ export interface EmergencyInfo {
   medications: string;
   medicalConditions: string;
   photo?: File | string | null;
+  bloodTypeReport?: File | string | null;
+  prescriptionOrDischargeReport?: File | string | null;
+  surgicalInfoReport?: File | string | null;
   dateOfBirth: string;
   address: string;
   phoneNumber: string;

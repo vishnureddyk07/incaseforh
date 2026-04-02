@@ -37,6 +37,9 @@ export default function ActivateQR() {
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
+  const [bloodTypeReport, setBloodTypeReport] = useState<File | null>(null);
+  const [prescriptionOrDischargeReport, setPrescriptionOrDischargeReport] = useState<File | null>(null);
+  const [surgicalInfoReport, setSurgicalInfoReport] = useState<File | null>(null);
   const [contacts, setContacts] = useState<EmergencyContact[]>([{ name: '', phone: '' }]);
 
   useEffect(() => {
@@ -125,6 +128,9 @@ export default function ActivateQR() {
       formData.append('address', address);
       formData.append('emergencyContacts', JSON.stringify(validContacts));
       if (photo) formData.append('photo', photo);
+      if (bloodTypeReport) formData.append('bloodTypeReport', bloodTypeReport);
+      if (prescriptionOrDischargeReport) formData.append('prescriptionOrDischargeReport', prescriptionOrDischargeReport);
+      if (surgicalInfoReport) formData.append('surgicalInfoReport', surgicalInfoReport);
 
       const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}`, {
         method: 'POST',
@@ -203,15 +209,96 @@ export default function ActivateQR() {
           <p className="text-xs text-primary-700">Fill your emergency details to protect yourself.</p>
         </div>
 
-        <form onSubmit={submitActivation} className="space-y-4 card-elevated p-6">
+        <form onSubmit={submitActivation} className="space-y-5 card-elevated p-6">
           <h1 className="text-2xl font-bold text-neutral-900">Activate Your INcase Sticker</h1>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name (optional)" className="input" />
-            <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number (optional)" className="input" />
+          <div className="rounded-xl border border-primary-200 bg-primary-50 p-4">
+            <p className="text-sm font-semibold text-primary-800">Optional information helps first responders faster.</p>
+            <p className="mt-1 text-xs text-primary-700">
+              All fields are optional except at least one emergency contact. Upload fields accept images or PDF reports.
+            </p>
           </div>
 
-          <div className="space-y-2">
+          <div className="rounded-xl border border-neutral-200 p-4">
+            <p className="text-sm font-semibold text-neutral-800">Basic Information</p>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="label">Full Name</label>
+                <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name (optional)" className="input" />
+              </div>
+              <div>
+                <label className="label">Phone Number</label>
+                <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number (optional)" className="input" />
+              </div>
+              <div>
+                <label className="label">Date of Birth</label>
+                <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" title="Date of birth" aria-label="Date of birth" />
+              </div>
+              <div>
+                <label className="label">Blood Group</label>
+                <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input" title="Blood type" aria-label="Blood type">
+                  <option value="">Blood Type (optional)</option>
+                  <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+                  <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="label">Blood Group Result Upload</label>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setBloodTypeReport(e.target.files?.[0] || null)}
+                  className="input"
+                  title="Upload blood group report"
+                  aria-label="Upload blood group report"
+                />
+                <p className="mt-1 text-xs text-neutral-500">Optional: upload blood test report or lab card image.</p>
+              </div>
+              <div>
+                <label className="label">Email</label>
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" className="input" />
+              </div>
+              <div>
+                <label className="label">Address</label>
+                <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (optional)" className="input" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-neutral-200 p-4">
+            <p className="text-sm font-semibold text-neutral-800">Medical History</p>
+            <p className="mt-1 text-xs text-neutral-500">Everything in this section is optional, but useful during emergencies.</p>
+            <div className="mt-4 space-y-4">
+              <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies (optional)" className="input" />
+              <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications (optional)" className="input" />
+              <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions (optional)" className="input" />
+              <div>
+                <label className="label">Prescription / Discharge Report Upload</label>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setPrescriptionOrDischargeReport(e.target.files?.[0] || null)}
+                  className="input"
+                  title="Upload prescription or discharge report"
+                  aria-label="Upload prescription or discharge report"
+                />
+                <p className="mt-1 text-xs text-neutral-500">Optional: prescription or medical discharge summary.</p>
+              </div>
+              <div>
+                <label className="label">Surgical Info / Report Upload</label>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setSurgicalInfoReport(e.target.files?.[0] || null)}
+                  className="input"
+                  title="Upload surgical information report"
+                  aria-label="Upload surgical information report"
+                />
+                <p className="mt-1 text-xs text-neutral-500">Optional: surgery-related reports or documents.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-xl border border-neutral-200 p-4">
             <p className="font-semibold text-neutral-700">Emergency Contacts (at least 1 required)</p>
             {contacts.map((c, idx) => (
               <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-3">
@@ -231,27 +318,10 @@ export default function ActivateQR() {
             <button type="button" onClick={addContact} className="btn-secondary-sm">+ Add Contact</button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input">
-              <option value="">Blood Type (optional)</option>
-              <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
-              <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" />
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" className="input" />
-            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (optional)" className="input" />
-          </div>
-
-          <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies (optional)" className="input" />
-          <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications (optional)" className="input" />
-          <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions (optional)" className="input" />
-
-          <div>
+          <div className="rounded-xl border border-neutral-200 p-4">
             <label className="mb-1 block text-sm font-medium text-neutral-700">Photo Upload (optional)</label>
-            <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="input" />
+            <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="input" title="Upload profile photo" aria-label="Upload profile photo" />
+            <p className="mt-1 text-xs text-neutral-500">Optional profile photo to help identify you quickly.</p>
           </div>
 
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
