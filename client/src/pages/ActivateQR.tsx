@@ -15,6 +15,8 @@ type ActivationCheckResponse = {
   };
 };
 
+const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, '');
+
 export default function ActivateQR() {
   const { uuid = '' } = useParams();
   const navigate = useNavigate();
@@ -76,7 +78,10 @@ export default function ActivateQR() {
   };
 
   const removeContact = (idx: number) => {
-    setContacts((prev) => prev.filter((_, i) => i !== idx));
+    setContacts((prev) => {
+      if (prev.length <= 1) return prev;
+      return prev.filter((_, i) => i !== idx);
+    });
   };
 
   const submitActivation = async (e: React.FormEvent) => {
@@ -88,6 +93,24 @@ export default function ActivateQR() {
       const validContacts = contacts.filter((c) => c.name.trim() && c.phone.trim());
       if (validContacts.length === 0) {
         throw new Error('Please add at least one emergency contact with name and phone number.');
+      }
+
+      const normalizedContactPhones = validContacts
+        .map((contact) => normalizePhoneForComparison(contact.phone))
+        .filter(Boolean);
+      const hasDuplicateEmergencyContactNumber = new Set(normalizedContactPhones).size !== normalizedContactPhones.length;
+      if (hasDuplicateEmergencyContactNumber) {
+        throw new Error('Emergency contact numbers must be unique.');
+      }
+
+      const normalizedPrimaryPhone = normalizePhoneForComparison(phoneNumber);
+      if (normalizedPrimaryPhone) {
+        const hasSameAsPrimaryPhone = validContacts.some(
+          (contact) => normalizePhoneForComparison(contact.phone) === normalizedPrimaryPhone
+        );
+        if (hasSameAsPrimaryPhone) {
+          throw new Error('Your phone number and emergency contact number cannot be the same.');
+        }
       }
 
       const formData = new FormData();
@@ -194,7 +217,15 @@ export default function ActivateQR() {
               <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-3">
                 <input value={c.name} onChange={(e) => updateContact(idx, 'name', e.target.value)} placeholder="Name" className="input" />
                 <input value={c.phone} onChange={(e) => updateContact(idx, 'phone', e.target.value)} placeholder="Phone" className="input" />
-                <button type="button" onClick={() => removeContact(idx)} className="btn-danger-sm">Remove</button>
+                <button
+                  type="button"
+                  onClick={() => removeContact(idx)}
+                  disabled={contacts.length <= 1}
+                  className="btn-danger-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={contacts.length <= 1 ? 'At least one contact is required' : 'Remove contact'}
+                >
+                  Remove
+                </button>
               </div>
             ))}
             <button type="button" onClick={addContact} className="btn-secondary-sm">+ Add Contact</button>
@@ -206,6 +237,9 @@ export default function ActivateQR() {
               <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
               <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
             </select>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" />
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" className="input" />
             <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (optional)" className="input" />

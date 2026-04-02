@@ -375,6 +375,8 @@ const normalizeOptionalString = (val, maxLen = 500) => {
   return stripHtml(safe).slice(0, maxLen);
 };
 
+const normalizePhoneForComparison = (value) => String(value || '').replace(/\D/g, '');
+
 const parsePositiveInt = (value, fallback = 0) => {
   const n = Number.parseInt(String(value), 10);
   if (!Number.isFinite(n) || n <= 0) return fallback;
@@ -1998,6 +2000,23 @@ router.post('/qr/activate/:uuid', createLimiter, upload.single('photo'), async (
     const validContacts = emergencyContacts.filter((c) => c?.name && c?.phone);
     if (validContacts.length === 0) {
       return res.status(400).json({ error: 'At least one emergency contact (name + phone) is required' });
+    }
+
+    const normalizedContactPhones = validContacts
+      .map((contact) => normalizePhoneForComparison(contact.phone))
+      .filter(Boolean);
+    if (new Set(normalizedContactPhones).size !== normalizedContactPhones.length) {
+      return res.status(400).json({ error: 'Emergency contact phone numbers must be unique' });
+    }
+
+    const normalizedPrimaryPhone = normalizePhoneForComparison(phoneNumber);
+    if (normalizedPrimaryPhone) {
+      const hasMatchingEmergencyContact = validContacts.some(
+        (contact) => normalizePhoneForComparison(contact.phone) === normalizedPrimaryPhone
+      );
+      if (hasMatchingEmergencyContact) {
+        return res.status(400).json({ error: 'Primary phone number must be different from emergency contact numbers' });
+      }
     }
 
     const payload = {
