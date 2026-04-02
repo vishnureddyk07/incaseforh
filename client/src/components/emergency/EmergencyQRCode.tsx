@@ -4,6 +4,8 @@ import * as QRCodeLib from 'qrcode';
 import type { EmergencyInfo, EmergencyContact } from "../../types/emergency";
 import EmergencyForm from "./EmergencyForm";
 
+const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, "");
+
 export default function EmergencyQRCode() {
   const MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024;
   // Fresh state every load (no localStorage persistence)
@@ -138,6 +140,24 @@ export default function EmergencyQRCode() {
     }
     if (emergencyInfo.emergencyContacts.length === 0 || emergencyInfo.emergencyContacts.some(c => !c.name || !c.phone)) {
       alert("Please add at least 1 emergency contact with both name and phone number.");
+      return;
+    }
+
+    const normalizedContactPhones = emergencyInfo.emergencyContacts
+      .map((contact) => normalizePhoneForComparison(contact.phone))
+      .filter(Boolean);
+    const hasDuplicateContactNumbers = new Set(normalizedContactPhones).size !== normalizedContactPhones.length;
+    if (hasDuplicateContactNumbers) {
+      alert("Emergency contact numbers must be unique.");
+      return;
+    }
+
+    const normalizedPrimaryPhone = normalizePhoneForComparison(emergencyInfo.phoneNumber);
+    const hasSameAsPrimaryPhone = normalizedContactPhones.some(
+      (contactPhone) => contactPhone === normalizedPrimaryPhone
+    );
+    if (hasSameAsPrimaryPhone) {
+      alert("Your phone number and emergency contact number cannot be the same.");
       return;
     }
 

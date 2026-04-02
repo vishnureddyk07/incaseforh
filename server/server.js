@@ -1032,13 +1032,42 @@ router.post('/emergency', createLimiter, upload.single('photo'), async (req, res
     const normalizedPhoneNumber = safeString(phoneNumber);
     const existingByPhone = await EmergencyInfo.findOne({ phoneNumber: normalizedPhoneNumber }).select('_id photo').lean();
 
+    let parsedEmergencyContacts = [];
+    if (req.body.emergencyContacts) {
+      try {
+        parsedEmergencyContacts = sanitizeContacts(JSON.parse(req.body.emergencyContacts));
+      } catch {
+        return res.status(400).json({ error: 'emergencyContacts must be valid JSON' });
+      }
+    }
+
+    const validContacts = parsedEmergencyContacts.filter((c) => c?.name && c?.phone);
+    if (validContacts.length === 0) {
+      return res.status(400).json({ error: 'At least one emergency contact (name + phone) is required' });
+    }
+
+    const normalizedContactPhones = validContacts
+      .map((contact) => normalizePhoneForComparison(contact.phone))
+      .filter(Boolean);
+    if (new Set(normalizedContactPhones).size !== normalizedContactPhones.length) {
+      return res.status(400).json({ error: 'Emergency contact phone numbers must be unique' });
+    }
+
+    const normalizedPrimaryPhoneForComparison = normalizePhoneForComparison(normalizedPhoneNumber);
+    if (normalizedPrimaryPhoneForComparison) {
+      const hasMatchingEmergencyContact = normalizedContactPhones.some(
+        (contactPhone) => contactPhone === normalizedPrimaryPhoneForComparison
+      );
+      if (hasMatchingEmergencyContact) {
+        return res.status(400).json({ error: 'Primary phone number must be different from emergency contact numbers' });
+      }
+    }
+
     const emergencyData = {
       fullName: safeString(fullName),
       email: safeString(req.body.email) || null,
       bloodType: safeString(req.body.bloodType),
-      emergencyContacts: req.body.emergencyContacts
-        ? sanitizeContacts(JSON.parse(req.body.emergencyContacts))
-        : [],
+      emergencyContacts: validContacts,
       allergies: safeString(req.body.allergies),
       medications: safeString(req.body.medications),
       medicalConditions: safeString(req.body.medicalConditions),

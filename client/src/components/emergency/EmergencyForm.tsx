@@ -102,21 +102,6 @@ export default function EmergencyForm({
           </div>
 
           <div>
-            <label className="label">Email</label>
-            <input
-              type="email"
-              name="email"
-              value={emergencyInfo.email}
-              onChange={onChange}
-              autoComplete="email"
-              className="input"
-              placeholder="your@email.com"
-            />
-          </div>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-6 mt-6">
-          <div>
             <label className="label label-required">Phone Number</label>
             <input
               type="tel"
@@ -131,49 +116,6 @@ export default function EmergencyForm({
               placeholder="+91 98765 43210"
             />
           </div>
-
-          <div>
-            <label className="label label-required">Date of Birth</label>
-            <input
-              type="date"
-              name="dateOfBirth"
-              value={emergencyInfo.dateOfBirth}
-              onChange={onChange}
-              required
-              className="input"
-            />
-          </div>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-6 mt-6">
-          <div>
-            <label className="label label-required">Blood Type</label>
-            <select
-              name="bloodType"
-              value={emergencyInfo.bloodType}
-              onChange={onChange}
-              required
-              aria-required="true"
-              className="input"
-            >
-              <option value="" disabled>Select Blood Type</option>
-              {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <label className="label">Address</label>
-          <textarea
-            name="address"
-            value={emergencyInfo.address}
-            onChange={onChange}
-            className="textarea"
-            rows={3}
-            placeholder="Complete address with city, state, and postal code"
-          />
         </div>
       </div>
 
@@ -260,6 +202,69 @@ export default function EmergencyForm({
               <p className="empty-state-description">Add at least one emergency contact</p>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Additional Information */}
+      <div className="card-elevated p-8">
+        <h3 className="text-lg font-bold text-neutral-900 mb-6">Additional Information</h3>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          <div>
+            <label className="label label-required">Blood Type</label>
+            <select
+              name="bloodType"
+              value={emergencyInfo.bloodType}
+              onChange={onChange}
+              required
+              aria-required="true"
+              className="input"
+            >
+              <option value="" disabled>Select Blood Type</option>
+              {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="label label-required">Date of Birth</label>
+            <input
+              type="date"
+              name="dateOfBirth"
+              value={emergencyInfo.dateOfBirth}
+              onChange={onChange}
+              required
+              className="input"
+            />
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <div>
+            <label className="label">Email</label>
+            <input
+              type="email"
+              name="email"
+              value={emergencyInfo.email}
+              onChange={onChange}
+              autoComplete="email"
+              className="input"
+              placeholder="your@email.com"
+            />
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <label className="label">Address</label>
+          <textarea
+            name="address"
+            value={emergencyInfo.address}
+            onChange={onChange}
+            className="textarea"
+            rows={3}
+            placeholder="Complete address with city, state, and postal code"
+          />
         </div>
       </div>
 
