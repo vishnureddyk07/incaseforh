@@ -9,8 +9,11 @@ export default function Navbar() {
 
   const navItems = [
     { label: 'Home', href: '#home' },
+    { label: 'How It Works', href: '#how-it-works' },
+    { label: 'Live Demo', href: '#live-demo' },
+    { label: 'For Organizations', href: '#corporate' },
     { label: 'Safety Tips', href: '#safety-tips' },
-    { label: 'Emergency Contacts', href: '#emergency-contacts' },
+    { label: 'FAQ', href: '#faq' },
   ];
 
   const closeMenu = () => setIsOpen(false);

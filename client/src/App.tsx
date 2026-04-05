@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
+import HomepagePremiumSections from './components/HomepagePremiumSections';
 const WhyPrepare = lazy(() => import('./components/WhyPrepare'));
 const SafetyTips = lazy(() => import('./components/SafetyTips'));
 const EmergencyContacts = lazy(() => import('./components/EmergencyContacts'));
@@ -44,9 +45,10 @@ function RouteNormalizer() {
 
 function MainContent() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white pb-16 md:pb-0">
       <Navbar />
       <Hero />
+      <HomepagePremiumSections />
       <section id="emergency-info" className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
@@ -63,10 +65,31 @@ function MainContent() {
         <SafetyTips />
         <EmergencyContacts />
       </Suspense>
-      <footer className="bg-gray-900 text-white py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <p>© 2024 RideGuard Emergency Platform. All rights reserved.</p>
-          <p className="mt-2 text-gray-400">Emergency Hotline: 108 | Police: 100 | Fire: 101</p>
+      <footer className="bg-slate-950 text-white py-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid gap-8 md:grid-cols-3">
+            <div>
+              <p className="text-lg font-bold text-white">INcase Emergency Platform</p>
+              <p className="mt-2 text-sm text-slate-300">Fast responder access to life-saving profile details when every second matters.</p>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-white">Quick Links</p>
+              <div className="mt-2 space-y-1 text-sm text-slate-300">
+                <a href="#emergency-info" className="block hover:text-white">Activate / Generate QR</a>
+                <a href="#corporate" className="block hover:text-white">For Organizations</a>
+                <a href="#faq" className="block hover:text-white">FAQ</a>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-white">Emergency Numbers</p>
+              <p className="mt-2 text-sm text-slate-300">Ambulance: 108</p>
+              <p className="text-sm text-slate-300">Police: 100</p>
+              <p className="text-sm text-slate-300">Fire: 101</p>
+            </div>
+          </div>
+          <div className="mt-8 border-t border-slate-800 pt-4 text-center">
+            <p className="text-xs text-slate-400">© 2026 INcase. Privacy-focused emergency access platform.</p>
+          </div>
         </div>
       </footer>
     </div>

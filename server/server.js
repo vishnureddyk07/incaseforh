@@ -2158,6 +2158,48 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       await sticker.save();
     }
 
+    let packSync = { enabled: false, syncedCount: 0, skippedCount: 0 };
+    const batchMeta = await QRBatch.findOne({ batchId: sticker.batchId }).select('batchId quantity').lean();
+    const shouldSyncTwoStickerPack = Number(batchMeta?.quantity || 0) === 2;
+
+    if (shouldSyncTwoStickerPack) {
+      const siblings = await QRSticker.find({
+        batchId: sticker.batchId,
+        uuid: { $ne: sticker.uuid },
+      })
+        .select('_id status activatedBy')
+        .lean();
+
+      const syncableSiblingIds = siblings
+        .filter((sibling) => {
+          if (sibling.status === 'deactivated') return false;
+          if (!sibling.activatedBy) return true;
+          return String(sibling.activatedBy) === String(emergencyInfo._id);
+        })
+        .map((sibling) => sibling._id);
+
+      if (syncableSiblingIds.length > 0) {
+        await QRSticker.updateMany(
+          { _id: { $in: syncableSiblingIds } },
+          {
+            $set: {
+              status: 'active',
+              activatedBy: emergencyInfo._id,
+              activatedAt: new Date(),
+              deactivatedAt: null,
+              deactivatedReason: '',
+            },
+          }
+        );
+      }
+
+      packSync = {
+        enabled: true,
+        syncedCount: syncableSiblingIds.length,
+        skippedCount: Math.max(siblings.length - syncableSiblingIds.length, 0),
+      };
+    }
+
     // Use email/phone for profile URL, with ObjectId as fallback
     const profileIdentifier = emergencyInfo.email || emergencyInfo.phoneNumber || emergencyInfo._id.toString();
 
@@ -2166,6 +2208,7 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       mode: isExistingActiveProfile ? 'updated' : 'activated',
       emergencyInfo,
       sticker,
+      packSync,
       profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(profileIdentifier)}`,
     });
   } catch (error) {

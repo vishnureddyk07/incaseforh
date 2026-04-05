@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, AlertTriangle, CheckCircle, Timer } from 'lucide-react';
+import { Shield, AlertTriangle, CheckCircle, Timer, Building2 } from 'lucide-react';
 
 const steps = [
   {
@@ -41,8 +41,8 @@ export default function Hero() {
 
             {/* Description */}
             <p className="text-base md:text-lg text-neutral-600 max-w-2xl mb-8 leading-relaxed">
-              Create an emergency QR once, stick it on your helmet or bike, and give first responders
-              instant access to your medical info and family contacts when every second counts.
+              Create your emergency profile once and keep two linked stickers ready. Responders can view
+              your critical data and reach family in seconds when time matters most.
             </p>
 
             {/* Feature Pills */}
@@ -59,13 +59,14 @@ export default function Hero() {
                 className="btn-primary-lg justify-center sm:justify-start"
               >
                 <Shield className="mr-2 h-5 w-5" />
-                Create Emergency QR
+                Generate My QR
               </a>
               <a
-                href="#safety-tips"
+                href="#corporate"
                 className="btn-secondary-lg justify-center sm:justify-start"
               >
-                View Safety Tips
+                <Building2 className="mr-2 h-5 w-5" />
+                For Hospitals & Companies
               </a>
             </div>
           </div>
