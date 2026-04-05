@@ -128,6 +128,9 @@ export default function ActivateQR() {
       if (!phoneNumber.trim()) {
         throw new Error('Phone Number is required.');
       }
+      if (!bloodType) {
+        throw new Error('Blood Group is required.');
+      }
 
       const validContacts = contacts.filter((c) => c.name.trim() && c.phone.trim());
       if (validContacts.length === 0) {
@@ -242,8 +245,8 @@ export default function ActivateQR() {
           <div className="rounded-xl border border-primary-200 bg-primary-50 p-4">
             <p className="text-sm font-semibold text-primary-800">Required vs Optional Fields</p>
             <p className="mt-1 text-xs text-primary-700">
-              <strong>Required:</strong> Full Name, Phone Number, at least one emergency contact.<br/>
-              <strong>Optional:</strong> Everything else. Upload fields accept images or PDF reports.
+              <strong>Required:</strong> Full Name, Phone Number, Blood Group, at least one emergency contact.<br/>
+              <strong>Optional:</strong> Everything else (reports, additional info). Upload fields accept images or PDF reports.
             </p>
           </div>
 
@@ -263,15 +266,15 @@ export default function ActivateQR() {
                 <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" title="Date of birth" aria-label="Date of birth" />
               </div>
               <div>
-                <label className="label">Blood Group</label>
-                <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input" title="Blood type" aria-label="Blood type">
-                  <option value="">Blood Type (optional)</option>
+                <label className="label label-required">Blood Group</label>
+                <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input" title="Blood type" aria-label="Blood type" required>
+                  <option value="">Select Blood Type</option>
                   <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
                   <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
                 </select>
               </div>
               <div className="md:col-span-2">
-                <label className="label">Blood Group Report</label>
+                <label className="label">Blood Group Report (Optional)</label>
                 <input
                   type="file"
                   accept="image/*,application/pdf"
@@ -280,7 +283,7 @@ export default function ActivateQR() {
                   title="Upload blood group report"
                   aria-label="Upload blood group report"
                 />
-                <p className="mt-1 text-xs text-neutral-500">Optional: add blood test report or lab card image to help responders quickly verify blood group.</p>
+                <p className="mt-1 text-xs text-neutral-500">Optional: add blood test report or lab card image for verification.</p>
               </div>
               <div>
                 <label className="label">Email</label>
