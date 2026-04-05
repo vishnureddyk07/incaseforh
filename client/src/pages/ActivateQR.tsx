@@ -296,6 +296,45 @@ export default function ActivateQR() {
             </div>
           </div>
 
+          <div className="relative rounded-2xl border-2 border-green-400 bg-gradient-to-br from-green-50 to-emerald-50 p-6 shadow-lg">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-green-200 rounded-full opacity-20 -mr-12 -mt-12"></div>
+            <div className="absolute bottom-0 left-0 w-32 h-32 bg-emerald-200 rounded-full opacity-20 -ml-16 -mb-16"></div>
+            <div className="relative z-10">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-3xl">👥</span>
+                <div>
+                  <p className="text-lg font-bold text-green-900">Emergency Contacts</p>
+                  <p className="text-sm text-green-700">Required • At least 1 contact needed</p>
+                </div>
+              </div>
+              <p className="text-sm text-green-700 mb-4 font-medium">These people will be notified immediately in case of emergency. They should be people who can reach you quickly and make decisions on your behalf.</p>
+              <div className="space-y-3">
+                {contacts.map((c, idx) => (
+                  <div key={idx} className="flex items-end gap-2 bg-white rounded-lg p-3 border border-green-200">
+                    <div className="flex-1">
+                      <label className="text-xs font-semibold text-neutral-700">Name</label>
+                      <input value={c.name} onChange={(e) => updateContact(idx, 'name', e.target.value)} placeholder="Contact name" className="input text-sm" required />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-xs font-semibold text-neutral-700">Phone</label>
+                      <input value={c.phone} onChange={(e) => updateContact(idx, 'phone', e.target.value)} placeholder="Phone number" className="input text-sm" required />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeContact(idx)}
+                      disabled={contacts.length <= 1}
+                      className="btn-danger-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={contacts.length <= 1 ? 'At least one contact is required' : 'Remove contact'}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={addContact} className="mt-3 w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors">+ Add Emergency Contact</button>
+            </div>
+          </div>
+
           <div className="rounded-xl border border-neutral-200 p-4">
             <p className="text-sm font-semibold text-neutral-800">Medical History</p>
             <p className="mt-1 text-xs text-neutral-500">Everything in this section is optional, but useful during emergencies.</p>
@@ -330,25 +369,7 @@ export default function ActivateQR() {
             </div>
           </div>
 
-          <div className="space-y-2 rounded-xl border border-neutral-200 p-4">
-            <p className="font-semibold text-neutral-700">Emergency Contacts (at least 1 required)</p>
-            {contacts.map((c, idx) => (
-              <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                <input value={c.name} onChange={(e) => updateContact(idx, 'name', e.target.value)} placeholder="Name" className="input" />
-                <input value={c.phone} onChange={(e) => updateContact(idx, 'phone', e.target.value)} placeholder="Phone" className="input" />
-                <button
-                  type="button"
-                  onClick={() => removeContact(idx)}
-                  disabled={contacts.length <= 1}
-                  className="btn-danger-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={contacts.length <= 1 ? 'At least one contact is required' : 'Remove contact'}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-            <button type="button" onClick={addContact} className="btn-secondary-sm">+ Add Contact</button>
-          </div>
+
 
           <div className="rounded-xl border border-neutral-200 p-4">
             <label className="mb-1 block text-sm font-medium text-neutral-700">Photo Upload (optional)</label>
