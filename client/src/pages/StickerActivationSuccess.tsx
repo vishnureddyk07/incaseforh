@@ -6,6 +6,11 @@ type SuccessState = {
   serialNumber?: string;
   profileUrl?: string;
   qrActivationUrl?: string;
+  packSync?: {
+    enabled: boolean;
+    syncedCount: number;
+    skippedCount: number;
+  };
 };
 
 export default function StickerActivationSuccess() {
@@ -33,6 +38,13 @@ export default function StickerActivationSuccess() {
             <p className="font-semibold text-neutral-900">{state.serialNumber || '—'}</p>
           </div>
         </div>
+
+        {state.packSync?.enabled ? (
+          <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4 text-left text-sm text-green-800">
+            <p className="font-semibold">2-Pack sync confirmed</p>
+            <p className="mt-1">{state.packSync.syncedCount} sticker(s) were linked to the same profile. {state.packSync.skippedCount} sticker(s) were left unchanged.</p>
+          </div>
+        ) : null}
 
         <p className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
           Stick your QR on your helmet - it could save your life.

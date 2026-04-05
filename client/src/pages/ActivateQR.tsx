@@ -8,6 +8,11 @@ type ActivationCheckResponse = {
   status: 'generated' | 'distributed' | 'unactivated' | 'active' | 'deactivated';
   reason?: string;
   redirectTo?: string;
+  packSync?: {
+    enabled: boolean;
+    syncedCount: number;
+    skippedCount: number;
+  };
   sticker?: {
     uuid: string;
     serialNumber: string;
@@ -192,6 +197,7 @@ export default function ActivateQR() {
           bloodType: data?.emergencyInfo?.bloodType || bloodType,
           serialNumber: data?.sticker?.serialNumber || check?.sticker?.serialNumber || '',
           profileUrl: data?.profileUrl,
+            packSync: data?.packSync,
           qrActivationUrl: `${window.location.origin}/activate/${uuid}`,
         },
       });

@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import * as QRCodeLib from 'qrcode';
 
-type TabKey = 'overview' | 'generate' | 'batches' | 'stickers';
+type TabKey = 'overview' | 'generate' | 'batches' | 'details' | 'stickers';
+
+type PackSyncStatus = 'synced' | 'partial' | 'mismatch' | 'deactivated' | 'unactivated' | 'not-applicable';
 
 type QrStats = {
   totalGenerated: number;
@@ -24,10 +27,13 @@ type BatchRow = {
   quantity: number;
   type: 'b2c' | 'b2b' | 'b2g';
   organizationName?: string;
+  createdBy?: string;
+  notes?: string;
+  downloadCount?: number;
   activeCount?: number;
   unactivatedCount?: number;
   packSyncEligible?: boolean;
-  packSyncStatus?: 'synced' | 'partial' | 'mismatch' | 'deactivated' | 'unactivated' | 'not-applicable';
+  packSyncStatus?: PackSyncStatus;
   activeInPack?: number;
   uniqueProfilesInPack?: number;
 };
@@ -38,9 +44,26 @@ type StickerRow = {
   serialNumber: string;
   status: 'generated' | 'distributed' | 'unactivated' | 'active' | 'deactivated';
   type: 'b2c' | 'b2b' | 'b2g';
+  batchId?: string;
   activatedAt?: string;
   lastScannedAt?: string;
+  scanCount?: number;
+  deactivatedAt?: string;
+  deactivatedReason?: string;
+  createdAt?: string;
   activatedBy?: { fullName?: string; email?: string; phoneNumber?: string };
+};
+
+type BatchDetailResponse = {
+  batch: BatchRow;
+  stickers: StickerRow[];
+};
+
+type DerivedPackSyncInfo = {
+  enabled: boolean;
+  status: PackSyncStatus;
+  activeInPack: number;
+  uniqueProfilesInPack: number;
 };
 
 type BatchDownloadRow = {
@@ -72,6 +95,11 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
 
   const [batches, setBatches] = useState<BatchRow[]>([]);
   const [loadingBatches, setLoadingBatches] = useState(false);
+  const [selectedBatchId, setSelectedBatchId] = useState('');
+  const [selectedBatchDetail, setSelectedBatchDetail] = useState<BatchDetailResponse | null>(null);
+  const [loadingBatchDetail, setLoadingBatchDetail] = useState(false);
+  const [selectedStickerUuid, setSelectedStickerUuid] = useState('');
+  const [selectedStickerQr, setSelectedStickerQr] = useState('');
 
   const [stickers, setStickers] = useState<StickerRow[]>([]);
   const [loadingStickers, setLoadingStickers] = useState(false);
@@ -114,6 +142,23 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     }
   };
 
+  const fetchBatchDetail = async (batchId: string) => {
+    if (!token || !batchId) return;
+    setLoadingBatchDetail(true);
+    try {
+      const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/batch/${encodeURIComponent(batchId)}`, { headers: authHeaders });
+      const data = (await res.json()) as BatchDetailResponse | { error?: string };
+      if (!res.ok) throw new Error((data as { error?: string }).error || 'Failed to fetch batch details');
+      const detail = data as BatchDetailResponse;
+      setSelectedBatchDetail(detail);
+      setSelectedStickerUuid((current) => current && detail.stickers.some((sticker) => sticker.uuid === current) ? current : (detail.stickers[0]?.uuid || ''));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch batch details');
+    } finally {
+      setLoadingBatchDetail(false);
+    }
+  };
+
   const fetchStickers = async (targetPage = page) => {
     if (!token) return;
     setLoadingStickers(true);
@@ -145,6 +190,39 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     void fetchBatches();
     void fetchStickers(1);
   }, [token]);
+
+  useEffect(() => {
+    if (tab !== 'details') return;
+    if (!selectedBatchId) return;
+    void fetchBatchDetail(selectedBatchId);
+  }, [tab, selectedBatchId, token]);
+
+  useEffect(() => {
+    let active = true;
+    const selectedSticker = selectedBatchDetail?.stickers.find((sticker) => sticker.uuid === selectedStickerUuid) || selectedBatchDetail?.stickers[0];
+    if (!selectedSticker) {
+      setSelectedStickerQr('');
+      return () => {
+        active = false;
+      };
+    }
+
+    void QRCodeLib.toDataURL(`${window.location.origin}/activate/${selectedSticker.uuid}`, {
+      width: 340,
+      margin: 2,
+      errorCorrectionLevel: 'H',
+    })
+      .then((value) => {
+        if (active) setSelectedStickerQr(value);
+      })
+      .catch(() => {
+        if (active) setSelectedStickerQr('');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedBatchDetail, selectedStickerUuid]);
 
   useEffect(() => {
     setPage(1);
@@ -196,6 +274,14 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Download failed');
     return data as BatchDownloadRow[];
+  };
+
+  const openBatchDetails = async (batchId: string) => {
+    setSelectedBatchId(batchId);
+    setSelectedStickerUuid('');
+    setSelectedBatchDetail(null);
+    setTab('details');
+    await fetchBatchDetail(batchId);
   };
 
   const downloadCsv = async (batchId: string) => {
@@ -384,12 +470,86 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     return 'bg-orange-100 text-orange-700';
   };
 
-  const packSyncBadge = (batch: BatchRow) => {
-    if (!batch.packSyncEligible) {
+  const formatDateTime = (value?: string) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString();
+  };
+
+  const derivePackSyncInfo = (batch: BatchRow | null | undefined, stickersForBatch: StickerRow[] = []): DerivedPackSyncInfo => {
+    if (!batch || Number(batch.quantity || 0) !== 2) {
+      return { enabled: false, status: 'not-applicable', activeInPack: 0, uniqueProfilesInPack: 0 };
+    }
+
+    const activeStickers = stickersForBatch.filter((sticker) => sticker.status === 'active');
+    const uniqueProfilesInPack = Array.from(
+      new Set(
+        activeStickers
+          .map((sticker) => {
+            const activatedBy = sticker.activatedBy;
+            return activatedBy ? `${activatedBy.fullName || ''}|${activatedBy.email || ''}|${activatedBy.phoneNumber || ''}` : '';
+          })
+          .filter(Boolean)
+      )
+    ).length;
+
+    if (stickersForBatch.some((sticker) => sticker.status === 'deactivated')) {
+      return { enabled: true, status: 'deactivated', activeInPack: activeStickers.length, uniqueProfilesInPack };
+    }
+
+    if (activeStickers.length === 2 && uniqueProfilesInPack <= 1) {
+      return { enabled: true, status: 'synced', activeInPack: activeStickers.length, uniqueProfilesInPack };
+    }
+
+    if (activeStickers.length === 2 && uniqueProfilesInPack > 1) {
+      return { enabled: true, status: 'mismatch', activeInPack: activeStickers.length, uniqueProfilesInPack };
+    }
+
+    if (activeStickers.length === 1) {
+      return { enabled: true, status: 'partial', activeInPack: activeStickers.length, uniqueProfilesInPack };
+    }
+
+    return { enabled: true, status: 'unactivated', activeInPack: 0, uniqueProfilesInPack };
+  };
+
+  const copyToClipboard = async (value: string) => {
+    await navigator.clipboard.writeText(value);
+  };
+
+  const downloadStickerPng = async (sticker: StickerRow) => {
+    const activationUrl = `${window.location.origin}/activate/${sticker.uuid}`;
+    const dataUrl = await QRCodeLib.toDataURL(activationUrl, {
+      width: 1200,
+      margin: 2,
+      errorCorrectionLevel: 'H',
+    });
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = `incase-sticker-${sticker.serialNumber}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const selectedSticker = selectedBatchDetail?.stickers.find((sticker) => sticker.uuid === selectedStickerUuid) || selectedBatchDetail?.stickers[0] || null;
+  const selectedBatchPackSync = derivePackSyncInfo(selectedBatchDetail?.batch, selectedBatchDetail?.stickers || []);
+
+  const packSyncBadge = (batch: BatchRow, stickersForBatch: StickerRow[] = []) => {
+    const packSyncInfo = batch.packSyncEligible === undefined
+      ? derivePackSyncInfo(batch, stickersForBatch)
+      : {
+          enabled: Boolean(batch.packSyncEligible),
+          status: batch.packSyncStatus || (Number(batch.quantity || 0) === 2 ? 'unactivated' : 'not-applicable'),
+          activeInPack: batch.activeInPack ?? 0,
+          uniqueProfilesInPack: batch.uniqueProfilesInPack ?? 0,
+        };
+
+    if (!packSyncInfo.enabled) {
       return <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">N/A</span>;
     }
 
-    const status = batch.packSyncStatus || 'unactivated';
+    const status = packSyncInfo.status;
     if (status === 'synced') {
       return <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-semibold text-green-700">Synced</span>;
     }
@@ -410,13 +570,13 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-xl font-semibold text-gray-900">QR Sticker Management</h3>
         <div className="flex gap-2 text-sm">
-          {(['overview', 'generate', 'batches', 'stickers'] as TabKey[]).map((k) => (
+          {(['overview', 'generate', 'batches', 'details', 'stickers'] as TabKey[]).map((k) => (
             <button
               key={k}
               onClick={() => setTab(k)}
               className={`rounded-lg px-3 py-1.5 capitalize ${tab === k ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700'}`}
             >
-              {k === 'stickers' ? 'All Stickers' : k}
+              {k === 'stickers' ? 'All Stickers' : k === 'details' ? 'Batch Details' : k}
             </button>
           ))}
         </div>
@@ -596,6 +756,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex gap-2">
+                      <button onClick={async () => { try { await openBatchDetails(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'Failed to open details'); } }} className="rounded bg-slate-700 px-2 py-1 text-xs text-white">Details</button>
                       <button onClick={async () => { try { await downloadZip(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'ZIP download failed'); } }} className="rounded bg-green-600 px-2 py-1 text-xs text-white" title="Download QR images as ZIP file for printing">ZIP</button>
                       <button onClick={async () => { try { await downloadJson(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'Download failed'); } }} className="rounded bg-blue-600 px-2 py-1 text-xs text-white">JSON</button>
                       <button onClick={async () => { try { await downloadCsv(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'Download failed'); } }} className="rounded bg-gray-700 px-2 py-1 text-xs text-white">CSV</button>
@@ -611,6 +772,137 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
               ) : null}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {tab === 'details' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h4 className="text-lg font-semibold text-gray-900">Batch Details</h4>
+              <p className="text-sm text-gray-500">Open a batch to inspect each sticker, preview the QR, and download a single sticker PNG.</p>
+            </div>
+            <button onClick={() => setTab('batches')} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700">Back to batches</button>
+          </div>
+
+          {loadingBatchDetail ? <p className="text-sm text-gray-500">Loading batch details...</p> : null}
+
+          {!selectedBatchDetail && !loadingBatchDetail ? (
+            <div className="rounded-xl border border-dashed border-gray-300 p-6 text-sm text-gray-600">
+              Choose a batch from the Batches tab, then click Details.
+            </div>
+          ) : null}
+
+          {selectedBatchDetail ? (
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)]">
+              <div className="space-y-4 rounded-xl border bg-white p-4">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">Batch ID</p><p className="font-mono text-xs font-semibold text-gray-900 break-all">{selectedBatchDetail.batch.batchId}</p></div>
+                  <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">Type</p><p className="text-sm font-semibold uppercase text-gray-900">{selectedBatchDetail.batch.type}</p></div>
+                  <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">Quantity</p><p className="text-sm font-semibold text-gray-900">{selectedBatchDetail.batch.quantity}</p></div>
+                  <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">Created</p><p className="text-sm font-semibold text-gray-900">{formatDateTime(selectedBatchDetail.batch.createdAt)}</p></div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Active Stickers</p>
+                    <p className="text-2xl font-bold text-green-700">{selectedBatchDetail.stickers.filter((sticker) => sticker.status === 'active').length}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Unactivated</p>
+                    <p className="text-2xl font-bold text-yellow-700">{selectedBatchDetail.stickers.filter((sticker) => sticker.status === 'generated' || sticker.status === 'distributed' || sticker.status === 'unactivated').length}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">2-Pack Sync</p>
+                    <div className="mt-1">{packSyncBadge({
+                      ...selectedBatchDetail.batch,
+                      packSyncEligible: selectedBatchPackSync.enabled,
+                      packSyncStatus: selectedBatchPackSync.status,
+                      activeInPack: selectedBatchPackSync.activeInPack,
+                      uniqueProfilesInPack: selectedBatchPackSync.uniqueProfilesInPack,
+                    })}</div>
+                  </div>
+                </div>
+
+                {selectedBatchDetail.batch.notes ? (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                    <span className="font-semibold text-gray-900">Notes: </span>{selectedBatchDetail.batch.notes}
+                  </div>
+                ) : null}
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-gray-800">Stickers in batch</p>
+                    <p className="text-xs text-gray-500">Click a sticker to preview the QR and download it as a single PNG.</p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {selectedBatchDetail.stickers.map((sticker) => {
+                      const isSelected = sticker.uuid === selectedStickerUuid || (!selectedStickerUuid && sticker.uuid === selectedBatchDetail.stickers[0]?.uuid);
+                      return (
+                        <button
+                          key={sticker.uuid}
+                          type="button"
+                          onClick={() => setSelectedStickerUuid(sticker.uuid)}
+                          className={`rounded-xl border p-3 text-left transition ${isSelected ? 'border-orange-500 bg-orange-50 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-mono text-xs font-semibold text-gray-900">{sticker.serialNumber}</p>
+                              <p className="mt-1 text-[11px] text-gray-500">{sticker.uuid.slice(0, 8)}...{sticker.uuid.slice(-6)}</p>
+                            </div>
+                            <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${statusBadge(sticker.status)}`}>{sticker.status}</span>
+                          </div>
+                          <div className="mt-3 flex items-center justify-between gap-2">
+                            <p className="text-xs text-gray-500">{sticker.activatedBy?.fullName || 'Not linked yet'}</p>
+                            <span className="text-[11px] text-gray-400">{sticker.scanCount ?? 0} scans</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border bg-white p-4">
+                {selectedSticker ? (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Selected Sticker</p>
+                      <h5 className="text-lg font-semibold text-gray-900">{selectedSticker.serialNumber}</h5>
+                      <p className="text-sm text-gray-500">UUID: <span className="font-mono">{selectedSticker.uuid}</span></p>
+                    </div>
+
+                    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                      {selectedStickerQr ? (
+                        <img src={selectedStickerQr} alt={selectedSticker.serialNumber} className="mx-auto h-64 w-64 rounded-lg bg-white p-3 shadow-sm" />
+                      ) : (
+                        <div className="grid h-64 place-items-center rounded-lg bg-white text-sm text-gray-500">QR preview unavailable</div>
+                      )}
+                      <p className="mt-3 text-center text-xs text-gray-500">Scan URL: {window.location.origin}/activate/{selectedSticker.uuid}</p>
+                    </div>
+
+                    <div className="grid gap-2 text-sm text-gray-700">
+                      <div className="rounded-lg bg-gray-50 p-3"><span className="font-semibold text-gray-900">Status: </span>{selectedSticker.status}</div>
+                      <div className="rounded-lg bg-gray-50 p-3"><span className="font-semibold text-gray-900">Activated By: </span>{selectedSticker.activatedBy?.fullName || '—'}</div>
+                      <div className="rounded-lg bg-gray-50 p-3"><span className="font-semibold text-gray-900">Activated At: </span>{formatDateTime(selectedSticker.activatedAt)}</div>
+                      <div className="rounded-lg bg-gray-50 p-3"><span className="font-semibold text-gray-900">Last Scanned: </span>{formatDateTime(selectedSticker.lastScannedAt)}</div>
+                      <div className="rounded-lg bg-gray-50 p-3"><span className="font-semibold text-gray-900">Scan Count: </span>{selectedSticker.scanCount ?? 0}</div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={async () => { try { await downloadStickerPng(selectedSticker); } catch (err) { setError(err instanceof Error ? err.message : 'Failed to download sticker'); } }} className="rounded-lg bg-orange-600 px-3 py-2 text-sm font-semibold text-white">Download PNG</button>
+                      <button type="button" onClick={async () => { try { await copyToClipboard(`${window.location.origin}/activate/${selectedSticker.uuid}`); } catch (err) { setError(err instanceof Error ? err.message : 'Failed to copy link'); } }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700">Copy Activation URL</button>
+                      <button type="button" onClick={() => openReassignPage(selectedSticker.uuid)} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">Reassign</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid h-full min-h-[24rem] place-items-center rounded-lg border border-dashed border-gray-300 text-sm text-gray-500">
+                    Select a sticker to view its QR and details.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 
