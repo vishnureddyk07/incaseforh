@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { AlertCircle, FileText, Heart, Phone, User, Shield, Upload, Users, Trash2 } from 'lucide-react';
 
 type EmergencyContact = { name: string; phone: string };
 
@@ -226,168 +227,378 @@ export default function ActivateQR() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 section">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 section py-8">
       <div className="container-md">
-        {check.status === 'active' ? (
-          <div className="mb-6 rounded-xl border border-green-200 bg-green-50 p-4">
-            <p className="text-sm font-semibold text-green-700">This sticker is already active.</p>
-            <p className="text-xs text-green-700 mt-1">You can update the profile details below anytime. Changes are saved for this same sticker.</p>
+        {/* Header Section */}
+        <div className="mb-8 text-center">
+          <div className="inline-block mb-4 p-3 bg-blue-100 rounded-full">
+            <Shield className="h-6 w-6 text-blue-600" />
           </div>
-        ) : null}
-        <div className="mb-6 rounded-xl border border-primary-200 bg-primary-50 p-4">
-          <p className="text-sm font-semibold text-primary-700">Activating Sticker</p>
-          <p className="text-xl font-bold text-primary-900">{check.sticker?.serialNumber}</p>
-          <p className="text-xs text-primary-700">Fill your emergency details to protect yourself.</p>
+          <h1 className="text-4xl font-bold text-slate-900 mb-2">Emergency Protection Profile</h1>
+          <p className="text-lg text-slate-600">Complete your safety information to enable instant emergency assistance</p>
         </div>
 
-        <form onSubmit={submitActivation} className="space-y-5 card-elevated p-6">
-          <h1 className="text-2xl font-bold text-neutral-900">Activate Your INcase Sticker</h1>
-          <div className="rounded-xl border border-primary-200 bg-primary-50 p-4">
-            <p className="text-sm font-semibold text-primary-800">Required vs Optional Fields</p>
-            <p className="mt-1 text-xs text-primary-700">
-              <strong>Required:</strong> Full Name, Phone Number, Blood Group, at least one emergency contact.<br/>
-              <strong>Optional:</strong> Everything else (reports, additional info). Upload fields accept images or PDF reports.
-            </p>
+        {check.status === 'active' ? (
+          <div className="mb-6 rounded-2xl border-l-4 border-l-green-500 bg-gradient-to-r from-green-50 to-emerald-50 p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-green-900">Profile Active</p>
+                <p className="text-sm text-green-700 mt-1">Your profile is active. Update details anytime—changes save automatically.</p>
+              </div>
+            </div>
           </div>
+        ) : null}
 
-          <div className="rounded-xl border border-neutral-200 p-4">
-            <p className="text-sm font-semibold text-neutral-800">Basic Information</p>
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="mb-8 rounded-2xl border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50 to-indigo-50 p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-bold text-blue-900">Sticker ID: {check.sticker?.serialNumber}</p>
+              <p className="text-sm text-blue-700 mt-1">Activate your safety sticker and provide your emergency information</p>
+            </div>
+            <div className="text-3xl">📋</div>
+          </div>
+        </div>
+
+        <form onSubmit={submitActivation} className="space-y-6">
+          {/* Info Banner */}
+          <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
               <div>
-                <label className="label label-required">Full Name</label>
-                <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name" className="input" required />
-              </div>
-              <div>
-                <label className="label label-required">Phone Number</label>
-                <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number" className="input" required />
-              </div>
-              <div>
-                <label className="label">Date of Birth</label>
-                <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" title="Date of birth" aria-label="Date of birth" />
-              </div>
-              <div>
-                <label className="label label-required">Blood Group</label>
-                <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input" title="Blood type" aria-label="Blood type" required>
-                  <option value="">Select Blood Type</option>
-                  <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
-                  <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
-                </select>
-              </div>
-              <div className="md:col-span-2">
-                <label className="label">Blood Group Report (Optional)</label>
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => setBloodTypeReport(e.target.files?.[0] || null)}
-                  className="input"
-                  title="Upload blood group report"
-                  aria-label="Upload blood group report"
-                />
-                <p className="mt-1 text-xs text-neutral-500">Optional: add blood test report or lab card image for verification.</p>
-              </div>
-              <div>
-                <label className="label">Email</label>
-                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email (optional)" className="input" />
-              </div>
-              <div>
-                <label className="label">Address</label>
-                <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (optional)" className="input" />
+                <p className="text-sm font-bold text-amber-900">Field Requirements</p>
+                <p className="text-sm text-amber-800 mt-2">
+                  <strong>Required:</strong> Full Name, Phone Number, Blood Group, Emergency Contacts (min 1)<br/>
+                  <strong>Optional:</strong> All other fields including medical reports and uploads
+                </p>
               </div>
             </div>
           </div>
 
-          <div className="relative rounded-2xl border-2 border-green-400 bg-gradient-to-br from-green-50 to-emerald-50 p-6 shadow-lg">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-green-200 rounded-full opacity-20 -mr-12 -mt-12"></div>
-            <div className="absolute bottom-0 left-0 w-32 h-32 bg-emerald-200 rounded-full opacity-20 -ml-16 -mb-16"></div>
-            <div className="relative z-10">
-              <div className="flex items-center gap-3 mb-4">
-                <span className="text-3xl">👥</span>
+          {/* Basic Information Card */}
+          <div className="rounded-2xl bg-white border border-slate-200 shadow-md overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4 flex items-center gap-3">
+              <User className="h-6 w-6 text-white" />
+              <h2 className="text-xl font-bold text-white">Personal Information</h2>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                 <div>
-                  <p className="text-lg font-bold text-green-900">Emergency Contacts</p>
-                  <p className="text-sm text-green-700">Required • At least 1 contact needed</p>
+                  <label className="block text-sm font-bold text-slate-900 mb-2">
+                    Full Name <span className="text-red-500">*</span>
+                  </label>
+                  <input 
+                    value={fullName} 
+                    onChange={(e) => setFullName(e.target.value)} 
+                    placeholder="Enter your full name" 
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
+                    required 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-900 mb-2">
+                    Phone Number <span className="text-red-500">*</span>
+                  </label>
+                  <input 
+                    value={phoneNumber} 
+                    onChange={(e) => setPhoneNumber(e.target.value)} 
+                    placeholder="Enter your phone number" 
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
+                    required 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-900 mb-2">Date of Birth</label>
+                  <input 
+                    type="date" 
+                    value={dateOfBirth} 
+                    onChange={(e) => setDateOfBirth(e.target.value)} 
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
+                    title="Date of birth" 
+                    aria-label="Date of birth" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-900 mb-2">
+                    Blood Group <span className="text-red-500">*</span>
+                  </label>
+                  <select 
+                    value={bloodType} 
+                    onChange={(e) => setBloodType(e.target.value)} 
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
+                    title="Blood type" 
+                    aria-label="Blood type" 
+                    required
+                  >
+                    <option value="">Select Blood Type</option>
+                    <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+                    <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+                  </select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-blue-600" />
+                    Blood Group Report
+                  </label>
+                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center hover:bg-blue-50 transition cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) => setBloodTypeReport(e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="bloodTypeReport"
+                      title="Upload blood group report"
+                      aria-label="Upload blood group report"
+                    />
+                    <label htmlFor="bloodTypeReport" className="cursor-pointer">
+                      <Upload className="h-5 w-5 text-slate-400 mx-auto mb-2" />
+                      <p className="text-sm font-medium text-slate-700">Click to upload or drag and drop</p>
+                      <p className="text-xs text-slate-500 mt-1">PNG, JPG, PDF up to 10MB (Optional)</p>
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-600">💡 Add your blood test report, lab card, or blood bank document for quick verification.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-900 mb-2">Email</label>
+                  <input 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    placeholder="your@email.com" 
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-900 mb-2">Address</label>
+                  <input 
+                    value={address} 
+                    onChange={(e) => setAddress(e.target.value)} 
+                    placeholder="Your residential address" 
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
+                  />
                 </div>
               </div>
-              <p className="text-sm text-green-700 mb-4 font-medium">These people will be notified immediately in case of emergency. They should be people who can reach you quickly and make decisions on your behalf.</p>
-              <div className="space-y-3">
-                {contacts.map((c, idx) => (
-                  <div key={idx} className="flex items-end gap-2 bg-white rounded-lg p-3 border border-green-200">
-                    <div className="flex-1">
-                      <label className="text-xs font-semibold text-neutral-700">Name</label>
-                      <input value={c.name} onChange={(e) => updateContact(idx, 'name', e.target.value)} placeholder="Contact name" className="input text-sm" required />
+            </div>
+          </div>
+
+          {/* Emergency Contacts Card */}
+          <div className="rounded-2xl bg-white border border-slate-200 shadow-md overflow-hidden">
+            <div className="bg-gradient-to-r from-emerald-500 to-green-600 px-6 py-4 flex items-center gap-3">
+              <Users className="h-6 w-6 text-white" />
+              <div>
+                <h2 className="text-xl font-bold text-white">Emergency Contacts</h2>
+                <p className="text-emerald-100 text-sm">At least 1 contact required</p>
+              </div>
+            </div>
+            <div className="bg-gradient-to-r from-emerald-50 to-green-50 px-6 py-4 border-b border-slate-200">
+              <div className="flex items-start gap-3">
+                <Heart className="h-5 w-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-slate-700">Your emergency contacts will be notified immediately in case of crisis. Choose people who can reach you quickly and make critical decisions on your behalf.</p>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              {contacts.map((c, idx) => (
+                <div key={idx} className="rounded-lg border-2 border-slate-200 p-4 hover:border-emerald-300 hover:bg-emerald-50 transition">
+                  <div className="flex items-start gap-3 mb-3">
+                    <Phone className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-1" />
+                    <span className="text-xs font-bold text-slate-600 bg-emerald-100 text-emerald-700 px-2 py-1 rounded">Contact {idx + 1}</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-900 mb-2">Name</label>
+                      <input 
+                        value={c.name} 
+                        onChange={(e) => updateContact(idx, 'name', e.target.value)} 
+                        placeholder="Full name" 
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition text-sm" 
+                        required 
+                      />
                     </div>
-                    <div className="flex-1">
-                      <label className="text-xs font-semibold text-neutral-700">Phone</label>
-                      <input value={c.phone} onChange={(e) => updateContact(idx, 'phone', e.target.value)} placeholder="Phone number" className="input text-sm" required />
+                    <div>
+                      <label className="block text-xs font-bold text-slate-900 mb-2">Phone Number</label>
+                      <input 
+                        value={c.phone} 
+                        onChange={(e) => updateContact(idx, 'phone', e.target.value)} 
+                        placeholder="Phone number" 
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition text-sm" 
+                        required 
+                      />
                     </div>
+                  </div>
+                  {contacts.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removeContact(idx)}
                       disabled={contacts.length <= 1}
-                      className="btn-danger-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                      title={contacts.length <= 1 ? 'At least one contact is required' : 'Remove contact'}
+                      className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Remove contact"
                     >
-                      Remove
+                      <Trash2 className="h-4 w-4" />
+                      Remove Contact
                     </button>
+                  )}
+                </div>
+              ))}
+              <button 
+                type="button" 
+                onClick={addContact} 
+                disabled={contacts.length >= 3}
+                className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 disabled:from-slate-400 disabled:to-slate-500 text-white font-bold py-3 rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <Users className="h-5 w-5" />
+                Add Another Contact
+              </button>
+            </div>
+          </div>
+
+          {/* Medical Information Card */}
+          <div className="rounded-2xl bg-white border border-slate-200 shadow-md overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-500 to-pink-600 px-6 py-4 flex items-center gap-3">
+              <FileText className="h-6 w-6 text-white" />
+              <div>
+                <h2 className="text-xl font-bold text-white">Medical Information</h2>
+                <p className="text-purple-100 text-sm">All fields are optional</p>
+              </div>
+            </div>
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-bold text-slate-900 mb-2">Allergies</label>
+                <textarea 
+                  value={allergies} 
+                  onChange={(e) => setAllergies(e.target.value)} 
+                  placeholder="List any allergies to medications, food, etc." 
+                  className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition resize-none" 
+                  rows={2}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-900 mb-2">Current Medications</label>
+                <textarea 
+                  value={medications} 
+                  onChange={(e) => setMedications(e.target.value)} 
+                  placeholder="List all medications you are currently taking" 
+                  className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition resize-none" 
+                  rows={2}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-900 mb-2">Medical Conditions</label>
+                <textarea 
+                  value={medicalConditions} 
+                  onChange={(e) => setMedicalConditions(e.target.value)} 
+                  placeholder="Mention any chronic conditions, surgeries, or health concerns" 
+                  className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition resize-none" 
+                  rows={2}
+                />
+              </div>
+              
+              {/* Medical Documents Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                <div>
+                  <label className="block text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-purple-600" />
+                    Discharge/Prescription
+                  </label>
+                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-3 text-center hover:bg-purple-50 transition cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) => setPrescriptionOrDischargeReport(e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="prescriptionReport"
+                      title="Upload prescription or discharge report"
+                      aria-label="Upload prescription or discharge report"
+                    />
+                    <label htmlFor="prescriptionReport" className="cursor-pointer">
+                      <Upload className="h-4 w-4 text-slate-400 mx-auto mb-1" />
+                      <p className="text-xs font-medium text-slate-700">Upload Document</p>
+                      <p className="text-xs text-slate-500">PNG, JPG, PDF</p>
+                    </label>
                   </div>
-                ))}
-              </div>
-              <button type="button" onClick={addContact} className="mt-3 w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors">+ Add Emergency Contact</button>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-neutral-200 p-4">
-            <p className="text-sm font-semibold text-neutral-800">Medical History</p>
-            <p className="mt-1 text-xs text-neutral-500">Everything in this section is optional, but useful during emergencies.</p>
-            <div className="mt-4 space-y-4">
-              <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies (optional)" className="input" />
-              <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications (optional)" className="input" />
-              <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions (optional)" className="input" />
-              <div>
-                <label className="label">Discharge Summary / Prescription</label>
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => setPrescriptionOrDischargeReport(e.target.files?.[0] || null)}
-                  className="input"
-                  title="Upload prescription or discharge report"
-                  aria-label="Upload prescription or discharge report"
-                />
-                <p className="mt-1 text-xs text-neutral-500">Optional: include recent discharge summaries or prescriptions for faster treatment decisions.</p>
-              </div>
-              <div>
-                <label className="label">Medical Reports</label>
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => setSurgicalInfoReport(e.target.files?.[0] || null)}
-                  className="input"
-                  title="Upload surgical information report"
-                  aria-label="Upload surgical information report"
-                />
-                <p className="mt-1 text-xs text-neutral-500">Optional: upload additional medical reports like scans, specialist notes, or surgery reports.</p>
+                  <p className="mt-2 text-xs text-slate-600">📄 Recent medical reports for treatment continuity</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-purple-600" />
+                    Medical Reports
+                  </label>
+                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-3 text-center hover:bg-purple-50 transition cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) => setSurgicalInfoReport(e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="medicalReports"
+                      title="Upload surgical information report"
+                      aria-label="Upload surgical information report"
+                    />
+                    <label htmlFor="medicalReports" className="cursor-pointer">
+                      <Upload className="h-4 w-4 text-slate-400 mx-auto mb-1" />
+                      <p className="text-xs font-medium text-slate-700">Upload Document</p>
+                      <p className="text-xs text-slate-500">PNG, JPG, PDF</p>
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-600">🏥 Scans, specialist notes & surgery reports</p>
+                </div>
               </div>
             </div>
           </div>
 
 
 
-          <div className="rounded-xl border border-neutral-200 p-4">
-            <label className="mb-1 block text-sm font-medium text-neutral-700">Photo Upload (optional)</label>
-            <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="input" title="Upload profile photo" aria-label="Upload profile photo" />
-            <p className="mt-1 text-xs text-neutral-500">Optional profile photo to help identify you quickly.</p>
+          {/* Profile Photo Card */}
+          <div className="rounded-2xl bg-white border border-slate-200 shadow-md overflow-hidden">
+            <div className="bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-4 flex items-center gap-3">
+              <User className="h-6 w-6 text-white" />
+              <h2 className="text-xl font-bold text-white">Profile Photo</h2>
+            </div>
+            <div className="p-6 text-center">
+              <p className="text-sm text-slate-600 mb-4">Upload a clear photo to help responders identify you quickly</p>
+              <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:bg-cyan-50 transition cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setPhoto(e.target.files?.[0] || null)}
+                  className="hidden"
+                  id="profilePhoto"
+                  title="Upload profile photo"
+                  aria-label="Upload profile photo"
+                />
+                <label htmlFor="profilePhoto" className="cursor-pointer">
+                  <Upload className="h-8 w-8 text-slate-400 mx-auto mb-3" />
+                  <p className="text-sm font-medium text-slate-700">Click to upload or drag and drop</p>
+                  <p className="text-xs text-slate-500 mt-1">PNG, JPG up to 10MB (Optional)</p>
+                </label>
+              </div>
+            </div>
           </div>
 
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {/* Error Message */}
+          {error ? (
+            <div className="rounded-2xl border-l-4 border-l-red-500 bg-gradient-to-r from-red-50 to-rose-50 p-5 shadow-sm">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-700 font-medium">{error}</p>
+              </div>
+            </div>
+          ) : null}
 
-          <button disabled={submitting} type="submit" className="btn-primary-lg w-full disabled:opacity-60">
-            {submitting ? (check.status === 'active' ? 'Updating...' : 'Activating...') : (check.status === 'active' ? 'Update Profile' : 'Activate Sticker')}
+          {/* Submit Button */}
+          <button 
+            disabled={submitting} 
+            type="submit" 
+            className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-bold py-3.5 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:opacity-60 text-lg flex items-center justify-center gap-2"
+          >
+            <Shield className="h-5 w-5" />
+            {submitting ? (check.status === 'active' ? 'Updating Profile...' : 'Activating Sticker...') : (check.status === 'active' ? 'Update Profile' : 'Activate Sticker')}
           </button>
 
-          <p className="text-center text-sm text-neutral-500">
-            By activating, your emergency profile becomes available to first responders.
-          </p>
-          <div className="text-center">
-            <Link to="/" className="text-sm text-primary-600 hover:underline">Back to Home</Link>
+          <div className="text-center space-y-3">
+            <p className="text-sm text-slate-600">
+              ✓ By activating, your emergency profile becomes instantly available to first responders
+            </p>
+            <Link to="/" className="inline-block text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline">
+              ← Back to Home
+            </Link>
           </div>
         </form>
       </div>
