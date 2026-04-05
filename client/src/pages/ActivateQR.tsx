@@ -263,7 +263,7 @@ export default function ActivateQR() {
                 </select>
               </div>
               <div className="md:col-span-2">
-                <label className="label">Blood Group Result Upload</label>
+                <label className="label">Blood Group Report</label>
                 <input
                   type="file"
                   accept="image/*,application/pdf"
@@ -272,7 +272,7 @@ export default function ActivateQR() {
                   title="Upload blood group report"
                   aria-label="Upload blood group report"
                 />
-                <p className="mt-1 text-xs text-neutral-500">Optional: upload blood test report or lab card image.</p>
+                <p className="mt-1 text-xs text-neutral-500">Optional: add blood test report or lab card image to help responders quickly verify blood group.</p>
               </div>
               <div>
                 <label className="label">Email</label>
@@ -293,7 +293,7 @@ export default function ActivateQR() {
               <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications (optional)" className="input" />
               <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions (optional)" className="input" />
               <div>
-                <label className="label">Prescription / Discharge Report Upload</label>
+                <label className="label">Discharge Summary / Prescription</label>
                 <input
                   type="file"
                   accept="image/*,application/pdf"
@@ -302,10 +302,10 @@ export default function ActivateQR() {
                   title="Upload prescription or discharge report"
                   aria-label="Upload prescription or discharge report"
                 />
-                <p className="mt-1 text-xs text-neutral-500">Optional: prescription or medical discharge summary.</p>
+                <p className="mt-1 text-xs text-neutral-500">Optional: include recent discharge summaries or prescriptions for faster treatment decisions.</p>
               </div>
               <div>
-                <label className="label">Surgical Info / Report Upload</label>
+                <label className="label">Medical Reports</label>
                 <input
                   type="file"
                   accept="image/*,application/pdf"
@@ -314,7 +314,7 @@ export default function ActivateQR() {
                   title="Upload surgical information report"
                   aria-label="Upload surgical information report"
                 />
-                <p className="mt-1 text-xs text-neutral-500">Optional: surgery-related reports or documents.</p>
+                <p className="mt-1 text-xs text-neutral-500">Optional: upload additional medical reports like scans, specialist notes, or surgery reports.</p>
               </div>
             </div>
           </div>

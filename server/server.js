@@ -982,11 +982,16 @@ app.post('/api/extract-medical-info', upload.single('document'), async (req, res
 // ===== END COMMENTED OUT CODE =====
 
 // API Routes
-router.post('/emergency', createLimiter, upload.single('photo'), async (req, res) => {
+router.post('/emergency', createLimiter, upload.fields([
+  { name: 'photo', maxCount: 1 },
+  { name: 'bloodTypeReport', maxCount: 1 },
+  { name: 'prescriptionOrDischargeReport', maxCount: 1 },
+  { name: 'surgicalInfoReport', maxCount: 1 },
+]), async (req, res) => {
   try {
     console.log('=== POST /api/emergency START ===');
     console.log('Received body:', JSON.stringify(req.body, null, 2));
-    console.log('Received file:', req.file);
+    console.log('Received files:', Object.keys(req.files || {}));
 
     // STEP 1: VALIDATION - Check required fields
     console.log('STEP 1: Validating required fields...');
@@ -1027,17 +1032,48 @@ router.post('/emergency', createLimiter, upload.single('photo'), async (req, res
       return stripHtml(str);
     };
 
-    // Convert photo to base64 data URL (persists across restarts)
+    const uploadedFiles = req.files || {};
+    const photoFile = Array.isArray(uploadedFiles.photo) ? uploadedFiles.photo[0] : null;
+    const bloodTypeReportFile = Array.isArray(uploadedFiles.bloodTypeReport) ? uploadedFiles.bloodTypeReport[0] : null;
+    const prescriptionReportFile = Array.isArray(uploadedFiles.prescriptionOrDischargeReport)
+      ? uploadedFiles.prescriptionOrDischargeReport[0]
+      : null;
+    const surgicalInfoReportFile = Array.isArray(uploadedFiles.surgicalInfoReport) ? uploadedFiles.surgicalInfoReport[0] : null;
+
+    // Convert uploaded files to base64 data URLs (persists across restarts)
     let photoDataUrl = null;
-    if (req.file && req.file.buffer) {
-      const mime = req.file.mimetype || 'application/octet-stream';
-      const base64 = req.file.buffer.toString('base64');
+    if (photoFile?.buffer) {
+      const mime = photoFile.mimetype || 'application/octet-stream';
+      const base64 = photoFile.buffer.toString('base64');
       photoDataUrl = `data:${mime};base64,${base64}`;
+    }
+
+    let bloodTypeReportDataUrl = null;
+    if (bloodTypeReportFile?.buffer) {
+      const mime = bloodTypeReportFile.mimetype || 'application/octet-stream';
+      const base64 = bloodTypeReportFile.buffer.toString('base64');
+      bloodTypeReportDataUrl = `data:${mime};base64,${base64}`;
+    }
+
+    let prescriptionReportDataUrl = null;
+    if (prescriptionReportFile?.buffer) {
+      const mime = prescriptionReportFile.mimetype || 'application/octet-stream';
+      const base64 = prescriptionReportFile.buffer.toString('base64');
+      prescriptionReportDataUrl = `data:${mime};base64,${base64}`;
+    }
+
+    let surgicalInfoReportDataUrl = null;
+    if (surgicalInfoReportFile?.buffer) {
+      const mime = surgicalInfoReportFile.mimetype || 'application/octet-stream';
+      const base64 = surgicalInfoReportFile.buffer.toString('base64');
+      surgicalInfoReportDataUrl = `data:${mime};base64,${base64}`;
     }
 
     // If phone already exists, update that card instead of failing with duplicate error.
     const normalizedPhoneNumber = safeString(phoneNumber);
-    const existingByPhone = await EmergencyInfo.findOne({ phoneNumber: normalizedPhoneNumber }).select('_id photo').lean();
+    const existingByPhone = await EmergencyInfo.findOne({ phoneNumber: normalizedPhoneNumber })
+      .select('_id photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
+      .lean();
 
     let parsedEmergencyContacts = [];
     if (req.body.emergencyContacts) {
@@ -1079,6 +1115,9 @@ router.post('/emergency', createLimiter, upload.single('photo'), async (req, res
       medications: safeString(req.body.medications),
       medicalConditions: safeString(req.body.medicalConditions),
       photo: photoDataUrl,
+      bloodTypeReport: bloodTypeReportDataUrl,
+      prescriptionOrDischargeReport: prescriptionReportDataUrl,
+      surgicalInfoReport: surgicalInfoReportDataUrl,
       dateOfBirth: safeString(dateOfBirth),
       address: safeString(req.body.address),
       phoneNumber: normalizedPhoneNumber,
@@ -1090,6 +1129,9 @@ router.post('/emergency', createLimiter, upload.single('photo'), async (req, res
     if (existingByPhone) {
       // Preserve existing photo when user does not upload a new one.
       emergencyData.photo = photoDataUrl || existingByPhone.photo || null;
+      emergencyData.bloodTypeReport = bloodTypeReportDataUrl || existingByPhone.bloodTypeReport || null;
+      emergencyData.prescriptionOrDischargeReport = prescriptionReportDataUrl || existingByPhone.prescriptionOrDischargeReport || null;
+      emergencyData.surgicalInfoReport = surgicalInfoReportDataUrl || existingByPhone.surgicalInfoReport || null;
 
       const updatedDoc = await EmergencyInfo.findByIdAndUpdate(
         existingByPhone._id,
@@ -1957,7 +1999,7 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
       const identifier =
         activatedBy?.email || activatedBy?.phoneNumber || String(sticker.activatedBy);
 
-      const redirectTo = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
+      const redirectTo = `${frontendUrl}/activate/${sticker.uuid}`;
       if (!wantsJson) {
         return res.redirect(302, redirectTo);
       }
@@ -1968,6 +2010,7 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
           ...sticker,
           activatedBy,
         },
+        emergencyProfileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}`,
         redirectTo,
       });
     }

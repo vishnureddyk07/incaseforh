@@ -232,9 +232,9 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
   };
 
   const uploadedMedicalDocuments = [
-    { label: 'Blood Group Result', url: emergencyData?.bloodTypeReport },
-    { label: 'Prescription / Discharge Report', url: emergencyData?.prescriptionOrDischargeReport },
-    { label: 'Surgical Info / Report', url: emergencyData?.surgicalInfoReport },
+    { label: 'Blood Group Report', url: emergencyData?.bloodTypeReport },
+    { label: 'Discharge Summary / Prescription', url: emergencyData?.prescriptionOrDischargeReport },
+    { label: 'Medical Reports', url: emergencyData?.surgicalInfoReport },
   ].filter((doc) => typeof doc.url === 'string' && doc.url.length > 0);
 
   return (

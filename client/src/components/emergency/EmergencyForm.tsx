@@ -10,6 +10,9 @@ interface EmergencyFormProps {
     >
   ) => void;
   onPhotoChange: (photo: File) => void;
+  onBloodTypeReportChange?: (file: File | null) => void;
+  onPrescriptionOrDischargeReportChange?: (file: File | null) => void;
+  onSurgicalInfoReportChange?: (file: File | null) => void;
   onAddEmergencyContact?: () => void;
   onRemoveEmergencyContact?: (index: number) => void;
   onEmergencyContactChange?: (index: number, field: "name" | "phone", value: string) => void;
@@ -19,11 +22,17 @@ export default function EmergencyForm({
   emergencyInfo,
   onChange,
   onPhotoChange,
+  onBloodTypeReportChange,
+  onPrescriptionOrDischargeReportChange,
+  onSurgicalInfoReportChange,
   onAddEmergencyContact,
   onRemoveEmergencyContact,
   onEmergencyContactChange,
 }: EmergencyFormProps) {
   const profilePhotoInputRef = useRef<HTMLInputElement>(null);
+  const bloodTypeReportInputRef = useRef<HTMLInputElement>(null);
+  const prescriptionReportInputRef = useRef<HTMLInputElement>(null);
+  const medicalReportsInputRef = useRef<HTMLInputElement>(null);
 
   const handleRiderPhotoUpload = (photoUploadEvent: React.ChangeEvent<HTMLInputElement>) => {
     const selectedPhotoFile = photoUploadEvent.target.files?.[0];
@@ -238,6 +247,33 @@ export default function EmergencyForm({
               className="input"
             />
           </div>
+
+          <div className="md:col-span-2">
+            <label className="label">Blood Group Report</label>
+            <div className="flex items-center gap-3">
+              <input
+                ref={bloodTypeReportInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => onBloodTypeReportChange?.(e.target.files?.[0] || null)}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => bloodTypeReportInputRef.current?.click()}
+                className="btn-secondary-sm flex items-center gap-2"
+              >
+                <Upload className="h-4 w-4" />
+                Upload Blood Group Report (Optional)
+              </button>
+              {emergencyInfo.bloodTypeReport && (
+                <span className="text-sm text-neutral-600 truncate max-w-xs">
+                  {typeof emergencyInfo.bloodTypeReport === 'string' ? 'Report attached' : emergencyInfo.bloodTypeReport.name}
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">Optional: Add a blood test report or lab card image so responders can quickly verify your blood group.</p>
+          </div>
         </div>
 
         <div className="mt-6">
@@ -306,6 +342,60 @@ export default function EmergencyForm({
             rows={3}
             placeholder="List chronic conditions or important medical history (e.g., Diabetes, Heart condition)"
           />
+        </div>
+
+        <div className="mt-6">
+          <label className="label">Discharge Summary / Prescription</label>
+          <div className="flex items-center gap-3">
+            <input
+              ref={prescriptionReportInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={(e) => onPrescriptionOrDischargeReportChange?.(e.target.files?.[0] || null)}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => prescriptionReportInputRef.current?.click()}
+              className="btn-secondary-sm flex items-center gap-2"
+            >
+              <Upload className="h-4 w-4" />
+              Upload Discharge Summary / Prescription (Optional)
+            </button>
+            {emergencyInfo.prescriptionOrDischargeReport && (
+              <span className="text-sm text-neutral-600 truncate max-w-xs">
+                {typeof emergencyInfo.prescriptionOrDischargeReport === 'string' ? 'Document attached' : emergencyInfo.prescriptionOrDischargeReport.name}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">Optional: Include recent discharge summaries or prescriptions to help doctors continue treatment faster.</p>
+        </div>
+
+        <div className="mt-6">
+          <label className="label">Medical Reports</label>
+          <div className="flex items-center gap-3">
+            <input
+              ref={medicalReportsInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={(e) => onSurgicalInfoReportChange?.(e.target.files?.[0] || null)}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => medicalReportsInputRef.current?.click()}
+              className="btn-secondary-sm flex items-center gap-2"
+            >
+              <Upload className="h-4 w-4" />
+              Upload Medical Reports (Optional)
+            </button>
+            {emergencyInfo.surgicalInfoReport && (
+              <span className="text-sm text-neutral-600 truncate max-w-xs">
+                {typeof emergencyInfo.surgicalInfoReport === 'string' ? 'Report attached' : emergencyInfo.surgicalInfoReport.name}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">Optional: Upload extra reports like scans, surgery reports, or specialist notes for emergency teams.</p>
         </div>
       </div>
     </div>

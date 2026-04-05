@@ -77,6 +77,18 @@ export default function EmergencyQRCode() {
     setEmergencyInfo((prev) => ({ ...prev, photo: photoFile }));
   };
 
+  const handleBloodTypeReportChange = (file: File | null) => {
+    setEmergencyInfo((prev) => ({ ...prev, bloodTypeReport: file }));
+  };
+
+  const handlePrescriptionOrDischargeReportChange = (file: File | null) => {
+    setEmergencyInfo((prev) => ({ ...prev, prescriptionOrDischargeReport: file }));
+  };
+
+  const handleSurgicalInfoReportChange = (file: File | null) => {
+    setEmergencyInfo((prev) => ({ ...prev, surgicalInfoReport: file }));
+  };
+
   const handleMedicalDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -182,6 +194,15 @@ export default function EmergencyQRCode() {
       if (emergencyInfo.photo instanceof File) {
         formData.append('photo', emergencyInfo.photo);
       }
+      if (emergencyInfo.bloodTypeReport instanceof File) {
+        formData.append('bloodTypeReport', emergencyInfo.bloodTypeReport);
+      }
+      if (emergencyInfo.prescriptionOrDischargeReport instanceof File) {
+        formData.append('prescriptionOrDischargeReport', emergencyInfo.prescriptionOrDischargeReport);
+      }
+      if (emergencyInfo.surgicalInfoReport instanceof File) {
+        formData.append('surgicalInfoReport', emergencyInfo.surgicalInfoReport);
+      }
 
       // Log what we're sending (for debugging)
       console.log('📤 Sending to backend:');
@@ -261,6 +282,9 @@ export default function EmergencyQRCode() {
         medications: '',
         medicalConditions: '',
         photo: null,
+        bloodTypeReport: null,
+        prescriptionOrDischargeReport: null,
+        surgicalInfoReport: null,
         dateOfBirth: '',
         address: '',
         phoneNumber: '',
@@ -369,6 +393,9 @@ export default function EmergencyQRCode() {
             emergencyInfo={emergencyInfo}
             onChange={handleChange}
             onPhotoChange={handlePhotoChange}
+            onBloodTypeReportChange={handleBloodTypeReportChange}
+            onPrescriptionOrDischargeReportChange={handlePrescriptionOrDischargeReportChange}
+            onSurgicalInfoReportChange={handleSurgicalInfoReportChange}
             onAddEmergencyContact={handleAddEmergencyContact}
             onRemoveEmergencyContact={handleRemoveEmergencyContact}
             onEmergencyContactChange={handleEmergencyContactChange}

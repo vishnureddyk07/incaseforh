@@ -61,9 +61,9 @@ export default function EmergencyInfoDisplay() {
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
   const uploadedMedicalDocuments = [
-    { label: 'Blood Group Result', url: info?.bloodTypeReport },
-    { label: 'Prescription / Discharge Report', url: info?.prescriptionOrDischargeReport },
-    { label: 'Surgical Info / Report', url: info?.surgicalInfoReport },
+    { label: 'Blood Group Report', url: info?.bloodTypeReport },
+    { label: 'Discharge Summary / Prescription', url: info?.prescriptionOrDischargeReport },
+    { label: 'Medical Reports', url: info?.surgicalInfoReport },
   ].filter((doc) => typeof doc.url === 'string' && doc.url.length > 0);
 
   const reverseGeocode = async (lat: number, lng: number) => {
