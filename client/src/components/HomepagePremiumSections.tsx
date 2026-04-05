@@ -7,7 +7,6 @@ import {
   ClipboardList,
   FileLock2,
   HeartPulse,
-  Hospital,
   PhoneCall,
   QrCode,
   ShieldCheck,
@@ -340,7 +339,7 @@ function SecurityPrivacy() {
             <p className="mt-1 text-sm text-slate-600">Users decide what to upload, with reports attached only when needed.</p>
           </div>
           <div className="rounded-xl border border-slate-200 p-5">
-            <Hospital className="h-6 w-6 text-purple-600" />
+            <HeartPulse className="h-6 w-6 text-purple-600" />
             <p className="mt-3 font-semibold text-slate-900">Responder-Oriented Layout</p>
             <p className="mt-1 text-sm text-slate-600">Critical data appears first to support fast emergency treatment decisions.</p>
           </div>
