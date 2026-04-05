@@ -122,6 +122,13 @@ export default function ActivateQR() {
     setError(null);
 
     try {
+      if (!fullName.trim()) {
+        throw new Error('Full Name is required.');
+      }
+      if (!phoneNumber.trim()) {
+        throw new Error('Phone Number is required.');
+      }
+
       const validContacts = contacts.filter((c) => c.name.trim() && c.phone.trim());
       if (validContacts.length === 0) {
         throw new Error('Please add at least one emergency contact with name and phone number.');
@@ -233,9 +240,10 @@ export default function ActivateQR() {
         <form onSubmit={submitActivation} className="space-y-5 card-elevated p-6">
           <h1 className="text-2xl font-bold text-neutral-900">Activate Your INcase Sticker</h1>
           <div className="rounded-xl border border-primary-200 bg-primary-50 p-4">
-            <p className="text-sm font-semibold text-primary-800">Optional information helps first responders faster.</p>
+            <p className="text-sm font-semibold text-primary-800">Required vs Optional Fields</p>
             <p className="mt-1 text-xs text-primary-700">
-              All fields are optional except at least one emergency contact. Upload fields accept images or PDF reports.
+              <strong>Required:</strong> Full Name, Phone Number, at least one emergency contact.<br/>
+              <strong>Optional:</strong> Everything else. Upload fields accept images or PDF reports.
             </p>
           </div>
 
@@ -243,12 +251,12 @@ export default function ActivateQR() {
             <p className="text-sm font-semibold text-neutral-800">Basic Information</p>
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="label">Full Name</label>
-                <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name (optional)" className="input" />
+                <label className="label label-required">Full Name</label>
+                <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name" className="input" required />
               </div>
               <div>
-                <label className="label">Phone Number</label>
-                <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number (optional)" className="input" />
+                <label className="label label-required">Phone Number</label>
+                <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number" className="input" required />
               </div>
               <div>
                 <label className="label">Date of Birth</label>
