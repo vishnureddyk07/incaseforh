@@ -26,6 +26,10 @@ type BatchRow = {
   organizationName?: string;
   activeCount?: number;
   unactivatedCount?: number;
+  packSyncEligible?: boolean;
+  packSyncStatus?: 'synced' | 'partial' | 'mismatch' | 'deactivated' | 'unactivated' | 'not-applicable';
+  activeInPack?: number;
+  uniqueProfilesInPack?: number;
 };
 
 type StickerRow = {
@@ -380,6 +384,27 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     return 'bg-orange-100 text-orange-700';
   };
 
+  const packSyncBadge = (batch: BatchRow) => {
+    if (!batch.packSyncEligible) {
+      return <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">N/A</span>;
+    }
+
+    const status = batch.packSyncStatus || 'unactivated';
+    if (status === 'synced') {
+      return <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-semibold text-green-700">Synced</span>;
+    }
+    if (status === 'partial') {
+      return <span className="rounded-full bg-yellow-100 px-2 py-1 text-xs font-semibold text-yellow-700">Partial</span>;
+    }
+    if (status === 'mismatch') {
+      return <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Mismatch</span>;
+    }
+    if (status === 'deactivated') {
+      return <span className="rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700">Deactivated</span>;
+    }
+    return <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">Pending</span>;
+  };
+
   return (
     <section className="mt-8 rounded-2xl bg-white p-6 shadow-sm" id="qr-management">
       <div className="mb-4 flex items-center justify-between">
@@ -545,6 +570,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                 <th className="px-3 py-2">Organization</th>
                 <th className="px-3 py-2">Active</th>
                 <th className="px-3 py-2">Unactivated</th>
+                <th className="px-3 py-2">2-Pack Sync</th>
                 <th className="px-3 py-2">Actions</th>
               </tr>
             </thead>
@@ -559,6 +585,16 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                   <td className="px-3 py-2">{b.activeCount ?? 0}</td>
                   <td className="px-3 py-2">{b.unactivatedCount ?? 0}</td>
                   <td className="px-3 py-2">
+                    <div className="flex flex-col gap-1">
+                      {packSyncBadge(b)}
+                      {b.packSyncEligible ? (
+                        <span className="text-[11px] text-gray-500">
+                          {b.activeInPack ?? 0}/2 active
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
                     <div className="flex gap-2">
                       <button onClick={async () => { try { await downloadZip(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'ZIP download failed'); } }} className="rounded bg-green-600 px-2 py-1 text-xs text-white" title="Download QR images as ZIP file for printing">ZIP</button>
                       <button onClick={async () => { try { await downloadJson(b.batchId); } catch (err) { setError(err instanceof Error ? err.message : 'Download failed'); } }} className="rounded bg-blue-600 px-2 py-1 text-xs text-white">JSON</button>
@@ -571,7 +607,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                 </tr>
               ))}
               {!loadingBatches && batches.length === 0 ? (
-                <tr><td className="px-3 py-4 text-sm text-gray-500" colSpan={8}>No batches found.</td></tr>
+                <tr><td className="px-3 py-4 text-sm text-gray-500" colSpan={9}>No batches found.</td></tr>
               ) : null}
             </tbody>
           </table>

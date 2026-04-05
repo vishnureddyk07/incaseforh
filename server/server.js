@@ -1642,6 +1642,7 @@ router.get('/admin/qr/batches', requireAuth, requireAdmin, async (_req, res) => 
   try {
     const batches = await QRBatch.find({}).sort({ createdAt: -1 }).lean();
     const batchIds = batches.map((b) => b.batchId);
+    const twoPackBatchIds = batches.filter((b) => Number(b.quantity) === 2).map((b) => b.batchId);
 
     const stats = await QRSticker.aggregate([
       { $match: { batchId: { $in: batchIds } } },
@@ -1664,13 +1665,71 @@ router.get('/admin/qr/batches', requireAuth, requireAdmin, async (_req, res) => 
     ]);
 
     const statsByBatch = new Map(stats.map((s) => [s._id, s]));
+
+    let syncStatusByBatch = new Map();
+    if (twoPackBatchIds.length > 0) {
+      const twoPackStickers = await QRSticker.find({ batchId: { $in: twoPackBatchIds } })
+        .select('batchId status activatedBy')
+        .lean();
+
+      const stickersByBatch = new Map();
+      for (const sticker of twoPackStickers) {
+        const list = stickersByBatch.get(sticker.batchId) || [];
+        list.push(sticker);
+        stickersByBatch.set(sticker.batchId, list);
+      }
+
+      syncStatusByBatch = new Map(
+        twoPackBatchIds.map((batchId) => {
+          const stickers = stickersByBatch.get(batchId) || [];
+          const statuses = stickers.map((s) => s.status);
+          const hasDeactivated = statuses.includes('deactivated');
+          const activeStickers = stickers.filter((s) => s.status === 'active');
+          const activeProfileIds = Array.from(
+            new Set(
+              activeStickers
+                .map((s) => (s.activatedBy ? String(s.activatedBy) : ''))
+                .filter(Boolean)
+            )
+          );
+
+          let packSyncStatus = 'unactivated';
+          if (hasDeactivated) {
+            packSyncStatus = 'deactivated';
+          } else if (activeStickers.length === 2 && activeProfileIds.length === 1) {
+            packSyncStatus = 'synced';
+          } else if (activeStickers.length === 2 && activeProfileIds.length > 1) {
+            packSyncStatus = 'mismatch';
+          } else if (activeStickers.length === 1) {
+            packSyncStatus = 'partial';
+          }
+
+          return [batchId, {
+            packSyncEligible: true,
+            packSyncStatus,
+            activeInPack: activeStickers.length,
+            uniqueProfilesInPack: activeProfileIds.length,
+          }];
+        })
+      );
+    }
+
     const response = batches.map((batch) => {
       const stat = statsByBatch.get(batch.batchId) || { total: 0, active: 0, unactivated: 0 };
+      const syncInfo =
+        syncStatusByBatch.get(batch.batchId) ||
+        {
+          packSyncEligible: false,
+          packSyncStatus: 'not-applicable',
+          activeInPack: 0,
+          uniqueProfilesInPack: 0,
+        };
       return {
         ...batch,
         total: stat.total,
         activeCount: stat.active,
         unactivatedCount: stat.unactivated,
+        ...syncInfo,
       };
     });
 
