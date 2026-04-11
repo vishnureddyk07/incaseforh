@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users, Copy } from 'lucide-react';
 import type { EmergencyInfo } from '../../types/emergency';
 import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../../utils/deviceId';
+import { maskPhoneNumber } from '../../utils/privacy';
 
 interface QRScanDisplayProps {
   emergencyData: EmergencyInfo;
@@ -341,7 +342,7 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
         {emergencyData?.phoneNumber && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
             <p className="text-sm font-bold text-blue-700">Phone Number</p>
-            <p className="text-lg font-semibold text-gray-900 mt-1">{emergencyData.phoneNumber}</p>
+            <p className="text-lg font-semibold text-gray-900 mt-1">{maskPhoneNumber(emergencyData.phoneNumber)}</p>
           </div>
         )}
 
@@ -358,6 +359,7 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
                   <div>
                     <p className="font-semibold text-gray-900">{contact.name || 'Contact'}</p>
                     <p className="text-xs text-gray-600">{contact.relationship}</p>
+                    <p className="text-xs text-gray-600">{maskPhoneNumber(contact.phone)}</p>
                   </div>
                   {contact.phone && (
                     <button

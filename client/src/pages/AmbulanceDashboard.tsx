@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { maskPhoneNumber } from '../utils/privacy';
 
 interface EmergencyContact {
   name: string;
@@ -226,7 +227,7 @@ export default function AmbulanceDashboard() {
                           href={`tel:${alert.victimPhone}`}
                           className="text-2xl font-bold text-red-600 hover:text-red-700 underline break-all"
                         >
-                          {alert.victimPhone}
+                          {maskPhoneNumber(alert.victimPhone)}
                         </a>
                       </div>
                       <div className="bg-red-50 p-4 rounded-lg border border-red-300">
@@ -258,6 +259,7 @@ export default function AmbulanceDashboard() {
                             <div key={idx} className="p-4 bg-neutral-50 rounded-lg border border-neutral-200 hover:bg-neutral-100 transition-colors">
                               <p className="font-semibold text-neutral-900">{contact.name}</p>
                               <p className="text-sm text-neutral-600 mb-2">{contact.relationship}</p>
+                              <p className="text-sm text-neutral-600 mb-2">{maskPhoneNumber(contact.phone)}</p>
                               <a
                                 href={`tel:${contact.phone}`}
                                 className="btn-success text-sm"
@@ -348,7 +350,7 @@ export default function AmbulanceDashboard() {
                       </td>
                       <td className="px-6 py-3 text-sm">
                         <a href={`tel:${alert.victimPhone}`} className="text-blue-600 hover:text-blue-700 underline">
-                          {alert.victimPhone}
+                          {maskPhoneNumber(alert.victimPhone)}
                         </a>
                       </td>
                       <td className="px-6 py-3 text-sm">

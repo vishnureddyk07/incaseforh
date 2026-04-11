@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { maskPhoneNumber } from '../utils/privacy';
 
 interface SosAlert {
   _id: string;
@@ -225,7 +226,7 @@ export default function PoliceDashboard() {
                         <strong>Triggered:</strong> {formatTime(alert.triggeredAt)}
                       </p>
                       <p className="text-sm text-neutral-700 mb-2">
-                        <strong>Caller:</strong> {alert.victimPhone}
+                        <strong>Caller:</strong> {maskPhoneNumber(alert.victimPhone)}
                       </p>
                       <p className="text-sm text-neutral-700 mb-2">
                         <strong>Device ID:</strong> {alert.responderDeviceId || 'Not available'}

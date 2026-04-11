@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { maskPhoneNumber } from '../utils/privacy';
 
 interface SosContact {
   name?: string;
@@ -110,7 +111,7 @@ export default function SosAmbulance() {
               <h2 className="text-lg font-bold text-primary-900">Victim Medical Profile</h2>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <p className="text-sm text-primary-900"><span className="font-semibold">Full Name:</span> {alert.victimName || 'Not available'}</p>
-                <p className="text-sm text-primary-900"><span className="font-semibold">Phone:</span> {alert.victimPhone || 'Not available'}</p>
+                <p className="text-sm text-primary-900"><span className="font-semibold">Phone:</span> {maskPhoneNumber(alert.victimPhone)}</p>
                 <p className="text-sm text-primary-900"><span className="font-semibold">Blood Type:</span> {alert.victimBloodType || 'Not available'}</p>
                 <p className="text-sm text-primary-900"><span className="font-semibold">Allergies:</span> {alert.victimAllergies || 'Not available'}</p>
                 <p className="text-sm text-primary-900 md:col-span-2"><span className="font-semibold">Medications:</span> {alert.victimMedications || 'Not available'}</p>
@@ -126,7 +127,7 @@ export default function SosAmbulance() {
                       <div>
                         <p className="text-sm font-semibold text-primary-900">{contact.name || 'Contact'}</p>
                         <p className="text-xs text-primary-700">{contact.relationship || 'Relationship not specified'}</p>
-                        <p className="text-xs text-primary-700">{contact.phone || 'No phone number'}</p>
+                        <p className="text-xs text-primary-700">{maskPhoneNumber(contact.phone)}</p>
                       </div>
                       {contact.phone && (
                         <a

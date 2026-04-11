@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { Phone, AlertCircle, Loader, Droplet, Users, Copy } from 'lucide-react';
 import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../utils/deviceId';
+import { maskPhoneNumber } from '../utils/privacy';
 
 interface Hospital {
   id: string;
@@ -60,6 +61,13 @@ export default function EmergencyInfoDisplay() {
     'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
 
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+  const API_BASES = Array.from(
+    new Set([
+      API_BASE,
+      'https://incaseforh.onrender.com',
+      'https://incaseforh-staging.onrender.com',
+    ])
+  ).map((base) => String(base).replace(/\/+$/, ''));
   const uploadedMedicalDocuments = [
     { label: 'Blood Group Report', url: info?.bloodTypeReport },
     { label: 'Discharge Summary / Prescription', url: info?.prescriptionOrDischargeReport },
@@ -109,32 +117,37 @@ export default function EmergencyInfoDisplay() {
         const encodedIdentifier = encodeURIComponent(trimmedIdentifier);
         const isEmail = trimmedIdentifier.includes('@');
         const isMongoId = /^[0-9a-fA-F]{24}$/.test(trimmedIdentifier);
-        const endpoints = isEmail
-          ? [`${API_BASE}/api/v1/emergency/${encodedIdentifier}`]
+        const endpointPaths = isEmail
+          ? [`/api/v1/emergency/${encodedIdentifier}`]
           : isMongoId
             ? [
-                `${API_BASE}/api/v1/emergency/${encodedIdentifier}`,
-                `${API_BASE}/api/v1/emergency/phone/${encodedIdentifier}`,
+                `/api/v1/emergency/${encodedIdentifier}`,
+                `/api/v1/emergency/phone/${encodedIdentifier}`,
               ]
             : [
-                `${API_BASE}/api/v1/emergency/phone/${encodedIdentifier}`,
-                `${API_BASE}/api/v1/emergency/${encodedIdentifier}`,
+                `/api/v1/emergency/phone/${encodedIdentifier}`,
+                `/api/v1/emergency/${encodedIdentifier}`,
               ];
 
         let data: EmergencyInfo | null = null;
         let lastStatus: number | null = null;
 
-        for (const endpoint of endpoints) {
-          console.log('📡 Fetching emergency info from:', endpoint);
-          const res = await fetch(endpoint);
-          if (res.ok) {
-            data = await res.json();
-            break;
+        for (const base of API_BASES) {
+          for (const path of endpointPaths) {
+            const endpoint = `${base}${path}`;
+            console.log('📡 Fetching emergency info from:', endpoint);
+            try {
+              const res = await fetch(endpoint);
+              if (res.ok) {
+                data = await res.json();
+                break;
+              }
+              lastStatus = res.status;
+            } catch (fetchErr) {
+              console.warn('⚠️ Emergency info fetch failed, trying next endpoint', endpoint, fetchErr);
+            }
           }
-          lastStatus = res.status;
-          if (res.status !== 404) {
-            throw new Error(`HTTP ${res.status}`);
-          }
+          if (data) break;
         }
 
         if (!data) {
@@ -664,7 +677,7 @@ export default function EmergencyInfoDisplay() {
         {info?.phoneNumber && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
             <p className="text-sm font-bold text-blue-700">Phone Number</p>
-            <p className="text-lg font-semibold text-gray-900 mt-1">{info.phoneNumber}</p>
+            <p className="text-lg font-semibold text-gray-900 mt-1">{maskPhoneNumber(info.phoneNumber)}</p>
           </div>
         )}
 
@@ -680,6 +693,7 @@ export default function EmergencyInfoDisplay() {
                   <div>
                     <p className="font-semibold text-gray-900">{contact.name || 'Contact'}</p>
                     <p className="text-xs text-gray-600">{contact.relationship}</p>
+                    <p className="text-xs text-gray-600">{maskPhoneNumber(contact.phone)}</p>
                   </div>
                   {contact.phone && (
                     <button
