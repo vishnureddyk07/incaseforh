@@ -18,5 +18,8 @@
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "vitest": "^4.1.0"
+  },
+  "dependencies": {
+    "vite-react-typescript-starter": "file:.."
   }
 }
