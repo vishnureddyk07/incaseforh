@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { Camera, Upload, Plus, Trash2, AlertTriangle } from "lucide-react";
+import { Camera, Upload, Plus, Trash2, User, Heart, Phone, FileText, Pill } from "lucide-react";
 import type { EmergencyInfo } from "../../types/emergency";
 
 interface EmergencyFormProps {
