@@ -79,6 +79,9 @@ export default function Navbar() {
 
           {/* CTA and Auth */}
           <div className="hidden md:flex items-center gap-4">
+            <a href="/chatbot" className="btn-secondary-md">
+              💬 Chat Bot
+            </a>
             <a href="#emergency-info" className="btn-primary-md">
               <Shield className="h-4 w-4 mr-2" />
               Create QR
@@ -126,6 +129,14 @@ export default function Navbar() {
               className="btn-primary-md w-full justify-center"
             >
               Create QR Code
+            </a>
+
+            <a
+              href="/chatbot"
+              onClick={closeMenu}
+              className="btn-secondary-md w-full justify-center"
+            >
+              💬 Chat Bot
             </a>
 
             <div className="border border-neutral-200 rounded-lg bg-white overflow-hidden">
