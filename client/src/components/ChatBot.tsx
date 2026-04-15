@@ -57,12 +57,13 @@ export default function ChatBot() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
   const [accessToken, setAccessToken] = useState('');
-  const [profileId, setProfileId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [editedProfile, setEditedProfile] = useState<ProfileData>({});
-  const [otpAttempts, setOtpAttempts] = useState(0);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [bloodTypeReportFile, setBloodTypeReportFile] = useState<File | null>(null);
+  const [prescriptionReportFile, setPrescriptionReportFile] = useState<File | null>(null);
+  const [surgicalReportFile, setSurgicalReportFile] = useState<File | null>(null);
 
   // Add message to chat
   const addMessage = (type: 'bot' | 'user', content: string) => {
@@ -143,7 +144,6 @@ export default function ChatBot() {
           setChatState('error');
           addMessage('bot', `❌ Too many failed attempts. Please request a new OTP.`);
         } else {
-          setOtpAttempts((prev) => prev + 1);
           const attemptsLeft = data.attemptsLeft || 0;
           addMessage('bot', `❌ Incorrect OTP. You have ${attemptsLeft} attempt(s) left.`);
         }
@@ -152,7 +152,6 @@ export default function ChatBot() {
 
       // OTP verified successfully
       setAccessToken(data.accessToken);
-      setProfileId(data.profileId);
       setChatState('profile-edit');
       addMessage('bot', `✅ Identity verified! Now you can update your emergency profile. Loading your current information...`);
 
@@ -179,7 +178,6 @@ export default function ChatBot() {
       }
 
       const data = await parseJsonSafe(response);
-      setProfileData(data);
       setEditedProfile(data);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to fetch profile';
@@ -199,6 +197,7 @@ export default function ChatBot() {
     try {
       const formData = new FormData();
       formData.append('fullName', editedProfile.fullName || '');
+      formData.append('phoneNumber', editedProfile.phoneNumber || '');
       formData.append('email', editedProfile.email || '');
       formData.append('dateOfBirth', editedProfile.dateOfBirth || '');
       formData.append('bloodType', editedProfile.bloodType || '');
@@ -206,6 +205,11 @@ export default function ChatBot() {
       formData.append('medications', editedProfile.medications || '');
       formData.append('medicalConditions', editedProfile.medicalConditions || '');
       formData.append('address', editedProfile.address || '');
+
+      if (photoFile) formData.append('photo', photoFile);
+      if (bloodTypeReportFile) formData.append('bloodTypeReport', bloodTypeReportFile);
+      if (prescriptionReportFile) formData.append('prescriptionOrDischargeReport', prescriptionReportFile);
+      if (surgicalReportFile) formData.append('surgicalInfoReport', surgicalReportFile);
 
       if (editedProfile.emergencyContacts) {
         formData.append('emergencyContacts', JSON.stringify(editedProfile.emergencyContacts));
@@ -248,11 +252,12 @@ export default function ChatBot() {
     setPhoneNumber('');
     setOtp('');
     setAccessToken('');
-    setProfileId('');
     setError(null);
-    setProfileData(null);
     setEditedProfile({});
-    setOtpAttempts(0);
+    setPhotoFile(null);
+    setBloodTypeReportFile(null);
+    setPrescriptionReportFile(null);
+    setSurgicalReportFile(null);
   };
 
   const handleAddContact = () => {
@@ -398,6 +403,14 @@ export default function ChatBot() {
               />
 
               <input
+                type="tel"
+                placeholder="Phone Number"
+                value={editedProfile.phoneNumber || ''}
+                onChange={(e) => setEditedProfile({ ...editedProfile, phoneNumber: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+
+              <input
                 type="email"
                 placeholder="Email"
                 value={editedProfile.email || ''}
@@ -436,6 +449,62 @@ export default function ChatBot() {
                 onChange={(e) => setEditedProfile({ ...editedProfile, medications: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               />
+
+              <textarea
+                placeholder="Medical Conditions"
+                value={editedProfile.medicalConditions || ''}
+                onChange={(e) => setEditedProfile({ ...editedProfile, medicalConditions: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                rows={2}
+              />
+
+              <textarea
+                placeholder="Address"
+                value={editedProfile.address || ''}
+                onChange={(e) => setEditedProfile({ ...editedProfile, address: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                rows={2}
+              />
+
+              <div className="border-t pt-3 mt-3">
+                <p className="text-sm font-semibold text-gray-700 mb-2">Documents & Photo:</p>
+
+                <label className="block text-xs text-gray-600 mb-1">Profile Photo</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  aria-label="Profile Photo"
+                  onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+                  className="w-full mb-2 text-sm"
+                />
+
+                <label className="block text-xs text-gray-600 mb-1">Blood Type Report</label>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  aria-label="Blood Type Report"
+                  onChange={(e) => setBloodTypeReportFile(e.target.files?.[0] || null)}
+                  className="w-full mb-2 text-sm"
+                />
+
+                <label className="block text-xs text-gray-600 mb-1">Prescription/Discharge Report</label>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  aria-label="Prescription or Discharge Report"
+                  onChange={(e) => setPrescriptionReportFile(e.target.files?.[0] || null)}
+                  className="w-full mb-2 text-sm"
+                />
+
+                <label className="block text-xs text-gray-600 mb-1">Surgical Info Report</label>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  aria-label="Surgical Info Report"
+                  onChange={(e) => setSurgicalReportFile(e.target.files?.[0] || null)}
+                  className="w-full text-sm"
+                />
+              </div>
 
               <div className="border-t pt-3 mt-3">
                 <p className="text-sm font-semibold text-gray-700 mb-2">Emergency Contacts:</p>

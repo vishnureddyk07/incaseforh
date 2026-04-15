@@ -3172,6 +3172,7 @@ router.patch('/chatbot/profile', requireChatbotAuth, upload.fields([
     
     const updates = {
       fullName: normalizeOptionalString(req.body?.fullName, 200),
+      phoneNumber: normalizeOptionalString(req.body?.phoneNumber, 40),
       email: normalizeOptionalString(req.body?.email, 200).toLowerCase(),
       dateOfBirth: normalizeOptionalString(req.body?.dateOfBirth, 40),
       bloodType: normalizeOptionalString(req.body?.bloodType, 20),
