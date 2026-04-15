@@ -171,16 +171,20 @@ export default function ChatBotEditProfile() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 py-10">
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
+    <div className="min-h-screen section bg-neutral-50">
+      <div className="container-lg card-elevated p-6">
+        <div className="mb-6 flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm uppercase tracking-wide text-amber-600 font-semibold">Chatbot Profile Editor</p>
-            <h1 className="text-3xl font-bold text-neutral-900">Update Your Emergency Profile</h1>
-            <p className="mt-2 text-sm text-neutral-600">This opens after OTP verification so you can edit everything on a dedicated page.</p>
+            <h1 className="text-3xl font-bold text-neutral-900">Chatbot Profile Editor</h1>
+            <p className="text-sm text-neutral-600 mt-1">
+              Complete your profile edits after OTP verification in the same style as the admin reassignment flow.
+            </p>
+            <p className="mt-2 text-xs text-neutral-500">
+              Session token: <span className="font-mono">{token ? 'verified' : 'missing'}</span>
+            </p>
           </div>
-          <Link to="/chatbot" className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100">
-            <ArrowLeft className="h-4 w-4" /> Back
+          <Link to="/chatbot" className="btn-secondary-sm inline-flex items-center gap-2">
+            <ArrowLeft className="h-4 w-4" /> Back to Chatbot
           </Link>
         </div>
 
@@ -196,21 +200,24 @@ export default function ChatBotEditProfile() {
           </div>
         )}
 
-        <form onSubmit={onSave} className="grid gap-6">
-          <section className="card-elevated p-6">
-            <h2 className="mb-4 text-lg font-semibold text-neutral-900">Basic Information</h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              <input className="input" value={profile.fullName || ''} onChange={(e) => setProfile({ ...profile, fullName: e.target.value })} placeholder="Full Name" />
-              <input className="input" value={profile.phoneNumber || ''} onChange={(e) => setProfile({ ...profile, phoneNumber: e.target.value })} placeholder="Phone Number" />
-              <input className="input" value={profile.email || ''} onChange={(e) => setProfile({ ...profile, email: e.target.value })} placeholder="Email" />
-              <input className="input" type="date" aria-label="Date of Birth" value={profile.dateOfBirth || ''} onChange={(e) => setProfile({ ...profile, dateOfBirth: e.target.value })} />
-              <input className="input" value={profile.bloodType || ''} onChange={(e) => setProfile({ ...profile, bloodType: e.target.value })} placeholder="Blood Type" />
-              <input className="input" value={profile.address || ''} onChange={(e) => setProfile({ ...profile, address: e.target.value })} placeholder="Address" />
-            </div>
-          </section>
+        <form onSubmit={onSave} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <input className="input" value={profile.fullName || ''} onChange={(e) => setProfile({ ...profile, fullName: e.target.value })} placeholder="Full Name" />
+            <input className="input" value={profile.phoneNumber || ''} onChange={(e) => setProfile({ ...profile, phoneNumber: e.target.value })} placeholder="Phone Number" />
+          </div>
 
-          <section className="card-elevated p-6">
-            <h2 className="mb-4 text-lg font-semibold text-neutral-900">Medical Information</h2>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <input className="input" value={profile.email || ''} onChange={(e) => setProfile({ ...profile, email: e.target.value })} placeholder="Email" />
+            <input className="input" type="date" aria-label="Date of Birth" value={profile.dateOfBirth || ''} onChange={(e) => setProfile({ ...profile, dateOfBirth: e.target.value })} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <input className="input" value={profile.bloodType || ''} onChange={(e) => setProfile({ ...profile, bloodType: e.target.value })} placeholder="Blood Type" />
+            <input className="input" value={profile.address || ''} onChange={(e) => setProfile({ ...profile, address: e.target.value })} placeholder="Address" />
+          </div>
+
+          <section className="space-y-3 rounded-xl border border-neutral-200 p-4">
+            <p className="font-semibold text-neutral-700">Medical Information</p>
             <div className="grid gap-4 md:grid-cols-2">
               <textarea className="input min-h-24" value={profile.allergies || ''} onChange={(e) => setProfile({ ...profile, allergies: e.target.value })} placeholder="Allergies" />
               <textarea className="input min-h-24" value={profile.medications || ''} onChange={(e) => setProfile({ ...profile, medications: e.target.value })} placeholder="Medications" />
@@ -218,7 +225,7 @@ export default function ChatBotEditProfile() {
             </div>
           </section>
 
-          <section className="card-elevated p-6">
+          <section className="space-y-3 rounded-xl border border-neutral-200 p-4">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-neutral-900">Emergency Contacts</h2>
               <button type="button" onClick={addContact} className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600">
@@ -238,7 +245,7 @@ export default function ChatBotEditProfile() {
             </div>
           </section>
 
-          <section className="card-elevated p-6">
+          <section className="space-y-3 rounded-xl border border-neutral-200 p-4">
             <h2 className="mb-4 text-lg font-semibold text-neutral-900">Documents & Photo</h2>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="flex flex-col gap-2 rounded-xl border border-dashed border-neutral-300 bg-white p-4 text-sm text-neutral-700">
@@ -261,8 +268,8 @@ export default function ChatBotEditProfile() {
           </section>
 
           <div className="flex items-center justify-end gap-3">
-            <Link to="/chatbot" className="rounded-lg border border-neutral-200 bg-white px-5 py-3 text-sm font-medium text-neutral-700 hover:bg-neutral-100">Cancel</Link>
-            <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-3 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-60">
+            <Link to="/chatbot" className="btn-secondary-md">Cancel</Link>
+            <button type="submit" disabled={saving} className="btn-primary-md disabled:opacity-60">
               <Upload className="h-4 w-4" /> {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
