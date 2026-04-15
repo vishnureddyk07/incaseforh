@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Send, MessageCircle, Phone, Lock, Edit, AlertCircle, CheckCircle } from 'lucide-react';
 
 type EmergencyContact = { name: string; phone: string };
@@ -30,6 +31,7 @@ interface ProfileData {
 }
 
 export default function ChatBot() {
+  const navigate = useNavigate();
   const apiBase = import.meta.env.VITE_API_URL
     || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://incaseforh.onrender.com');
 
@@ -152,11 +154,9 @@ export default function ChatBot() {
 
       // OTP verified successfully
       setAccessToken(data.accessToken);
-      setChatState('profile-edit');
-      addMessage('bot', `✅ Identity verified! Now you can update your emergency profile. Loading your current information...`);
-
-      // Fetch profile data
-      await fetchProfileData(data.accessToken);
+      sessionStorage.setItem('chatbotEditToken', data.accessToken);
+      addMessage('bot', '✅ Identity verified! Opening the profile editor page now.');
+      navigate('/chatbot/edit');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to verify OTP';
       setError(errorMsg);
