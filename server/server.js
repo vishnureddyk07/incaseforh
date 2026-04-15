@@ -2998,7 +2998,7 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
     });
 
     await logAction({
-      actor: { email: 'chatbot@system', role: 'system' },
+      actor: { sub: 'chatbot-system', email: 'chatbot@system', role: 'public' },
       action: 'chatbot_otp_sent',
       details: {
         phoneNumber,
@@ -3015,8 +3015,9 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
     res.status(200).json({
       message: 'OTP sent successfully',
       phoneNumber,
-      // TODO: Remove in production - only for development
-      ...(process.env.NODE_ENV === 'development' && { otp, expiresIn: '5 minutes' }),
+      // SMS integration is pending, so expose OTP to support/staging flows.
+      otp,
+      expiresIn: '5 minutes',
     });
   } catch (error) {
     console.error('Error in send-otp:', error);

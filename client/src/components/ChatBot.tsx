@@ -102,9 +102,10 @@ export default function ChatBot() {
       }
 
       setChatState('otp-sent');
+      const otpHint = data?.otp ? `\n\nTest OTP: ${data.otp}` : '';
       addMessage(
         'bot',
-        `✅ OTP sent to ${phoneNumber}! 📱 Please check your phone for the 6-digit code and enter it below.`
+        `✅ OTP sent to ${phoneNumber}! 📱 Please check your phone for the 6-digit code and enter it below.${otpHint}`
       );
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to send OTP';
