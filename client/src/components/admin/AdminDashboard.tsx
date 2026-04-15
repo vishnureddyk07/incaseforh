@@ -405,6 +405,13 @@ export default function AdminDashboard() {
       color: 'bg-primary-50 border-primary-100',
       textColor: 'text-primary-700',
     },
+    {
+      label: 'OTP Logs',
+      value: otpLogs.length,
+      icon: '📱',
+      color: 'bg-amber-50 border-amber-100',
+      textColor: 'text-amber-700',
+    },
   ];
 
   return (
@@ -444,6 +451,9 @@ export default function AdminDashboard() {
             </a>
             <a href="#qr-management" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
               <span>🏷️</span> QR Management
+            </a>
+            <a href="#otp-logs" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
+              <span>📱</span> OTP Logs
             </a>
             <a href="#audit-logs" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
               <span>🔍</span> Audit Logs
