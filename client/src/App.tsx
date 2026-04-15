@@ -27,6 +27,7 @@ import AmbulanceDashboard from './pages/AmbulanceDashboard';
 import ActivateQR from './pages/ActivateQR';
 import StickerActivationSuccess from './pages/StickerActivationSuccess';
 import AdminQRReassign from './pages/AdminQRReassign';
+import ChatBotPage from './pages/ChatBotPage';
 
 function RouteNormalizer() {
   const { pathname } = useLocation();
@@ -113,6 +114,7 @@ function AppContent() {
   return (
     <Routes>
       <Route path="/" element={<MainContent />} />
+      <Route path="/chatbot" element={<ChatBotPage />} />
       <Route path="/emergencyinfo/:email" element={<EmergencyInfoDisplay />} />
       <Route path="/emergencyinfo/:email/*" element={<EmergencyInfoDisplay />} />
       <Route path="/activate/:uuid" element={<ActivateQR />} />

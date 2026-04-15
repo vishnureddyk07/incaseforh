@@ -2927,6 +2927,298 @@ router.get('/admin/logs', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// Admin/Manager: view recent chatbot OTP events for support verification
+router.get('/otp/logs', requireAuth, requireManagerOrAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parsePositiveInt(req.query.limit, 50), 1), 200);
+    const logs = await ActionLog.find({ action: 'chatbot_otp_sent' })
+      .select('_id actorEmail actorRole action details createdAt')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    return res.json(
+      logs.map((log) => ({
+        id: log._id.toString(),
+        actorEmail: log.actorEmail,
+        actorRole: log.actorRole,
+        action: log.action,
+        details: log.details,
+        createdAt: log.createdAt,
+      }))
+    );
+  } catch (error) {
+    console.error('Error listing OTP logs:', error);
+    res.status(500).json({ error: 'Failed to list OTP logs' });
+  }
+});
+
+// ── CHATBOT: OTP-based QR data modification endpoints ──────────────────
+
+// In-memory OTP storage (keyed by phone number)
+// In production, consider using Redis or a short-lived DB collection
+const otpStorage = new Map();
+const OTP_VALIDITY_MS = 5 * 60 * 1000; // 5 minutes
+const OTP_LENGTH = 6;
+
+// Helper: Generate random OTP
+const generateOTP = () => {
+  return Math.floor(Math.random() * Math.pow(10, OTP_LENGTH))
+    .toString()
+    .padStart(OTP_LENGTH, '0');
+};
+
+// Chatbot: Send OTP to phone number
+router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
+  try {
+    const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
+    if (!phoneNumber) {
+      return res.status(400).json({ error: 'Phone number is required' });
+    }
+
+    // Check if user exists with this phone number
+    const emergency = await EmergencyInfo.findOne({ phoneNumber })
+      .select('_id fullName phoneNumber email')
+      .lean();
+    
+    if (!emergency) {
+      // Don't reveal whether phone exists (security)
+      return res.status(404).json({ error: 'No profile found with this phone number' });
+    }
+
+    // Generate OTP and store it
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + OTP_VALIDITY_MS);
+    
+    otpStorage.set(phoneNumber, {
+      otp,
+      expiresAt,
+      emergencyInfoId: emergency._id.toString(),
+      attempts: 0,
+    });
+
+    await logAction({
+      actor: { email: 'chatbot@system', role: 'system' },
+      action: 'chatbot_otp_sent',
+      details: {
+        phoneNumber,
+        otp,
+        emergencyInfoId: emergency._id.toString(),
+        expiresAt: expiresAt.toISOString(),
+      },
+    });
+
+    // TODO: In production, send OTP via SMS service (Twilio, AWS SNS, etc.)
+    // For now, log it for development
+    console.log(`📱 OTP sent to ${phoneNumber}: ${otp}`);
+
+    res.status(200).json({
+      message: 'OTP sent successfully',
+      phoneNumber,
+      // TODO: Remove in production - only for development
+      ...(process.env.NODE_ENV === 'development' && { otp, expiresIn: '5 minutes' }),
+    });
+  } catch (error) {
+    console.error('Error in send-otp:', error);
+    res.status(500).json({ error: 'Failed to send OTP' });
+  }
+});
+
+// Chatbot: Verify OTP
+router.post('/chatbot/verify-otp', createLimiter, async (req, res) => {
+  try {
+    const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
+    const otp = normalizeOptionalString(req.body?.otp, 10);
+
+    if (!phoneNumber || !otp) {
+      return res.status(400).json({ error: 'Phone number and OTP are required' });
+    }
+
+    const otpData = otpStorage.get(phoneNumber);
+    
+    if (!otpData) {
+      return res.status(404).json({ error: 'OTP not found or expired' });
+    }
+
+    // Check if OTP has expired
+    if (new Date() > otpData.expiresAt) {
+      otpStorage.delete(phoneNumber);
+      return res.status(410).json({ error: 'OTP has expired. Please request a new one.' });
+    }
+
+    // Check maximum attempts (3 attempts per OTP)
+    if (otpData.attempts >= 3) {
+      otpStorage.delete(phoneNumber);
+      return res.status(429).json({ error: 'Too many incorrect attempts. Please request a new OTP.' });
+    }
+
+    // Verify OTP
+    if (otp !== otpData.otp) {
+      otpData.attempts += 1;
+      return res.status(401).json({ 
+        error: 'Incorrect OTP',
+        attemptsLeft: 3 - otpData.attempts
+      });
+    }
+
+    // OTP verified! Generate a session token
+    const emergencyInfo = await EmergencyInfo.findById(otpData.emergencyInfoId)
+      .select('_id phoneNumber email fullName')
+      .lean();
+
+    // Create a temporary access token (valid for 1 hour)
+    const accessToken = jwt.sign(
+      {
+        sub: emergencyInfo._id.toString(),
+        phoneNumber: emergencyInfo.phoneNumber,
+        email: emergencyInfo.email,
+        role: 'self',
+        type: 'chatbot-edit-session',
+      },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    // Clear OTP after successful verification
+    otpStorage.delete(phoneNumber);
+
+    res.status(200).json({
+      message: 'OTP verified successfully',
+      accessToken,
+      profileId: emergencyInfo._id.toString(),
+      fullName: emergencyInfo.fullName,
+      phoneNumber: emergencyInfo.phoneNumber,
+      email: emergencyInfo.email,
+    });
+  } catch (error) {
+    console.error('Error in verify-otp:', error);
+    res.status(500).json({ error: 'Failed to verify OTP' });
+  }
+});
+
+// Chatbot: Get profile data by phone (after OTP verification)
+// Uses custom token from chatbot/verify-otp
+const requireChatbotAuth = (req, res, next) => {
+  let token = '';
+  const authHeader = req.headers.authorization || '';
+  
+  if (authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  }
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized - OTP verification required' });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.type !== 'chatbot-edit-session') {
+      return res.status(403).json({ error: 'Invalid token type' });
+    }
+    req.user = payload;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+};
+
+router.get('/chatbot/profile', requireChatbotAuth, async (req, res) => {
+  try {
+    const emergencyInfo = await EmergencyInfo.findById(req.user.sub)
+      .select('fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
+      .lean();
+
+    if (!emergencyInfo) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    res.json(emergencyInfo);
+  } catch (error) {
+    console.error('Error fetching chatbot profile:', error);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+// Chatbot: Update profile data (after OTP verification)
+router.patch('/chatbot/profile', requireChatbotAuth, upload.fields([
+  { name: 'photo', maxCount: 1 },
+  { name: 'bloodTypeReport', maxCount: 1 },
+  { name: 'prescriptionOrDischargeReport', maxCount: 1 },
+  { name: 'surgicalInfoReport', maxCount: 1 },
+]), async (req, res) => {
+  try {
+    const uploadedFiles = req.files || {};
+    
+    const updates = {
+      fullName: normalizeOptionalString(req.body?.fullName, 200),
+      email: normalizeOptionalString(req.body?.email, 200).toLowerCase(),
+      dateOfBirth: normalizeOptionalString(req.body?.dateOfBirth, 40),
+      bloodType: normalizeOptionalString(req.body?.bloodType, 20),
+      allergies: normalizeOptionalString(req.body?.allergies, 1000),
+      medications: normalizeOptionalString(req.body?.medications, 1000),
+      medicalConditions: normalizeOptionalString(req.body?.medicalConditions, 1000),
+      address: normalizeOptionalString(req.body?.address, 500),
+    };
+
+    // Handle file uploads
+    const photoFile = Array.isArray(uploadedFiles.photo) ? uploadedFiles.photo[0] : null;
+    const bloodTypeReportFile = Array.isArray(uploadedFiles.bloodTypeReport) ? uploadedFiles.bloodTypeReport[0] : null;
+    const prescriptionReportFile = Array.isArray(uploadedFiles.prescriptionOrDischargeReport) ? uploadedFiles.prescriptionOrDischargeReport[0] : null;
+    const surgicalReportFile = Array.isArray(uploadedFiles.surgicalInfoReport) ? uploadedFiles.surgicalInfoReport[0] : null;
+
+    if (photoFile) {
+      updates.photo = uploadedFileToDataUrl(photoFile);
+    }
+    if (bloodTypeReportFile) {
+      updates.bloodTypeReport = uploadedFileToDataUrl(bloodTypeReportFile);
+    }
+    if (prescriptionReportFile) {
+      updates.prescriptionOrDischargeReport = uploadedFileToDataUrl(prescriptionReportFile);
+    }
+    if (surgicalReportFile) {
+      updates.surgicalInfoReport = uploadedFileToDataUrl(surgicalReportFile);
+    }
+
+    // Handle emergency contacts
+    if (req.body?.emergencyContacts) {
+      try {
+        let contacts = [];
+        if (typeof req.body.emergencyContacts === 'string') {
+          contacts = JSON.parse(req.body.emergencyContacts);
+        } else if (Array.isArray(req.body.emergencyContacts)) {
+          contacts = req.body.emergencyContacts;
+        }
+        updates.emergencyContacts = sanitizeContacts(contacts);
+      } catch {
+        return res.status(400).json({ error: 'Invalid emergency contacts format' });
+      }
+    }
+
+    // Update only provided fields (skip empty/null values)
+    Object.keys(updates).forEach(key => {
+      if (!updates[key] && updates[key] !== false) {
+        delete updates[key];
+      }
+    });
+
+    const updatedInfo = await EmergencyInfo.findByIdAndUpdate(
+      req.user.sub,
+      { $set: updates },
+      { new: true, runValidators: true }
+    ).select('fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport');
+
+    res.json({
+      message: 'Profile updated successfully',
+      profile: updatedInfo,
+    });
+  } catch (error) {
+    console.error('Error updating chatbot profile:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// ── End CHATBOT endpoints ────────────────────────────────────────────
+
 // ── Mount versioned router & backward-compat redirect ────────────────
 app.use('/api/v1', (req, res, next) => {
   if (!MONGODB_URI) {
