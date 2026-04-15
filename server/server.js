@@ -2948,8 +2948,9 @@ router.get('/otp/logs', requireAuth, requireManagerOrAdmin, async (req, res) => 
       }))
     );
   } catch (error) {
-    console.error('Error listing OTP logs:', error);
-    res.status(500).json({ error: 'Failed to list OTP logs' });
+    console.error('Error listing OTP logs from database. Falling back to in-memory OTP trail.', error);
+    const limit = Math.min(Math.max(parsePositiveInt(req.query.limit, 50), 1), 200);
+    return res.json(otpAuditTrail.slice(0, limit));
   }
 });
 
@@ -2958,6 +2959,7 @@ router.get('/otp/logs', requireAuth, requireManagerOrAdmin, async (req, res) => 
 // In-memory OTP storage (keyed by phone number)
 // In production, consider using Redis or a short-lived DB collection
 const otpStorage = new Map();
+const otpAuditTrail = [];
 const OTP_VALIDITY_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_LENGTH = 6;
 
@@ -2996,6 +2998,24 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
       emergencyInfoId: emergency._id.toString(),
       attempts: 0,
     });
+
+    // Always keep a recent in-memory audit trail so OTP visibility works even if DB audit write fails.
+    otpAuditTrail.unshift({
+      id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      actorEmail: 'chatbot@system',
+      actorRole: 'public',
+      action: 'chatbot_otp_sent',
+      details: {
+        phoneNumber,
+        otp,
+        emergencyInfoId: emergency._id.toString(),
+        expiresAt: expiresAt.toISOString(),
+      },
+      createdAt: new Date().toISOString(),
+    });
+    if (otpAuditTrail.length > 500) {
+      otpAuditTrail.length = 500;
+    }
 
     await logAction({
       actor: { sub: 'chatbot-system', email: 'chatbot@system', role: 'public' },
