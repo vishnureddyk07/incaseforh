@@ -9,8 +9,8 @@
     "lint": "cd client && eslint .",
     "preview": "cd client && vite preview",
     "server": "node server/server.js",
-    "test": "cd client && vitest --run",
-    "test:watch": "cd client && vitest",
+    "test": "npm --prefix client run test",
+    "test:watch": "npm --prefix client exec vitest",
     "e2e": "playwright test",
     "seed:hospitals": "node server/seedHospitals.js"
   },

@@ -20,6 +20,20 @@ interface LogEntry {
   createdAt?: string;
 }
 
+interface OtpLogEntry {
+  id: string;
+  actorEmail: string;
+  actorRole: string;
+  action: string;
+  details?: {
+    phoneNumber?: string;
+    otp?: string;
+    expiresAt?: string;
+    emergencyInfoId?: string;
+  };
+  createdAt?: string;
+}
+
 export default function AdminDashboard() {
   const { isAuthenticated, user, token } = useAuth();
   const navigate = useNavigate();
@@ -39,12 +53,15 @@ export default function AdminDashboard() {
   const [isCreatingAmbulance, setIsCreatingAmbulance] = useState(false);
   const [systemActionLogs, setSystemActionLogs] = useState<LogEntry[]>([]);
   const [isFetchingActivityLogs, setIsFetchingActivityLogs] = useState(false);
+  const [otpLogs, setOtpLogs] = useState<OtpLogEntry[]>([]);
+  const [isFetchingOtpLogs, setIsFetchingOtpLogs] = useState(false);
   const [totalEmergencyRecords, setTotalEmergencyRecords] = useState(0);
   const [isFetchingEmergencyCount, setIsFetchingEmergencyCount] = useState(false);
   const [expandedDetailsRows, setExpandedDetailsRows] = useState<Record<string, boolean>>({});
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [otpSearchQuery, setOtpSearchQuery] = useState('');
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'admin') {
@@ -94,6 +111,24 @@ export default function AdminDashboard() {
       .finally(() => setIsFetchingActivityLogs(false));
   };
 
+  const fetchOtpLogs = () => {
+    if (!token) return;
+    setIsFetchingOtpLogs(true);
+    fetch(`${backendApiBaseUrl}/api/v1/otp/logs?limit=50`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error('Failed to fetch OTP logs');
+        return r.json();
+      })
+      .then((data) => {
+        const logs = Array.isArray(data) ? data : data?.logs;
+        setOtpLogs(Array.isArray(logs) ? logs : []);
+      })
+      .catch((e) => setAdminDashboardError(e.message))
+      .finally(() => setIsFetchingOtpLogs(false));
+  };
+
   const fetchEmergencyRecordsCount = async () => {
     if (!token) return;
     setIsFetchingEmergencyCount(true);
@@ -116,6 +151,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchUsers();
     fetchLogs();
+    fetchOtpLogs();
     fetchEmergencyRecordsCount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -244,6 +280,7 @@ export default function AdminDashboard() {
   };
 
   const getActionBadgeClass = (action: string) => {
+    if (action === 'chatbot_otp_sent') return 'bg-amber-100 text-amber-700 border-amber-200';
     if (action.includes('sos')) return 'bg-red-100 text-red-700 border-red-200';
     if (action === 'qr_scan') return 'bg-primary-100 text-primary-700 border-primary-200';
     if (action === 'login') return 'bg-blue-100 text-blue-700 border-blue-200';
@@ -254,6 +291,7 @@ export default function AdminDashboard() {
 
   const getActionLabel = (action: string) => {
     if (action.includes('sos')) return 'SOS triggered';
+    if (action === 'chatbot_otp_sent') return 'Chatbot OTP sent';
     return action;
   };
 
@@ -316,6 +354,16 @@ export default function AdminDashboard() {
     );
   }, [systemActionLogs, logSearchQuery]);
 
+  const filteredOtpLogs = useMemo(() => {
+    if (!otpSearchQuery.trim()) return otpLogs;
+    const q = otpSearchQuery.toLowerCase();
+    return otpLogs.filter((log) =>
+      (log.details?.phoneNumber || '').toLowerCase().includes(q)
+      || (log.details?.otp || '').toLowerCase().includes(q)
+      || (log.actorEmail || '').toLowerCase().includes(q)
+    );
+  }, [otpLogs, otpSearchQuery]);
+
   const toggleDetails = (logId: string) => {
     setExpandedDetailsRows((prev) => ({ ...prev, [logId]: !prev[logId] }));
   };
@@ -323,6 +371,7 @@ export default function AdminDashboard() {
   const quickRefresh = () => {
     fetchUsers();
     fetchLogs();
+    fetchOtpLogs();
     fetchEmergencyRecordsCount();
     showToast('🔄 Data refreshed!');
   };
@@ -355,6 +404,13 @@ export default function AdminDashboard() {
       icon: '🔍',
       color: 'bg-primary-50 border-primary-100',
       textColor: 'text-primary-700',
+    },
+    {
+      label: 'OTP Logs',
+      value: otpLogs.length,
+      icon: '📱',
+      color: 'bg-amber-50 border-amber-100',
+      textColor: 'text-amber-700',
     },
   ];
 
@@ -395,6 +451,9 @@ export default function AdminDashboard() {
             </a>
             <a href="#qr-management" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
               <span>🏷️</span> QR Management
+            </a>
+            <a href="#otp-logs" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
+              <span>📱</span> OTP Logs
             </a>
             <a href="#audit-logs" className="flex items-center gap-2 rounded-lg px-3 py-2 text-neutral-200 hover:bg-neutral-800">
               <span>🔍</span> Audit Logs
@@ -458,6 +517,57 @@ export default function AdminDashboard() {
           </section>
 
           <QRStickerManagement token={token} backendApiBaseUrl={backendApiBaseUrl} />
+
+          {/* OTP Logs Table */}
+          <section id="otp-logs" className="mt-8 card-elevated p-6">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-lg font-semibold text-neutral-900">📱 OTP Logs ({filteredOtpLogs.length})</h3>
+              <div className="flex gap-2">
+                <input
+                  value={otpSearchQuery}
+                  onChange={(e) => setOtpSearchQuery(e.target.value)}
+                  placeholder="Search by phone or OTP..."
+                  className="input-sm w-56"
+                />
+                <button onClick={fetchOtpLogs} className="btn-secondary-sm">
+                  🔄
+                </button>
+              </div>
+            </div>
+
+            {isFetchingOtpLogs ? (
+              <div className="flex items-center gap-2 text-sm text-neutral-500 py-8 justify-center">
+                <span className="animate-spin">⏳</span> Loading OTP logs...
+              </div>
+            ) : filteredOtpLogs.length === 0 ? (
+              <div className="py-10 text-center text-sm text-neutral-400">
+                {otpSearchQuery ? '🔍 No OTP logs match your search.' : '📋 No OTP logs yet.'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b bg-neutral-50 text-neutral-500">
+                      <th className="py-3 px-2 font-medium">When</th>
+                      <th className="py-3 px-2 font-medium">Phone</th>
+                      <th className="py-3 px-2 font-medium">OTP</th>
+                      <th className="py-3 px-2 font-medium">Expires</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOtpLogs.map((otpLog) => (
+                      <tr key={otpLog.id} className="border-b border-neutral-100 hover:bg-neutral-50 transition-colors">
+                        <td className="py-3 px-2 text-neutral-500 text-xs whitespace-nowrap">{formatDateTime(otpLog.createdAt)}</td>
+                        <td className="py-3 px-2 text-neutral-900 text-xs">{otpLog.details?.phoneNumber || '—'}</td>
+                        <td className="py-3 px-2 text-xs font-mono text-primary-700">{otpLog.details?.otp || '—'}</td>
+                        <td className="py-3 px-2 text-neutral-600 text-xs">{formatDateTime(otpLog.details?.expiresAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
           {/* Create Manager */}
           <section className="mt-8 card-elevated p-6">

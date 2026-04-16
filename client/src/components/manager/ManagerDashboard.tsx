@@ -22,6 +22,20 @@ interface EmergencyInfo {
   bloodType?: string;
 }
 
+interface OtpLogEntry {
+  id: string;
+  actorEmail: string;
+  actorRole: string;
+  action: string;
+  details?: {
+    phoneNumber?: string;
+    otp?: string;
+    expiresAt?: string;
+    emergencyInfoId?: string;
+  };
+  createdAt?: string;
+}
+
 export default function ManagerDashboard() {
   const RECORDS_PER_PAGE = 25;
   const { isAuthenticated, user, token } = useAuth();
@@ -34,6 +48,8 @@ export default function ManagerDashboard() {
   const [empEmail, setEmpEmail] = useState('');
   const [empPassword, setEmpPassword] = useState('');
   const [creating, setCreating] = useState(false);
+  const [otpLogs, setOtpLogs] = useState<OtpLogEntry[]>([]);
+  const [otpLogsLoading, setOtpLogsLoading] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated || !token) return;
@@ -64,8 +80,27 @@ export default function ManagerDashboard() {
       .finally(() => setLoading(false));
   };
 
+  const fetchOtpLogs = () => {
+    if (!token) return;
+    setOtpLogsLoading(true);
+    fetch(`${apiBase}/api/v1/otp/logs?limit=30`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load OTP logs');
+        return res.json();
+      })
+      .then((data) => {
+        const logs = Array.isArray(data) ? data : [];
+        setOtpLogs(logs);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setOtpLogsLoading(false));
+  };
+
   useEffect(() => {
     fetchRecords();
+    fetchOtpLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -161,6 +196,7 @@ export default function ManagerDashboard() {
               onClick={() => {
                 setCurrentPage(1);
                 fetchRecords();
+                fetchOtpLogs();
               }}
               className="btn-secondary-md"
             >
@@ -244,6 +280,39 @@ export default function ManagerDashboard() {
         </div>
 
         <div className="card-elevated p-6 border border-primary-100">
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-neutral-900">
+            <Phone className="h-5 w-5 text-primary-600" />
+            Chatbot OTP Logs (Manager Check)
+          </h2>
+          {otpLogsLoading ? (
+            <p className="text-neutral-600">Loading OTP logs...</p>
+          ) : otpLogs.length === 0 ? (
+            <p className="text-neutral-600">No OTP logs yet.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-neutral-200 mb-6">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-neutral-100">
+                  <tr className="text-neutral-700">
+                    <th className="py-3 px-4">When</th>
+                    <th className="py-3 px-4">Phone</th>
+                    <th className="py-3 px-4">OTP</th>
+                    <th className="py-3 px-4">Expires</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white">
+                  {otpLogs.map((log) => (
+                    <tr key={log.id} className="border-t border-neutral-100">
+                      <td className="py-3 px-4 text-neutral-700">{log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}</td>
+                      <td className="py-3 px-4 text-neutral-900">{log.details?.phoneNumber || '—'}</td>
+                      <td className="py-3 px-4 font-mono text-primary-700">{log.details?.otp || '—'}</td>
+                      <td className="py-3 px-4 text-neutral-700">{log.details?.expiresAt ? new Date(log.details.expiresAt).toLocaleString() : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-neutral-900">
             <Eye className="h-5 w-5 text-primary-600" />
             Emergency Records (view-only)

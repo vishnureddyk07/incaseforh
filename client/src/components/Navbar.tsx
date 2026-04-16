@@ -63,6 +63,9 @@ export default function Navbar() {
                   </a>
                 </div>
                 <div className="border-t border-neutral-100 py-2">
+                  <a href="/chatbot" className="block px-4 py-2.5 text-purple-600 hover:bg-purple-50 text-sm font-medium transition-colors">
+                    💬 Chat Bot
+                  </a>
                   <a href="/police/login" className="block px-4 py-2.5 text-blue-600 hover:bg-blue-50 text-sm font-medium transition-colors">
                     👮 Police
                   </a>
@@ -76,6 +79,9 @@ export default function Navbar() {
 
           {/* CTA and Auth */}
           <div className="hidden md:flex items-center gap-4">
+            <a href="/chatbot" className="btn-secondary-md">
+              💬 Chat Bot
+            </a>
             <a href="#emergency-info" className="btn-primary-md">
               <Shield className="h-4 w-4 mr-2" />
               Create QR
@@ -125,6 +131,14 @@ export default function Navbar() {
               Create QR Code
             </a>
 
+            <a
+              href="/chatbot"
+              onClick={closeMenu}
+              className="btn-secondary-md w-full justify-center"
+            >
+              💬 Chat Bot
+            </a>
+
             <div className="border border-neutral-200 rounded-lg bg-white overflow-hidden">
               <div className="px-4 py-3 text-sm font-semibold text-neutral-900 border-b border-neutral-100">
                 Access Portals
@@ -133,6 +147,7 @@ export default function Navbar() {
               <a href="/manager" onClick={closeMenu} className="block px-4 py-2.5 text-neutral-700 hover:bg-primary-50 hover:text-primary-600 transition-colors text-sm">Manager</a>
               <a href="/employee" onClick={closeMenu} className="block px-4 py-2.5 text-neutral-700 hover:bg-primary-50 hover:text-primary-600 transition-colors text-sm">Employee</a>
               <div className="border-t border-neutral-100">
+                <a href="/chatbot" onClick={closeMenu} className="block px-4 py-2.5 text-purple-600 hover:bg-purple-50 transition-colors text-sm font-medium">💬 Chat Bot</a>
                 <a href="/police/login" onClick={closeMenu} className="block px-4 py-2.5 text-blue-600 hover:bg-blue-50 transition-colors text-sm font-medium">👮 Police</a>
                 <a href="/ambulance/login" onClick={closeMenu} className="block px-4 py-2.5 text-primary-600 hover:bg-primary-50 transition-colors text-sm font-medium">🚑 Ambulance</a>
               </div>
