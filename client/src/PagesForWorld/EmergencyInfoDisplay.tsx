@@ -68,12 +68,6 @@ export default function EmergencyInfoDisplay() {
       'https://incaseforh-staging.onrender.com',
     ])
   ).map((base) => String(base).replace(/\/+$/, ''));
-  const uploadedMedicalDocuments = [
-    { label: 'Blood Group Report', url: info?.bloodTypeReport },
-    { label: 'Discharge Summary / Prescription', url: info?.prescriptionOrDischargeReport },
-    { label: 'Medical Reports', url: info?.surgicalInfoReport },
-  ].filter((doc) => typeof doc.url === 'string' && doc.url.length > 0);
-
   const reverseGeocode = async (lat: number, lng: number) => {
     try {
       console.log('🔄 Reverse geocoding location...');
@@ -677,7 +671,10 @@ export default function EmergencyInfoDisplay() {
         {info?.phoneNumber && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
             <p className="text-sm font-bold text-blue-700">Phone Number</p>
-            <p className="text-lg font-semibold text-gray-900 mt-1">{maskPhoneNumber(info.phoneNumber)}</p>
+            <p className="text-lg font-semibold text-gray-900 mt-1 flex items-center gap-2">
+              <Phone className="h-4 w-4 text-blue-700" />
+              {maskPhoneNumber(info.phoneNumber)}
+            </p>
           </div>
         )}
 
@@ -692,8 +689,6 @@ export default function EmergencyInfoDisplay() {
                 <div key={idx} className="flex items-center justify-between bg-green-50 p-3 rounded-lg">
                   <div>
                     <p className="font-semibold text-gray-900">{contact.name || 'Contact'}</p>
-                    <p className="text-xs text-gray-600">{contact.relationship}</p>
-                    <p className="text-xs text-gray-600">{maskPhoneNumber(contact.phone)}</p>
                   </div>
                   {contact.phone && (
                     <button
@@ -718,68 +713,7 @@ export default function EmergencyInfoDisplay() {
           </div>
         )}
 
-        {uploadedMedicalDocuments.length > 0 && (
-          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4">
-            <p className="text-sm font-bold text-neutral-700 mb-3">Uploaded Medical Documents</p>
-            <div className="space-y-2">
-              {uploadedMedicalDocuments.map((doc) => (
-                <a
-                  key={doc.label}
-                  href={doc.url as string}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
-                >
-                  Open {doc.label}
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {info && (
-          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4 space-y-4">
-            <p className="text-sm font-bold text-neutral-700">Other Details</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-              {info.email && (
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-                  <p className="text-neutral-500">Email</p>
-                  <p className="font-medium text-neutral-900 break-all">{info.email}</p>
-                </div>
-              )}
-              {info.dateOfBirth && (
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-                  <p className="text-neutral-500">Date of Birth</p>
-                  <p className="font-medium text-neutral-900">{info.dateOfBirth}</p>
-                </div>
-              )}
-              {info.address && (
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
-                  <p className="text-neutral-500">Address</p>
-                  <p className="font-medium text-neutral-900">{info.address}</p>
-                </div>
-              )}
-              {info.allergies && (
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
-                  <p className="text-neutral-500">Allergies</p>
-                  <p className="font-medium text-neutral-900">{info.allergies}</p>
-                </div>
-              )}
-              {info.medications && (
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
-                  <p className="text-neutral-500">Medications</p>
-                  <p className="font-medium text-neutral-900">{info.medications}</p>
-                </div>
-              )}
-              {info.medicalConditions && (
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 md:col-span-2">
-                  <p className="text-neutral-500">Medical Conditions</p>
-                  <p className="font-medium text-neutral-900">{info.medicalConditions}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Privacy mode: do not render additional personal/medical details on scan screen. */}
 
         <button
           onClick={() => window.location.href = 'tel:108'}

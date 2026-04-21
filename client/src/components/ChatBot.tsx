@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Send, MessageCircle, Phone, Lock, Edit, AlertCircle, CheckCircle } from 'lucide-react';
+import { Send, MessageCircle, Phone, Lock, Edit, AlertCircle, CheckCircle, RefreshCw, HelpCircle, Shield } from 'lucide-react';
 
 type EmergencyContact = { name: string; phone: string };
 
@@ -11,7 +11,7 @@ type ChatMessage = {
   timestamp: Date;
 };
 
-type ChatbotState = 'welcome' | 'phone-input' | 'otp-sent' | 'otp-input' | 'profile-edit' | 'success' | 'error';
+type ChatbotState = 'welcome' | 'phone-input' | 'otp-sent' | 'otp-input' | 'help' | 'profile-edit' | 'success' | 'error';
 
 interface ProfileData {
   fullName?: string;
@@ -67,6 +67,15 @@ export default function ChatBot() {
   const [prescriptionReportFile, setPrescriptionReportFile] = useState<File | null>(null);
   const [surgicalReportFile, setSurgicalReportFile] = useState<File | null>(null);
 
+  const normalizePhoneNumber = (value: string) => value.replace(/[^\d+]/g, '').slice(0, 15);
+
+  const maskForChat = (value: string) => {
+    const digits = value.replace(/\D/g, '');
+    if (digits.length <= 4) return value;
+    const visible = digits.slice(-4);
+    return `******${visible}`;
+  };
+
   // Add message to chat
   const addMessage = (type: 'bot' | 'user', content: string) => {
     const newMessage: ChatMessage = {
@@ -90,7 +99,7 @@ export default function ChatBot() {
     setError(null);
 
     try {
-      addMessage('user', `My phone number is ${phoneNumber}`);
+      addMessage('user', `My phone number is ${maskForChat(phoneNumber)}`);
 
       const response = await fetch(`${apiBase}/api/v1/chatbot/send-otp`, {
         method: 'POST',
@@ -108,7 +117,7 @@ export default function ChatBot() {
       const otpHint = data?.otp ? `\n\nTest OTP: ${data.otp}` : '';
       addMessage(
         'bot',
-        `✅ OTP sent to ${phoneNumber}! 📱 Please check your phone for the 6-digit code and enter it below.${otpHint}`
+        `✅ OTP sent to ${maskForChat(phoneNumber)}! 📱 Please check your phone for the 6-digit code and enter it below.${otpHint}`
       );
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to send OTP';
@@ -161,6 +170,38 @@ export default function ChatBot() {
       const errorMsg = err instanceof Error ? err.message : 'Failed to verify OTP';
       setError(errorMsg);
       addMessage('bot', `❌ ${errorMsg}. Please try again.`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (!phoneNumber.trim()) {
+      setError('Phone number missing. Please enter your phone number again.');
+      setChatState('phone-input');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${apiBase}/api/v1/chatbot/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber }),
+      });
+
+      const data = await parseJsonSafe(response);
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to resend OTP');
+      }
+
+      const otpHint = data?.otp ? `\n\nTest OTP: ${data.otp}` : '';
+      addMessage('bot', `🔁 New OTP sent to ${maskForChat(phoneNumber)}.${otpHint}`);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to resend OTP';
+      setError(errorMsg);
+      addMessage('bot', `❌ ${errorMsg}`);
     } finally {
       setLoading(false);
     }
@@ -342,6 +383,15 @@ export default function ChatBot() {
               >
                 <Phone size={18} /> Update My Profile
               </button>
+              <button
+                onClick={() => {
+                  setChatState('help');
+                  addMessage('bot', 'Here are the key features: OTP login, profile editing, document uploads, and secure emergency-contact updates.');
+                }}
+                className="w-full border border-orange-300 text-orange-700 hover:bg-orange-50 py-2 rounded-lg font-medium flex items-center justify-center gap-2"
+              >
+                <HelpCircle size={18} /> What Can You Do?
+              </button>
             </div>
           )}
 
@@ -351,7 +401,7 @@ export default function ChatBot() {
                 type="tel"
                 placeholder="Enter your phone number (10 digits)"
                 value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
+                onChange={(e) => setPhoneNumber(normalizePhoneNumber(e.target.value))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                 maxLength={20}
                 disabled={loading}
@@ -387,7 +437,55 @@ export default function ChatBot() {
               <p className="text-xs text-gray-500 text-center">
                 OTP valid for 5 minutes
               </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleResendOtp}
+                  disabled={loading}
+                  className="w-full border border-gray-300 hover:bg-gray-50 py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-2"
+                >
+                  <RefreshCw size={14} /> Resend OTP
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOtp('');
+                    setChatState('phone-input');
+                    addMessage('bot', 'No problem. Enter the correct phone number and I will send a fresh OTP.');
+                  }}
+                  disabled={loading}
+                  className="w-full border border-gray-300 hover:bg-gray-50 py-2 rounded-lg font-medium text-sm"
+                >
+                  Change Number
+                </button>
+              </div>
             </form>
+          )}
+
+          {chatState === 'help' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">
+                <p className="font-semibold mb-2 flex items-center gap-2"><Shield size={16} /> Chatbot Features</p>
+                <ul className="list-disc ml-4 space-y-1">
+                  <li>Phone + OTP verification before any changes</li>
+                  <li>Edit personal, medical, and emergency contact details</li>
+                  <li>Upload photo and medical documents</li>
+                  <li>Safe access control using temporary edit token</li>
+                </ul>
+              </div>
+              <button
+                onClick={() => setChatState('phone-input')}
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-lg font-medium"
+              >
+                Continue to OTP Login
+              </button>
+              <button
+                onClick={handleReset}
+                className="w-full border border-gray-300 hover:bg-gray-50 py-2 rounded-lg font-medium"
+              >
+                Back to Start
+              </button>
+            </div>
           )}
 
           {chatState === 'profile-edit' && (

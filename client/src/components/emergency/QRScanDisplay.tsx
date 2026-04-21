@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Pill, Heart, Users, Copy } from 'lucide-react';
+import { MapPin, Phone, Navigation, AlertCircle, Loader, Droplet, Users, Copy } from 'lucide-react';
 import type { EmergencyInfo } from '../../types/emergency';
 import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../../utils/deviceId';
 import { maskPhoneNumber } from '../../utils/privacy';
@@ -232,12 +232,6 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
     setTimeout(() => setDeviceIdCopied(false), 2000);
   };
 
-  const uploadedMedicalDocuments = [
-    { label: 'Blood Group Report', url: emergencyData?.bloodTypeReport },
-    { label: 'Discharge Summary / Prescription', url: emergencyData?.prescriptionOrDischargeReport },
-    { label: 'Medical Reports', url: emergencyData?.surgicalInfoReport },
-  ].filter((doc) => typeof doc.url === 'string' && doc.url.length > 0);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 pb-20">
       {/* Header - Emergency Mode */}
@@ -342,7 +336,10 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
         {emergencyData?.phoneNumber && (
           <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-4">
             <p className="text-sm font-bold text-blue-700">Phone Number</p>
-            <p className="text-lg font-semibold text-gray-900 mt-1">{maskPhoneNumber(emergencyData.phoneNumber)}</p>
+            <p className="text-lg font-semibold text-gray-900 mt-1 flex items-center gap-2">
+              <Phone className="h-4 w-4 text-blue-700" />
+              {maskPhoneNumber(emergencyData.phoneNumber)}
+            </p>
           </div>
         )}
 
@@ -358,8 +355,6 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
                 <div key={idx} className="flex items-center justify-between bg-green-50 p-3 rounded-lg">
                   <div>
                     <p className="font-semibold text-gray-900">{contact.name || 'Contact'}</p>
-                    <p className="text-xs text-gray-600">{contact.relationship}</p>
-                    <p className="text-xs text-gray-600">{maskPhoneNumber(contact.phone)}</p>
                   </div>
                   {contact.phone && (
                     <button
@@ -385,64 +380,7 @@ export default function QRScanDisplay({ emergencyData }: QRScanDisplayProps) {
           </div>
         )}
 
-        {uploadedMedicalDocuments.length > 0 && (
-          <div className="bg-white rounded-xl shadow-md border border-neutral-200 p-4">
-            <p className="text-sm font-bold text-neutral-700 mb-3">Uploaded Medical Documents</p>
-            <div className="space-y-2">
-              {uploadedMedicalDocuments.map((doc) => (
-                <a
-                  key={doc.label}
-                  href={doc.url as string}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
-                >
-                  Open {doc.label}
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Other Details */}
-        {emergencyData && (
-          <div className="grid grid-cols-2 gap-3">
-            {emergencyData.email && (
-              <div className="bg-indigo-50 border-2 border-indigo-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-indigo-600 mb-1">Email</p>
-                <p className="text-sm font-bold text-indigo-700 break-all">{emergencyData.email}</p>
-              </div>
-            )}
-            {emergencyData.dateOfBirth && (
-              <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-purple-600 mb-1">Date of Birth</p>
-                <p className="text-lg font-bold text-purple-700">{emergencyData.dateOfBirth}</p>
-              </div>
-            )}
-            {emergencyData.allergies && (
-              <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-yellow-600 mb-1">Allergies</p>
-                <p className="text-sm font-bold text-yellow-700">{emergencyData.allergies}</p>
-              </div>
-            )}
-            {emergencyData.medications && (
-              <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
-                <p className="text-xs font-bold text-blue-600 mb-1">
-                  <Pill className="inline h-3 w-3" /> Medications
-                </p>
-                <p className="text-sm font-bold text-blue-700">{emergencyData.medications}</p>
-              </div>
-            )}
-            {emergencyData.medicalConditions && (
-              <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3 col-span-2">
-                <p className="text-xs font-bold text-green-600 mb-1">
-                  <Heart className="inline h-3 w-3" /> Medical Conditions
-                </p>
-                <p className="text-sm font-bold text-green-700">{emergencyData.medicalConditions}</p>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Privacy mode: hide non-essential personal and medical details on scan view. */}
 
         {/* Location Info */}
         {rescuerCurrentLocation && (
