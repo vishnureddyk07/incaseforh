@@ -62,6 +62,8 @@ export default function AdminDashboard() {
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [logSearchQuery, setLogSearchQuery] = useState('');
   const [otpSearchQuery, setOtpSearchQuery] = useState('');
+  const [logsCurrentPage, setLogsCurrentPage] = useState(1);
+  const LOGS_PER_PAGE = 25;
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'admin') {
@@ -353,6 +355,23 @@ export default function AdminDashboard() {
         log.actorRole.toLowerCase().includes(q)
     );
   }, [systemActionLogs, logSearchQuery]);
+
+  const totalLogPages = Math.max(1, Math.ceil(filteredLogs.length / LOGS_PER_PAGE));
+
+  const paginatedLogs = useMemo(() => {
+    const startIndex = (logsCurrentPage - 1) * LOGS_PER_PAGE;
+    return filteredLogs.slice(startIndex, startIndex + LOGS_PER_PAGE);
+  }, [filteredLogs, logsCurrentPage]);
+
+  useEffect(() => {
+    setLogsCurrentPage(1);
+  }, [logSearchQuery]);
+
+  useEffect(() => {
+    if (logsCurrentPage > totalLogPages) {
+      setLogsCurrentPage(totalLogPages);
+    }
+  }, [logsCurrentPage, totalLogPages]);
 
   const filteredOtpLogs = useMemo(() => {
     if (!otpSearchQuery.trim()) return otpLogs;
@@ -764,55 +783,79 @@ export default function AdminDashboard() {
                 {logSearchQuery ? '🔍 No logs match your search.' : '📋 No audit logs yet.'}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b bg-neutral-50 text-neutral-500">
-                      <th className="py-3 px-2 font-medium">When</th>
-                      <th className="py-3 px-2 font-medium">Actor</th>
-                      <th className="py-3 px-2 font-medium">Role</th>
-                      <th className="py-3 px-2 font-medium">Action</th>
-                      <th className="py-3 px-2 font-medium">Details</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredLogs.map((activityLog) => {
-                      const detailsText = activityLog.details ? JSON.stringify(activityLog.details) : '—';
-                      const isExpanded = Boolean(expandedDetailsRows[activityLog.id]);
-                      const isLong = detailsText.length > 120;
-                      const renderedDetails = isLong && !isExpanded ? `${detailsText.slice(0, 120)}...` : detailsText;
+              <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b bg-neutral-50 text-neutral-500">
+                        <th className="py-3 px-2 font-medium">When</th>
+                        <th className="py-3 px-2 font-medium">Actor</th>
+                        <th className="py-3 px-2 font-medium">Role</th>
+                        <th className="py-3 px-2 font-medium">Action</th>
+                        <th className="py-3 px-2 font-medium">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedLogs.map((activityLog) => {
+                        const detailsText = activityLog.details ? JSON.stringify(activityLog.details) : '—';
+                        const isExpanded = Boolean(expandedDetailsRows[activityLog.id]);
+                        const isLong = detailsText.length > 120;
+                        const renderedDetails = isLong && !isExpanded ? `${detailsText.slice(0, 120)}...` : detailsText;
 
-                      return (
-                        <tr key={activityLog.id} className="border-b border-neutral-100 align-top hover:bg-neutral-50 transition-colors">
-                          <td className="py-3 px-2 text-neutral-500 text-xs whitespace-nowrap">{formatDateTime(activityLog.createdAt)}</td>
-                          <td className="py-3 px-2 text-neutral-900 text-xs">{activityLog.actorEmail}</td>
-                          <td className="py-3 px-2">
-                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getRoleBadgeClass(activityLog.actorRole)}`}>
-                              {activityLog.actorRole}
-                            </span>
-                          </td>
-                          <td className="py-3 px-2">
-                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getActionBadgeClass(activityLog.action)}`}>
-                              {getActionLabel(activityLog.action)}
-                            </span>
-                          </td>
-                          <td className="py-3 px-2">
-                            <p className="max-w-lg whitespace-pre-wrap break-words text-xs text-neutral-600">{renderedDetails}</p>
-                            {isLong && (
-                              <button
-                                onClick={() => toggleDetails(activityLog.id)}
-                                className="mt-1 text-xs font-medium text-blue-600 hover:underline"
-                              >
-                                {isExpanded ? '▲ Show less' : '▼ Show more'}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                        return (
+                          <tr key={activityLog.id} className="border-b border-neutral-100 align-top hover:bg-neutral-50 transition-colors">
+                            <td className="py-3 px-2 text-neutral-500 text-xs whitespace-nowrap">{formatDateTime(activityLog.createdAt)}</td>
+                            <td className="py-3 px-2 text-neutral-900 text-xs">{activityLog.actorEmail}</td>
+                            <td className="py-3 px-2">
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getRoleBadgeClass(activityLog.actorRole)}`}>
+                                {activityLog.actorRole}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2">
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getActionBadgeClass(activityLog.action)}`}>
+                                {getActionLabel(activityLog.action)}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2">
+                              <p className="max-w-lg whitespace-pre-wrap break-words text-xs text-neutral-600">{renderedDetails}</p>
+                              {isLong && (
+                                <button
+                                  onClick={() => toggleDetails(activityLog.id)}
+                                  className="mt-1 text-xs font-medium text-blue-600 hover:underline"
+                                >
+                                  {isExpanded ? '▲ Show less' : '▼ Show more'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-4 flex items-center justify-between gap-4">
+                  <p className="text-sm text-neutral-600">
+                    Showing <span className="font-medium text-neutral-900">{filteredLogs.length === 0 ? 0 : (logsCurrentPage - 1) * LOGS_PER_PAGE + 1}-{Math.min(logsCurrentPage * LOGS_PER_PAGE, filteredLogs.length)}</span> of <span className="font-medium text-neutral-900">{filteredLogs.length}</span>
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setLogsCurrentPage((prev) => Math.max(1, prev - 1))}
+                      disabled={logsCurrentPage === 1}
+                      className="btn-secondary-sm disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-sm text-neutral-700">Page {logsCurrentPage} of {totalLogPages}</span>
+                    <button
+                      onClick={() => setLogsCurrentPage((prev) => Math.min(totalLogPages, prev + 1))}
+                      disabled={logsCurrentPage === totalLogPages}
+                      className="btn-secondary-sm disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </section>
         </main>
