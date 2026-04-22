@@ -1422,8 +1422,31 @@ router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) =>
     pipeline.push({ $project: projectStage });
 
     const allEmergencies = await EmergencyInfo.aggregate(pipeline);
-    console.log(`Found ${allEmergencies.length} records`);
-    res.json(allEmergencies);
+
+    const emergencyIds = allEmergencies
+      .map((record) => record?._id)
+      .filter(Boolean);
+
+    let stickerUuidByEmergencyId = new Map();
+    if (emergencyIds.length > 0) {
+      const linkedStickers = await QRSticker.aggregate([
+        { $match: { activatedBy: { $in: emergencyIds } } },
+        { $sort: { activatedAt: -1, createdAt: -1 } },
+        { $group: { _id: '$activatedBy', stickerUuid: { $first: '$uuid' } } },
+      ]);
+
+      stickerUuidByEmergencyId = new Map(
+        linkedStickers.map((item) => [String(item._id), item.stickerUuid])
+      );
+    }
+
+    const recordsWithStickerUuid = allEmergencies.map((record) => ({
+      ...record,
+      stickerUuid: stickerUuidByEmergencyId.get(String(record._id)) || '',
+    }));
+
+    console.log(`Found ${recordsWithStickerUuid.length} records`);
+    res.json(recordsWithStickerUuid);
   } catch (error) {
     console.error('Error fetching emergency records:', error);
     res.status(500).json({ error: 'Failed to fetch emergency records' });
@@ -2375,6 +2398,61 @@ router.post('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, r
   }
 });
 
+// Admin: resolve sticker UUID for emergency record edit flow
+router.get('/admin/qr/reassign/resolve', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const emergencyId = sanitizeStringParam(req.query.emergencyId);
+    const email = normalizeOptionalString(req.query.email, 200).toLowerCase();
+    const phoneNumber = normalizeOptionalString(req.query.phoneNumber, 40);
+
+    let resolvedEmergencyId = emergencyId || '';
+
+    if (!resolvedEmergencyId && (email || phoneNumber)) {
+      const emergency = await EmergencyInfo.findOne({
+        $or: [
+          ...(email ? [{ email: { $eq: email } }] : []),
+          ...(phoneNumber ? [{ phoneNumber: { $eq: phoneNumber } }] : []),
+        ],
+      })
+        .select('_id')
+        .lean();
+
+      if (emergency?._id) {
+        resolvedEmergencyId = String(emergency._id);
+      }
+    }
+
+    let sticker = null;
+    if (resolvedEmergencyId) {
+      sticker = await QRSticker.findOne({ activatedBy: resolvedEmergencyId })
+        .sort({ activatedAt: -1, createdAt: -1 })
+        .select('uuid')
+        .lean();
+    }
+
+    if (!sticker && (email || phoneNumber)) {
+      sticker = await QRSticker.findOne({
+        $or: [
+          ...(email ? [{ 'assignedTo.email': { $eq: email } }] : []),
+          ...(phoneNumber ? [{ 'assignedTo.phone': { $eq: phoneNumber } }] : []),
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .select('uuid')
+        .lean();
+    }
+
+    if (!sticker?.uuid) {
+      return res.status(404).json({ error: 'No linked sticker found for this record' });
+    }
+
+    return res.json({ success: true, uuid: sticker.uuid });
+  } catch (error) {
+    console.error('Error resolving sticker UUID for reassign:', error);
+    return res.status(500).json({ error: 'Failed to resolve sticker UUID' });
+  }
+});
+
 // Admin: fetch sticker + linked emergency profile for reassign edit page
 router.get('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -2415,7 +2493,7 @@ router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, upload.field
       return res.status(400).json({ error: 'UUID is required' });
     }
 
-    const sticker = await QRSticker.findOne({ uuid });
+    const sticker = await QRSticker.findOne({ uuid }).select('_id activatedBy').lean();
     if (!sticker) {
       return res.status(404).json({ error: 'Sticker not found' });
     }
@@ -2424,7 +2502,8 @@ router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, upload.field
       return res.status(400).json({ error: 'This sticker does not have an activated profile yet' });
     }
 
-    const emergencyInfo = await EmergencyInfo.findById(sticker.activatedBy);
+    const emergencyInfoId = sticker.activatedBy;
+    const emergencyInfo = await EmergencyInfo.findById(emergencyInfoId).select('_id').lean();
     if (!emergencyInfo) {
       return res.status(404).json({ error: 'Linked emergency profile not found' });
     }
@@ -2441,63 +2520,80 @@ router.patch('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, upload.field
     const prescriptionReportDataUrl = uploadedFileToDataUrl(prescriptionReportFile);
     const surgicalReportDataUrl = uploadedFileToDataUrl(surgicalReportFile);
 
-    emergencyInfo.fullName = normalizeOptionalString(req.body?.fullName, 200) || emergencyInfo.fullName || 'INcase User';
-    emergencyInfo.phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
-    emergencyInfo.dateOfBirth = normalizeOptionalString(req.body?.dateOfBirth, 40);
-    emergencyInfo.email = normalizedEmail || '';
-    emergencyInfo.bloodType = normalizeOptionalString(req.body?.bloodType, 20);
-    emergencyInfo.allergies = normalizeOptionalString(req.body?.allergies, 1000);
-    emergencyInfo.medications = normalizeOptionalString(req.body?.medications, 1000);
-    emergencyInfo.medicalConditions = normalizeOptionalString(req.body?.medicalConditions, 1000);
-    emergencyInfo.address = normalizeOptionalString(req.body?.address, 500);
+    const emergencyContacts = Array.isArray(req.body?.emergencyContacts)
+      ? sanitizeContacts(req.body.emergencyContacts)
+      : typeof req.body?.emergencyContacts === 'string' && req.body.emergencyContacts.trim()
+        ? (() => {
+            try {
+              return sanitizeContacts(JSON.parse(req.body.emergencyContacts));
+            } catch {
+              return undefined;
+            }
+          })()
+        : undefined;
+
+    const updateFields = {
+      fullName: normalizeOptionalString(req.body?.fullName, 200),
+      phoneNumber: normalizeOptionalString(req.body?.phoneNumber, 40),
+      dateOfBirth: normalizeOptionalString(req.body?.dateOfBirth, 40),
+      email: normalizedEmail || '',
+      bloodType: normalizeOptionalString(req.body?.bloodType, 20),
+      allergies: normalizeOptionalString(req.body?.allergies, 1000),
+      medications: normalizeOptionalString(req.body?.medications, 1000),
+      medicalConditions: normalizeOptionalString(req.body?.medicalConditions, 1000),
+      address: normalizeOptionalString(req.body?.address, 500),
+    };
+
     if (photoDataUrl) {
-      emergencyInfo.photo = photoDataUrl;
+      updateFields.photo = photoDataUrl;
     } else if (typeof req.body?.photo === 'string') {
       const incomingPhoto = req.body.photo.trim();
       if (!incomingPhoto) {
-        emergencyInfo.photo = '';
+        updateFields.photo = '';
       } else if (incomingPhoto.startsWith('data:') || incomingPhoto.startsWith('http')) {
-        emergencyInfo.photo = incomingPhoto;
+        updateFields.photo = incomingPhoto;
       }
     }
 
     if (bloodTypeReportDataUrl) {
-      emergencyInfo.bloodTypeReport = bloodTypeReportDataUrl;
+      updateFields.bloodTypeReport = bloodTypeReportDataUrl;
     } else if (typeof req.body?.bloodTypeReport === 'string') {
       const incomingBloodTypeReport = req.body.bloodTypeReport.trim();
-      emergencyInfo.bloodTypeReport = incomingBloodTypeReport;
+      updateFields.bloodTypeReport = incomingBloodTypeReport;
     }
 
     if (prescriptionReportDataUrl) {
-      emergencyInfo.prescriptionOrDischargeReport = prescriptionReportDataUrl;
+      updateFields.prescriptionOrDischargeReport = prescriptionReportDataUrl;
     } else if (typeof req.body?.prescriptionOrDischargeReport === 'string') {
       const incomingPrescription = req.body.prescriptionOrDischargeReport.trim();
-      emergencyInfo.prescriptionOrDischargeReport = incomingPrescription;
+      updateFields.prescriptionOrDischargeReport = incomingPrescription;
     }
 
     if (surgicalReportDataUrl) {
-      emergencyInfo.surgicalInfoReport = surgicalReportDataUrl;
+      updateFields.surgicalInfoReport = surgicalReportDataUrl;
     } else if (typeof req.body?.surgicalInfoReport === 'string') {
       const incomingSurgical = req.body.surgicalInfoReport.trim();
-      emergencyInfo.surgicalInfoReport = incomingSurgical;
+      updateFields.surgicalInfoReport = incomingSurgical;
     }
 
-    if (Array.isArray(req.body?.emergencyContacts)) {
-      emergencyInfo.emergencyContacts = sanitizeContacts(req.body.emergencyContacts);
-    } else if (typeof req.body?.emergencyContacts === 'string' && req.body.emergencyContacts.trim()) {
-      try {
-        emergencyInfo.emergencyContacts = sanitizeContacts(JSON.parse(req.body.emergencyContacts));
-      } catch {
-        // Leave existing contacts unchanged for malformed payloads.
-      }
+    if (emergencyContacts) {
+      updateFields.emergencyContacts = emergencyContacts;
     }
 
-    await emergencyInfo.save();
+    const updatedEmergencyInfo = await EmergencyInfo.findByIdAndUpdate(
+      emergencyInfoId,
+      { $set: updateFields },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedEmergencyInfo) {
+      return res.status(404).json({ error: 'Linked emergency profile not found' });
+    }
 
     return res.json({
       success: true,
       message: 'Emergency profile updated',
-      emergencyInfo,
+      emergencyInfo: updatedEmergencyInfo,
     });
   } catch (error) {
     console.error('Error updating reassign profile:', error);
@@ -2553,10 +2649,26 @@ router.get('/admin/qr/stats', requireAuth, requireAdmin, async (_req, res) => {
 router.get('/sos', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
   try {
     setCacheHeaders(res, { cacheControl: 'private, max-age=10, stale-while-revalidate=20', vary: 'Authorization, Accept-Encoding' });
-    const alerts = await SosAlert.find({})
-      .select('_id victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail')
+    const includeResolved = String(req.query?.includeResolved ?? 'true').toLowerCase() !== 'false';
+    const resolvedLimit = Math.min(parsePositiveInt(req.query?.resolvedLimit, 120) || 120, 500);
+
+    const baseSelect = '_id victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail';
+
+    const activeQuery = SosAlert.find({ status: 'active' })
+      .select(baseSelect)
       .sort({ triggeredAt: -1 })
       .lean();
+
+    const resolvedQuery = includeResolved
+      ? SosAlert.find({ status: { $ne: 'active' } })
+          .select(baseSelect)
+          .sort({ triggeredAt: -1 })
+          .limit(resolvedLimit)
+          .lean()
+      : Promise.resolve([]);
+
+    const [activeAlerts, resolvedAlerts] = await Promise.all([activeQuery, resolvedQuery]);
+    const alerts = [...activeAlerts, ...resolvedAlerts];
     return res.json(alerts);
   } catch (error) {
     console.error('Error fetching SOS alerts:', error);

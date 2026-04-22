@@ -7,6 +7,9 @@ import { useAuth } from "../context/AuthContext";
 
 interface EmergencyInfo {
   _id: string;
+  uuid?: string;
+  qrUuid?: string;
+  stickerUuid?: string;
   fullName: string;
   email?: string;
   qrCode?: string;
@@ -370,8 +373,38 @@ export default function QRList() {
     }
   };
 
-  const handleEdit = (e: React.MouseEvent, record: EmergencyInfo) => {
+  const handleEdit = async (e: React.MouseEvent, record: EmergencyInfo) => {
     e.stopPropagation();
+    const recordUuid = record.uuid || record.qrUuid || record.stickerUuid;
+    if (recordUuid) {
+      navigate(`/admin/qr/reassign/${encodeURIComponent(recordUuid)}`);
+      return;
+    }
+
+    if (token) {
+      try {
+        const query = new URLSearchParams();
+        query.set('emergencyId', record._id);
+        if (record.email) query.set('email', record.email);
+        if (record.phoneNumber) query.set('phoneNumber', record.phoneNumber);
+
+        const res = await fetch(`${API_BASE}/api/v1/admin/qr/reassign/resolve?${query.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const resolvedUuid = typeof data?.uuid === 'string' ? data.uuid : '';
+          if (resolvedUuid) {
+            navigate(`/admin/qr/reassign/${encodeURIComponent(resolvedUuid)}`);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not resolve reassign UUID, falling back to modal editor.', err);
+      }
+    }
+
     setEditingRecord(record);
   };
 
@@ -651,69 +684,135 @@ function EditRecordModal({ record, onClose, onSave }: {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-bold">Edit Record</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4">
+      <div className="mx-auto my-6 w-full max-w-5xl">
+        <div className="card-elevated rounded-2xl bg-white p-6">
+          <div className="mb-6 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-3xl font-bold text-neutral-900">Edit Emergency Info</h3>
+              <p className="mt-1 text-sm text-neutral-600">Profile: <span className="font-semibold">{record.fullName || 'N/A'}</span></p>
+              <p className="text-xs text-amber-600">QR code will remain unchanged.</p>
+            </div>
+            <button type="button" onClick={onClose} className="btn-secondary-sm">Close</button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <input
+                id="edit-full-name"
+                value={formData.fullName}
+                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                placeholder="Full Name"
+                className="input"
+                required
+              />
+              <input
+                id="edit-phone"
+                value={formData.phoneNumber}
+                onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
+                placeholder="Phone Number"
+                className="input"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <select
+                id="edit-blood-type"
+                value={formData.bloodType}
+                onChange={(e) => setFormData({ ...formData, bloodType: e.target.value })}
+                className="input"
+                title="Blood type"
+                aria-label="Blood type"
+              >
+                <option value="">Blood Type</option>
+                <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+                <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+              </select>
+              <input
+                id="edit-email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="Email"
+                className="input"
+                type="email"
+              />
+              <input
+                id="edit-dob"
+                type="date"
+                value={formData.dateOfBirth}
+                onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
+                className="input"
+                title="Date of birth"
+                aria-label="Date of birth"
+              />
+              <input
+                id="edit-address"
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="Address"
+                className="input"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <input
+                id="edit-emergency-contact"
+                value={formData.emergencyContact}
+                onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })}
+                placeholder="Emergency Contact"
+                className="input"
+              />
+              <input
+                id="edit-alt-1"
+                value={formData.alternateNumber1}
+                onChange={(e) => setFormData({ ...formData, alternateNumber1: e.target.value })}
+                placeholder="Alternate Number 1"
+                className="input"
+              />
+              <input
+                id="edit-alt-2"
+                value={formData.alternateNumber2}
+                onChange={(e) => setFormData({ ...formData, alternateNumber2: e.target.value })}
+                placeholder="Alternate Number 2"
+                className="input md:col-span-2"
+              />
+            </div>
+
+            <textarea
+              id="edit-allergies"
+              value={formData.allergies}
+              onChange={(e) => setFormData({ ...formData, allergies: e.target.value })}
+              placeholder="Allergies"
+              className="input"
+              rows={2}
+            />
+            <textarea
+              id="edit-medications"
+              value={formData.medications}
+              onChange={(e) => setFormData({ ...formData, medications: e.target.value })}
+              placeholder="Medications"
+              className="input"
+              rows={2}
+            />
+            <textarea
+              id="edit-medical-conditions"
+              value={formData.medicalConditions}
+              onChange={(e) => setFormData({ ...formData, medicalConditions: e.target.value })}
+              placeholder="Medical Conditions"
+              className="input"
+              rows={2}
+            />
+
+            <div className="flex gap-3">
+              <button type="submit" className="btn-primary-md">
+                Save Changes
+              </button>
+              <button type="button" onClick={onClose} className="btn-secondary-md">
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
-        <p className="text-sm text-yellow-600 mb-4">⚠️ QR code will remain unchanged</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="edit-full-name" className="block text-sm font-medium">Full Name</label>
-            <input id="edit-full-name" value={formData.fullName} onChange={(e) => setFormData({...formData, fullName: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" required />
-          </div>
-          <div>
-            <label htmlFor="edit-email" className="block text-sm font-medium">Email (optional)</label>
-            <input id="edit-email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" type="email" />
-          </div>
-          <div>
-            <label htmlFor="edit-blood-type" className="block text-sm font-medium">Blood Type</label>
-            <input id="edit-blood-type" value={formData.bloodType} onChange={(e) => setFormData({...formData, bloodType: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-          </div>
-          <div>
-            <label htmlFor="edit-emergency-contact" className="block text-sm font-medium">Emergency Contact</label>
-            <input id="edit-emergency-contact" value={formData.emergencyContact} onChange={(e) => setFormData({...formData, emergencyContact: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-          </div>
-          <div>
-            <label htmlFor="edit-phone" className="block text-sm font-medium">Phone Number</label>
-            <input id="edit-phone" value={formData.phoneNumber} onChange={(e) => setFormData({...formData, phoneNumber: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="edit-alt-1" className="block text-sm font-medium">Alternate Number 1</label>
-              <input id="edit-alt-1" value={formData.alternateNumber1} onChange={(e) => setFormData({...formData, alternateNumber1: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-            </div>
-            <div>
-              <label htmlFor="edit-alt-2" className="block text-sm font-medium">Alternate Number 2</label>
-              <input id="edit-alt-2" value={formData.alternateNumber2} onChange={(e) => setFormData({...formData, alternateNumber2: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-            </div>
-          </div>
-          <div>
-            <label htmlFor="edit-dob" className="block text-sm font-medium">Date of Birth</label>
-            <input id="edit-dob" type="date" value={formData.dateOfBirth} onChange={(e) => setFormData({...formData, dateOfBirth: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-          </div>
-          <div>
-            <label htmlFor="edit-address" className="block text-sm font-medium">Address</label>
-            <input id="edit-address" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-          </div>
-          <div>
-            <label htmlFor="edit-allergies" className="block text-sm font-medium">Allergies</label>
-            <textarea id="edit-allergies" value={formData.allergies} onChange={(e) => setFormData({...formData, allergies: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
-          </div>
-          <div>
-            <label htmlFor="edit-medications" className="block text-sm font-medium">Medications</label>
-            <textarea id="edit-medications" value={formData.medications} onChange={(e) => setFormData({...formData, medications: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
-          </div>
-          <div>
-            <label htmlFor="edit-medical-conditions" className="block text-sm font-medium">Medical Conditions</label>
-            <textarea id="edit-medical-conditions" value={formData.medicalConditions} onChange={(e) => setFormData({...formData, medicalConditions: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={onClose} className="px-4 py-2 border rounded hover:bg-gray-100">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600">Save Changes</button>
-          </div>
-        </form>
       </div>
     </div>
   );
