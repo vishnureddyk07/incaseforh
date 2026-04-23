@@ -147,6 +147,51 @@ export default function AmbulanceDashboard() {
 
   const hasReadableValue = (value?: string) => Boolean(value && value.trim());
 
+  const dataUrlToBlob = (dataUrl: string) => {
+    const [meta, base64 = ''] = dataUrl.split(',');
+    const mimeMatch = meta.match(/data:(.*?);base64/);
+    const mime = mimeMatch?.[1] || 'application/octet-stream';
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: mime });
+  };
+
+  const openMedicalDocument = (docValue: string, docLabel: string) => {
+    try {
+      if (!docValue) return;
+
+      // Base64 data URLs are commonly blocked or render blank in some browsers when opened directly.
+      if (docValue.startsWith('data:')) {
+        const blob = dataUrlToBlob(docValue);
+        const objectUrl = URL.createObjectURL(blob);
+        const opened = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+
+        if (!opened) {
+          const fallbackLink = document.createElement('a');
+          fallbackLink.href = objectUrl;
+          fallbackLink.download = `${docLabel.replace(/\s+/g, '_')}`;
+          fallbackLink.rel = 'noopener noreferrer';
+          document.body.appendChild(fallbackLink);
+          fallbackLink.click();
+          document.body.removeChild(fallbackLink);
+        }
+
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+        return;
+      }
+
+      const opened = window.open(docValue, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        window.location.href = docValue;
+      }
+    } catch {
+      // Ignore to avoid breaking the alert card UI if document cannot be opened.
+    }
+  };
+
   const getNavLink = (lat?: number, lng?: number) => {
     if (!lat || !lng) return '#';
     return `https://www.google.com/maps?api=1&destination=${lat},${lng}`;
@@ -322,14 +367,13 @@ export default function AmbulanceDashboard() {
                                   {isImageData(doc.value) ? (
                                     <img src={doc.value} alt={doc.label} className="h-28 w-full rounded-md border border-neutral-200 object-cover" />
                                   ) : null}
-                                  <a
-                                    href={doc.value}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                  <button
+                                    type="button"
+                                    onClick={() => openMedicalDocument(doc.value, doc.label)}
                                     className="btn-secondary-sm inline-block"
                                   >
                                     Open Existing
-                                  </a>
+                                  </button>
                                 </div>
                               ) : (
                                 <p className="text-sm text-neutral-500">Not provided</p>
