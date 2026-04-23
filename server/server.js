@@ -2669,29 +2669,53 @@ router.get('/sos', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
 
     const [activeAlerts, resolvedAlerts] = await Promise.all([activeQuery, resolvedQuery]);
 
-    const emergencyIds = Array.from(
-      new Set(
-        activeAlerts
-          .map((alert) => alert?.victimEmergencyInfoId)
-          .filter((id) => mongoose.Types.ObjectId.isValid(id))
-          .map((id) => String(id))
-      )
-    );
+    let activeAlertsWithProfile = activeAlerts.map((alert) => ({ ...alert, victimProfile: null }));
 
-    const emergencyProfiles = emergencyIds.length > 0
-      ? await EmergencyInfo.find({ _id: { $in: emergencyIds } })
-          .select('_id fullName email phoneNumber dateOfBirth bloodType address allergies medications medicalConditions emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
-          .lean()
-      : [];
+    if (req.user?.role === 'ambulance') {
+      const emergencyIds = Array.from(
+        new Set(
+          activeAlerts
+            .map((alert) => alert?.victimEmergencyInfoId)
+            .filter((id) => mongoose.Types.ObjectId.isValid(id))
+            .map((id) => String(id))
+        )
+      );
 
-    const profileById = new Map(emergencyProfiles.map((profile) => [String(profile._id), profile]));
+      const emergencyProfiles = emergencyIds.length > 0
+        ? await EmergencyInfo.find({ _id: { $in: emergencyIds } })
+            .select('_id fullName email phoneNumber dateOfBirth bloodType address allergies medications medicalConditions emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
+            .lean()
+        : [];
 
-    const activeAlertsWithProfile = activeAlerts.map((alert) => ({
-      ...alert,
-      victimProfile: alert?.victimEmergencyInfoId
-        ? profileById.get(String(alert.victimEmergencyInfoId)) || null
-        : null,
-    }));
+      const fallbackPhones = Array.from(
+        new Set(
+          activeAlerts
+            .filter((alert) => !alert?.victimEmergencyInfoId)
+            .map((alert) => (alert?.victimPhone || '').trim())
+            .filter(Boolean)
+        )
+      );
+
+      const emergencyProfilesByPhone = fallbackPhones.length > 0
+        ? await EmergencyInfo.find({ phoneNumber: { $in: fallbackPhones } })
+            .select('_id fullName email phoneNumber dateOfBirth bloodType address allergies medications medicalConditions emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
+            .lean()
+        : [];
+
+      const profileById = new Map(emergencyProfiles.map((profile) => [String(profile._id), profile]));
+      const profileByPhone = new Map(
+        emergencyProfilesByPhone
+          .filter((profile) => profile?.phoneNumber)
+          .map((profile) => [String(profile.phoneNumber).trim(), profile])
+      );
+
+      activeAlertsWithProfile = activeAlerts.map((alert) => ({
+        ...alert,
+        victimProfile: alert?.victimEmergencyInfoId
+          ? profileById.get(String(alert.victimEmergencyInfoId)) || null
+          : profileByPhone.get((alert?.victimPhone || '').trim()) || null,
+      }));
+    }
 
     const alerts = [...activeAlertsWithProfile, ...resolvedAlerts];
     return res.json(alerts);
@@ -2882,6 +2906,10 @@ router.get('/sos/:id', readLimiter, async (req, res) => {
     let victimProfile = null;
     if (alert.victimEmergencyInfoId && mongoose.Types.ObjectId.isValid(alert.victimEmergencyInfoId)) {
       victimProfile = await EmergencyInfo.findById(alert.victimEmergencyInfoId)
+        .select('_id fullName email phoneNumber dateOfBirth bloodType address allergies medications medicalConditions emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
+        .lean();
+    } else if (alert.victimPhone) {
+      victimProfile = await EmergencyInfo.findOne({ phoneNumber: String(alert.victimPhone).trim() })
         .select('_id fullName email phoneNumber dateOfBirth bloodType address allergies medications medicalConditions emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
         .lean();
     }
