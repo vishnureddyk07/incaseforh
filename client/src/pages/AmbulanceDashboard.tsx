@@ -193,8 +193,19 @@ export default function AmbulanceDashboard() {
   };
 
   const getNavLink = (lat?: number, lng?: number) => {
-    if (!lat || !lng) return '#';
-    return `https://www.google.com/maps?api=1&destination=${lat},${lng}`;
+    const safeLat = Number(lat);
+    const safeLng = Number(lng);
+    if (!Number.isFinite(safeLat) || !Number.isFinite(safeLng)) return '#';
+
+    // Use Google Maps Directions URL so responders can navigate directly to the SOS coordinates.
+    return `https://www.google.com/maps/dir/?api=1&destination=${safeLat},${safeLng}&travelmode=driving`;
+  };
+
+  const getPinLink = (lat?: number, lng?: number) => {
+    const safeLat = Number(lat);
+    const safeLng = Number(lng);
+    if (!Number.isFinite(safeLat) || !Number.isFinite(safeLng)) return '#';
+    return `https://www.google.com/maps?q=${safeLat},${safeLng}`;
   };
 
   const closeCase = async (alertId: string) => {
@@ -427,14 +438,24 @@ export default function AmbulanceDashboard() {
                       </div>
                     </div>
 
-                    <a
-                      href={getNavLink(alert.responderLocation?.lat, alert.responderLocation?.lng)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn-primary-lg block w-full text-center"
-                    >
-                      🗺️ Open Navigation
-                    </a>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <a
+                        href={getPinLink(alert.responderLocation?.lat, alert.responderLocation?.lng)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-secondary-md block w-full text-center"
+                      >
+                        📍 View Exact Location
+                      </a>
+                      <a
+                        href={getNavLink(alert.responderLocation?.lat, alert.responderLocation?.lng)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-primary-lg block w-full text-center"
+                      >
+                        🗺️ Open Navigation
+                      </a>
+                    </div>
                     <button
                       type="button"
                       onClick={() => closeCase(alert._id)}
