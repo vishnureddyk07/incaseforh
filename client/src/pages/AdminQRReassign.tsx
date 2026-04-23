@@ -33,6 +33,7 @@ type StickerPayload = {
 };
 
 export default function AdminQRReassign() {
+  const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
   const { uuid = '' } = useParams();
   const navigate = useNavigate();
   const { token, user, isAuthenticated } = useAuth();
@@ -244,6 +245,13 @@ export default function AdminQRReassign() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      setError('Uploaded photo is too large. Maximum allowed size is 5 MB.');
+      e.target.value = '';
+      return;
+    }
+
+    setError(null);
     setPhotoTouched(true);
     setPhotoFile(file);
 
@@ -253,6 +261,26 @@ export default function AdminQRReassign() {
       setPhotoDataUrl(result);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleReportFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setTouched: (value: boolean) => void,
+    setFile: (value: File | null) => void,
+    label: string
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      setError(`${label} is too large. Maximum allowed size is 5 MB.`);
+      e.target.value = '';
+      return;
+    }
+
+    setError(null);
+    setTouched(true);
+    setFile(file);
   };
 
   return (
@@ -359,10 +387,7 @@ export default function AdminQRReassign() {
                 <input
                   type="file"
                   accept="image/*,application/pdf"
-                  onChange={(e) => {
-                    setBloodTypeReportTouched(true);
-                    setBloodTypeReportFile(e.target.files?.[0] || null);
-                  }}
+                  onChange={(e) => handleReportFileChange(e, setBloodTypeReportTouched, setBloodTypeReportFile, 'Uploaded blood group report')}
                   className="input w-full xl:max-w-sm"
                   title="Upload blood group result"
                   aria-label="Upload blood group result"
@@ -388,10 +413,7 @@ export default function AdminQRReassign() {
                 <input
                   type="file"
                   accept="image/*,application/pdf"
-                  onChange={(e) => {
-                    setPrescriptionReportTouched(true);
-                    setPrescriptionOrDischargeReportFile(e.target.files?.[0] || null);
-                  }}
+                  onChange={(e) => handleReportFileChange(e, setPrescriptionReportTouched, setPrescriptionOrDischargeReportFile, 'Uploaded prescription/discharge report')}
                   className="input w-full xl:max-w-sm"
                   title="Upload prescription or discharge report"
                   aria-label="Upload prescription or discharge report"
@@ -417,10 +439,7 @@ export default function AdminQRReassign() {
                 <input
                   type="file"
                   accept="image/*,application/pdf"
-                  onChange={(e) => {
-                    setSurgicalReportTouched(true);
-                    setSurgicalInfoReportFile(e.target.files?.[0] || null);
-                  }}
+                  onChange={(e) => handleReportFileChange(e, setSurgicalReportTouched, setSurgicalInfoReportFile, 'Uploaded surgical info report')}
                   className="input w-full xl:max-w-sm"
                   title="Upload surgical info report"
                   aria-label="Upload surgical info report"

@@ -8,14 +8,34 @@ interface EmergencyContact {
   phone: string;
 }
 
+interface VictimProfile {
+  _id?: string;
+  fullName?: string;
+  email?: string;
+  phoneNumber?: string;
+  dateOfBirth?: string;
+  bloodType?: string;
+  address?: string;
+  allergies?: string;
+  medications?: string;
+  medicalConditions?: string;
+  emergencyContacts?: EmergencyContact[];
+  photo?: string;
+  bloodTypeReport?: string;
+  prescriptionOrDischargeReport?: string;
+  surgicalInfoReport?: string;
+}
+
 interface SosAlert {
   _id: string;
+  victimEmergencyInfoId?: string;
   victimPhone: string;
   victimName: string;
   victimBloodType?: string;
   victimAllergies?: string;
   victimMedications?: string;
   victimEmergencyContacts?: EmergencyContact[];
+  victimProfile?: VictimProfile | null;
   responderDeviceId?: string;
   responderLocation?: { lat: number; lng: number };
   responderLocationAccuracy?: number | null;
@@ -123,6 +143,10 @@ export default function AmbulanceDashboard() {
     return new Date(dateString).toLocaleString();
   };
 
+  const isImageData = (value?: string) => Boolean(value && value.startsWith('data:image'));
+
+  const hasReadableValue = (value?: string) => Boolean(value && value.trim());
+
   const getNavLink = (lat?: number, lng?: number) => {
     if (!lat || !lng) return '#';
     return `https://www.google.com/maps?api=1&destination=${lat},${lng}`;
@@ -216,23 +240,34 @@ export default function AmbulanceDashboard() {
                   </div>
 
                   <div className="p-6 space-y-6">
+                    {alert.victimProfile?.photo ? (
+                      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-600">Patient Photo</p>
+                        <img
+                          src={alert.victimProfile.photo}
+                          alt="Patient profile"
+                          className="h-40 w-40 rounded-lg border border-neutral-200 object-cover"
+                        />
+                      </div>
+                    ) : null}
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-200">
                         <p className="text-xs text-neutral-600 uppercase tracking-wide font-semibold mb-1">Patient Name</p>
-                        <p className="text-2xl font-bold text-neutral-900">{alert.victimName || 'Unknown'}</p>
+                        <p className="text-2xl font-bold text-neutral-900">{alert.victimProfile?.fullName || alert.victimName || 'Unknown'}</p>
                       </div>
                       <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-200">
                         <p className="text-xs text-neutral-600 uppercase tracking-wide font-semibold mb-1">Emergency Call</p>
                         <a
-                          href={`tel:${alert.victimPhone}`}
+                          href={`tel:${alert.victimProfile?.phoneNumber || alert.victimPhone}`}
                           className="text-2xl font-bold text-red-600 hover:text-red-700 underline break-all"
                         >
-                          {maskPhoneNumber(alert.victimPhone)}
+                          {maskPhoneNumber(alert.victimProfile?.phoneNumber || alert.victimPhone)}
                         </a>
                       </div>
                       <div className="bg-red-50 p-4 rounded-lg border border-red-300">
                         <p className="text-xs text-red-700 uppercase tracking-wide font-semibold mb-1">Blood Type</p>
-                        <p className="text-2xl font-bold text-red-600">{alert.victimBloodType || 'Unknown'}</p>
+                        <p className="text-2xl font-bold text-red-600">{alert.victimProfile?.bloodType || alert.victimBloodType || 'Unknown'}</p>
                       </div>
                       <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-200">
                         <p className="text-xs text-neutral-600 uppercase tracking-wide font-semibold mb-1">Alert ID</p>
@@ -241,24 +276,78 @@ export default function AmbulanceDashboard() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="p-4 rounded-lg border border-red-200 bg-red-50">
-                        <h4 className="font-semibold text-red-900 mb-2">⚠️ Allergies</h4>
-                        <p className="text-sm text-red-800">{alert.victimAllergies || 'No known allergies'}</p>
+                      <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-200">
+                        <p className="text-xs text-neutral-600 uppercase tracking-wide font-semibold mb-1">Email</p>
+                        <p className="text-sm text-neutral-900 break-all">{alert.victimProfile?.email || 'Not provided'}</p>
                       </div>
-                      <div className="p-4 rounded-lg border border-primary-200 bg-primary-50">
-                        <h4 className="font-semibold text-primary-900 mb-2">💊 Current Medications</h4>
-                        <p className="text-sm text-primary-800">{alert.victimMedications || 'No medications listed'}</p>
+                      <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-200">
+                        <p className="text-xs text-neutral-600 uppercase tracking-wide font-semibold mb-1">Date of Birth</p>
+                        <p className="text-sm text-neutral-900">{alert.victimProfile?.dateOfBirth || 'Not provided'}</p>
+                      </div>
+                      <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-200 md:col-span-2">
+                        <p className="text-xs text-neutral-600 uppercase tracking-wide font-semibold mb-1">Address</p>
+                        <p className="text-sm text-neutral-900">{alert.victimProfile?.address || 'Not provided'}</p>
                       </div>
                     </div>
 
-                    {alert.victimEmergencyContacts && alert.victimEmergencyContacts.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 rounded-lg border border-red-200 bg-red-50">
+                        <h4 className="font-semibold text-red-900 mb-2">⚠️ Allergies</h4>
+                        <p className="text-sm text-red-800">{alert.victimProfile?.allergies || alert.victimAllergies || 'No known allergies'}</p>
+                      </div>
+                      <div className="p-4 rounded-lg border border-primary-200 bg-primary-50">
+                        <h4 className="font-semibold text-primary-900 mb-2">💊 Current Medications</h4>
+                        <p className="text-sm text-primary-800">{alert.victimProfile?.medications || alert.victimMedications || 'No medications listed'}</p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-lg border border-amber-200 bg-amber-50">
+                      <h4 className="font-semibold text-amber-900 mb-2">🩺 Medical Conditions</h4>
+                      <p className="text-sm text-amber-800">{alert.victimProfile?.medicalConditions || 'No medical conditions listed'}</p>
+                    </div>
+
+                    {(hasReadableValue(alert.victimProfile?.bloodTypeReport) || hasReadableValue(alert.victimProfile?.prescriptionOrDischargeReport) || hasReadableValue(alert.victimProfile?.surgicalInfoReport)) && (
+                      <div className="border-t border-neutral-200 pt-6">
+                        <h4 className="mb-3 font-semibold text-neutral-900">📄 Medical Documents</h4>
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                          {[
+                            { label: 'Blood Group Report', value: alert.victimProfile?.bloodTypeReport },
+                            { label: 'Prescription / Discharge Report', value: alert.victimProfile?.prescriptionOrDischargeReport },
+                            { label: 'Surgical Info Report', value: alert.victimProfile?.surgicalInfoReport },
+                          ].map((doc) => (
+                            <div key={doc.label} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                              <p className="mb-2 text-sm font-semibold text-neutral-800">{doc.label}</p>
+                              {doc.value ? (
+                                <div className="space-y-2">
+                                  {isImageData(doc.value) ? (
+                                    <img src={doc.value} alt={doc.label} className="h-28 w-full rounded-md border border-neutral-200 object-cover" />
+                                  ) : null}
+                                  <a
+                                    href={doc.value}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn-secondary-sm inline-block"
+                                  >
+                                    Open Existing
+                                  </a>
+                                </div>
+                              ) : (
+                                <p className="text-sm text-neutral-500">Not provided</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {(alert.victimProfile?.emergencyContacts?.length || alert.victimEmergencyContacts?.length) ? (
                       <div className="border-t border-neutral-200 pt-6">
                         <h4 className="font-semibold text-neutral-900 mb-3">👥 Emergency Contacts</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {alert.victimEmergencyContacts.map((contact, idx) => (
+                          {(alert.victimProfile?.emergencyContacts || alert.victimEmergencyContacts || []).map((contact, idx) => (
                             <div key={idx} className="p-4 bg-neutral-50 rounded-lg border border-neutral-200 hover:bg-neutral-100 transition-colors">
                               <p className="font-semibold text-neutral-900">{contact.name}</p>
-                              <p className="text-sm text-neutral-600 mb-2">{contact.relationship}</p>
+                              <p className="text-sm text-neutral-600 mb-2">{contact.relationship || 'Contact'}</p>
                               <p className="text-sm text-neutral-600 mb-2">{maskPhoneNumber(contact.phone)}</p>
                               <a
                                 href={`tel:${contact.phone}`}
@@ -270,7 +359,7 @@ export default function AmbulanceDashboard() {
                           ))}
                         </div>
                       </div>
-                    )}
+                    ) : null}
 
                     <div className="border-t border-neutral-200 pt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">

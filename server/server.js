@@ -2652,7 +2652,7 @@ router.get('/sos', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
     const includeResolved = String(req.query?.includeResolved ?? 'true').toLowerCase() !== 'false';
     const resolvedLimit = Math.min(parsePositiveInt(req.query?.resolvedLimit, 120) || 120, 500);
 
-    const baseSelect = '_id victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail';
+    const baseSelect = '_id victimEmergencyInfoId victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail';
 
     const activeQuery = SosAlert.find({ status: 'active' })
       .select(baseSelect)
@@ -2668,7 +2668,32 @@ router.get('/sos', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
       : Promise.resolve([]);
 
     const [activeAlerts, resolvedAlerts] = await Promise.all([activeQuery, resolvedQuery]);
-    const alerts = [...activeAlerts, ...resolvedAlerts];
+
+    const emergencyIds = Array.from(
+      new Set(
+        activeAlerts
+          .map((alert) => alert?.victimEmergencyInfoId)
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+          .map((id) => String(id))
+      )
+    );
+
+    const emergencyProfiles = emergencyIds.length > 0
+      ? await EmergencyInfo.find({ _id: { $in: emergencyIds } })
+          .select('_id fullName email phoneNumber dateOfBirth bloodType address allergies medications medicalConditions emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
+          .lean()
+      : [];
+
+    const profileById = new Map(emergencyProfiles.map((profile) => [String(profile._id), profile]));
+
+    const activeAlertsWithProfile = activeAlerts.map((alert) => ({
+      ...alert,
+      victimProfile: alert?.victimEmergencyInfoId
+        ? profileById.get(String(alert.victimEmergencyInfoId)) || null
+        : null,
+    }));
+
+    const alerts = [...activeAlertsWithProfile, ...resolvedAlerts];
     return res.json(alerts);
   } catch (error) {
     console.error('Error fetching SOS alerts:', error);
@@ -2680,6 +2705,7 @@ router.get('/sos', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
 router.post('/sos/trigger', sosLimiter, async (req, res) => {
   try {
     const {
+      victimEmergencyInfoId,
       victimName,
       victimPhone,
       victimBloodType,
@@ -2710,7 +2736,12 @@ router.post('/sos/trigger', sosLimiter, async (req, res) => {
           }))
       : [];
 
+    const safeVictimEmergencyInfoId = mongoose.Types.ObjectId.isValid(victimEmergencyInfoId)
+      ? victimEmergencyInfoId
+      : null;
+
     const alert = await SosAlert.create({
+      victimEmergencyInfoId: safeVictimEmergencyInfoId,
       victimName: stripHtml(sanitizeMongoValue(victimName) || ''),
       victimPhone: stripHtml(sanitizeMongoValue(victimPhone) || ''),
       victimBloodType: stripHtml(sanitizeMongoValue(victimBloodType) || ''),
@@ -2842,12 +2873,23 @@ router.get('/sos/:id', readLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid alert ID' });
     }
     const alert = await SosAlert.findById(id)
-      .select('_id victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail')
+      .select('_id victimEmergencyInfoId victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail')
       .lean();
     if (!alert) {
       return res.status(404).json({ error: 'SOS alert not found' });
     }
-    return res.json(alert);
+
+    let victimProfile = null;
+    if (alert.victimEmergencyInfoId && mongoose.Types.ObjectId.isValid(alert.victimEmergencyInfoId)) {
+      victimProfile = await EmergencyInfo.findById(alert.victimEmergencyInfoId)
+        .select('_id fullName email phoneNumber dateOfBirth bloodType address allergies medications medicalConditions emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
+        .lean();
+    }
+
+    return res.json({
+      ...alert,
+      victimProfile,
+    });
   } catch (error) {
     console.error('Error fetching SOS alert:', error);
     return res.status(500).json({ error: 'Failed to fetch SOS alert' });
@@ -3392,8 +3434,15 @@ app.use('/api', (req, res, next) => {
 // Centralized upload error handler
 app.use((err, req, res, next) => {
   if (err && err.code === 'LIMIT_FILE_SIZE') {
+    const fieldLabelByName = {
+      photo: 'Uploaded photo',
+      bloodTypeReport: 'Uploaded blood group report',
+      prescriptionOrDischargeReport: 'Uploaded prescription/discharge report',
+      surgicalInfoReport: 'Uploaded surgical info report',
+    };
+    const label = fieldLabelByName[err.field] || 'Uploaded file';
     return res.status(413).json({
-      error: 'Uploaded photo is too large. Maximum allowed size is 5 MB.',
+      error: `${label} is too large. Maximum allowed size is 5 MB.`,
       code: 'PHOTO_TOO_LARGE',
     });
   }

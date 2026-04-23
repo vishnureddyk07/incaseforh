@@ -24,6 +24,7 @@ type EmergencyContact = {
 };
 
 type EmergencyInfo = {
+  _id?: string;
   fullName: string;
   email?: string;
   phoneNumber?: string;
@@ -432,6 +433,7 @@ export default function EmergencyInfoDisplay() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          victimEmergencyInfoId: info._id || undefined,
           victimName: info.fullName,
           victimPhone: info.phoneNumber || '',
           victimBloodType: info.bloodType || '',
