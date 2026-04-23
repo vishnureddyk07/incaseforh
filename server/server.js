@@ -2652,16 +2652,16 @@ router.get('/sos', requireAuth, requirePoliceOrAmbulance, async (req, res) => {
     const includeResolved = String(req.query?.includeResolved ?? 'true').toLowerCase() !== 'false';
     const resolvedLimit = Math.min(parsePositiveInt(req.query?.resolvedLimit, 120) || 120, 500);
 
-    const baseSelect = '_id victimEmergencyInfoId victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail';
+    const selectedFields = '_id victimEmergencyInfoId victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta responderUserAgent responderIP triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail';
 
     const activeQuery = SosAlert.find({ status: 'active' })
-      .select(baseSelect)
+      .select(selectedFields)
       .sort({ triggeredAt: -1 })
       .lean();
 
     const resolvedQuery = includeResolved
       ? SosAlert.find({ status: { $ne: 'active' } })
-          .select(baseSelect)
+          .select(selectedFields)
           .sort({ triggeredAt: -1 })
           .limit(resolvedLimit)
           .lean()
@@ -2897,7 +2897,7 @@ router.get('/sos/:id', readLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid alert ID' });
     }
     const alert = await SosAlert.findById(id)
-      .select('_id victimEmergencyInfoId victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail')
+      .select('_id victimEmergencyInfoId victimName victimPhone victimBloodType victimAllergies victimMedications victimEmergencyContacts responderDeviceId responderLocation responderLocationAccuracy responderLocationMeta responderUserAgent responderIP triggeredAt status cancelledAt resolvedAt closedByRole closedByEmail')
       .lean();
     if (!alert) {
       return res.status(404).json({ error: 'SOS alert not found' });
