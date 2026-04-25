@@ -8,6 +8,7 @@ type ActivationCheckResponse = {
   status: 'generated' | 'distributed' | 'unactivated' | 'active' | 'deactivated';
   reason?: string;
   redirectTo?: string;
+  emergencyProfileUrl?: string;
   packSync?: {
     enabled: boolean;
     syncedCount: number;
@@ -105,6 +106,23 @@ export default function ActivateQR() {
 
       setContacts(existingContacts.length > 0 ? existingContacts : [{ name: '', phone: '' }]);
     }
+  }, [check]);
+
+  useEffect(() => {
+    if (check?.status !== 'active') return;
+    const activeIdentifier = (
+      check.sticker?.activatedBy?.email?.trim()
+      || check.sticker?.activatedBy?.phoneNumber?.trim()
+    );
+    const localEmergencyProfileUrl = activeIdentifier
+      ? `${window.location.origin}/emergencyinfo/${encodeURIComponent(activeIdentifier)}`
+      : null;
+    const safeRedirectTo = check.redirectTo && !/\/activate\//i.test(check.redirectTo)
+      ? check.redirectTo
+      : null;
+    const destination = check.emergencyProfileUrl || localEmergencyProfileUrl || safeRedirectTo;
+    if (!destination) return;
+    window.location.replace(destination);
   }, [check]);
 
   const updateContact = (idx: number, key: keyof EmergencyContact, value: string) => {
