@@ -7,6 +7,9 @@ import { useAuth } from "../context/AuthContext";
 
 interface EmergencyInfo {
   _id: string;
+  uuid?: string;
+  qrUuid?: string;
+  stickerUuid?: string;
   fullName: string;
   email?: string;
   qrCode?: string;
@@ -375,7 +378,7 @@ export default function QRList() {
     setEditingRecord(record);
   };
 
-  const handleSaveEdit = async (updatedData: Partial<EmergencyInfo>) => {
+  const handleSaveEdit = async (payload: FormData) => {
     if (!editingRecord || !token) return;
     try {
       const identifier = (editingRecord.email && editingRecord.email.trim()) || (editingRecord.phoneNumber && editingRecord.phoneNumber.trim());
@@ -390,10 +393,9 @@ export default function QRList() {
       const res = await fetch(url, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(updatedData),
+        body: payload,
       });
       if (!res.ok) throw new Error('Failed to update');
       // Refresh list
@@ -628,92 +630,245 @@ export default function QRList() {
 function EditRecordModal({ record, onClose, onSave }: {
   record: EmergencyInfo;
   onClose: () => void;
-  onSave: (data: Partial<EmergencyInfo>) => void;
+  onSave: (data: FormData) => void;
 }) {
-  const [formData, setFormData] = useState({
-    fullName: record.fullName || '',
-    email: record.email || '',
-    bloodType: record.bloodType || '',
-    emergencyContact: record.emergencyContact || '',
-    allergies: record.allergies || '',
-    medications: record.medications || '',
-    medicalConditions: record.medicalConditions || '',
-    dateOfBirth: record.dateOfBirth || '',
-    phoneNumber: record.phoneNumber || '',
-    alternateNumber1: record.alternateNumber1 || '',
-    alternateNumber2: record.alternateNumber2 || '',
-    address: record.address || '',
-  });
+  type EmergencyContact = { name: string; phone: string };
+  
+  const [fullName, setFullName] = useState(record.fullName || '');
+  const [email, setEmail] = useState(record.email || '');
+  const [phoneNumber, setPhoneNumber] = useState(record.phoneNumber || '');
+  const [dateOfBirth, setDateOfBirth] = useState(record.dateOfBirth || '');
+  const [bloodType, setBloodType] = useState(record.bloodType || '');
+  const [allergies, setAllergies] = useState(record.allergies || '');
+  const [medications, setMedications] = useState(record.medications || '');
+  const [medicalConditions, setMedicalConditions] = useState(record.medicalConditions || '');
+  const [address, setAddress] = useState(record.address || '');
+  const [contacts, setContacts] = useState<EmergencyContact[]>([{ name: '', phone: '' }]);
+  const [photoDataUrl, setPhotoDataUrl] = useState('');
+  const [bloodTypeReportDataUrl, setBloodTypeReportDataUrl] = useState('');
+  const [prescriptionOrDischargeReportDataUrl, setPrescriptionOrDischargeReportDataUrl] = useState('');
+  const [surgicalInfoReportDataUrl, setSurgicalInfoReportDataUrl] = useState('');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [bloodTypeReportFile, setBloodTypeReportFile] = useState<File | null>(null);
+  const [prescriptionOrDischargeReportFile, setPrescriptionOrDischargeReportFile] = useState<File | null>(null);
+  const [surgicalInfoReportFile, setSurgicalInfoReportFile] = useState<File | null>(null);
+  const [photoTouched, setPhotoTouched] = useState(false);
+  const [bloodTypeReportTouched, setBloodTypeReportTouched] = useState(false);
+  const [prescriptionReportTouched, setPrescriptionReportTouched] = useState(false);
+  const [surgicalReportTouched, setSurgicalReportTouched] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoTouched(true);
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      setPhotoDataUrl(result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const updateContact = (idx: number, key: 'name' | 'phone', value: string) => {
+    const updated = [...contacts];
+    updated[idx][key] = value;
+    setContacts(updated);
+  };
+
+  const addContact = () => {
+    setContacts([...contacts, { name: '', phone: '' }]);
+  };
+
+  const removeContact = (idx: number) => {
+    setContacts(contacts.filter((_, i) => i !== idx));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData);
+    setSaving(true);
+    try {
+      const payload = new FormData();
+      payload.append('fullName', fullName);
+      payload.append('email', email);
+      payload.append('phoneNumber', phoneNumber);
+      payload.append('dateOfBirth', dateOfBirth);
+      payload.append('bloodType', bloodType);
+      payload.append('allergies', allergies);
+      payload.append('medications', medications);
+      payload.append('medicalConditions', medicalConditions);
+      payload.append('address', address);
+      payload.append('emergencyContacts', JSON.stringify(contacts.filter((c) => c.name || c.phone)));
+
+      if (photoFile) {
+        payload.append('photo', photoFile);
+      } else if (photoTouched) {
+        payload.append('photo', photoDataUrl);
+      }
+
+      if (bloodTypeReportFile) {
+        payload.append('bloodTypeReport', bloodTypeReportFile);
+      } else if (bloodTypeReportTouched) {
+        payload.append('bloodTypeReport', bloodTypeReportDataUrl);
+      }
+
+      if (prescriptionOrDischargeReportFile) {
+        payload.append('prescriptionOrDischargeReport', prescriptionOrDischargeReportFile);
+      } else if (prescriptionReportTouched) {
+        payload.append('prescriptionOrDischargeReport', prescriptionOrDischargeReportDataUrl);
+      }
+
+      if (surgicalInfoReportFile) {
+        payload.append('surgicalInfoReport', surgicalInfoReportFile);
+      } else if (surgicalReportTouched) {
+        payload.append('surgicalInfoReport', surgicalInfoReportDataUrl);
+      }
+
+      await onSave(payload);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-bold">Edit Record</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4">
+      <div className="mx-auto my-6 w-full max-w-5xl">
+        <div className="card-elevated rounded-2xl bg-white p-6">
+          <div className="mb-6 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-3xl font-bold text-neutral-900">Edit Emergency Info</h3>
+              <p className="mt-1 text-sm text-neutral-600">Profile: <span className="font-semibold">{record.fullName || 'N/A'}</span></p>
+            </div>
+            <button type="button" onClick={onClose} className="btn-secondary-sm">Close</button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full Name" className="input" />
+              <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number" className="input" />
+            </div>
+
+            <div className="space-y-2 rounded-xl border border-neutral-200 p-4">
+              <p className="font-semibold text-neutral-700">Emergency Contacts</p>
+              {contacts.map((c, idx) => (
+                <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                  <input value={c.name} onChange={(e) => updateContact(idx, 'name', e.target.value)} placeholder="Name" className="input" />
+                  <input value={c.phone} onChange={(e) => updateContact(idx, 'phone', e.target.value)} placeholder="Phone" className="input" />
+                  <button type="button" onClick={() => removeContact(idx)} className="btn-danger-sm">Remove</button>
+                </div>
+              ))}
+              <button type="button" onClick={addContact} className="btn-secondary-sm">+ Add Contact</button>
+            </div>
+
+            <div className="space-y-3 rounded-xl border border-neutral-200 p-4">
+              <p className="font-semibold text-neutral-700">Photo</p>
+              {photoDataUrl ? (
+                <img src={photoDataUrl} alt="Profile preview" className="h-36 w-36 rounded-lg object-cover border border-neutral-200" />
+              ) : (
+                <p className="text-sm text-neutral-500">No photo uploaded yet.</p>
+              )}
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-start">
+                <input type="file" accept="image/*" onChange={handlePhotoChange} className="input w-full xl:max-w-sm" title="Upload profile photo" aria-label="Upload profile photo" />
+                <div className="flex flex-wrap items-center gap-2">
+                  {photoDataUrl ? (
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-2">
+                      <a href={photoDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
+                    </div>
+                  ) : null}
+                  {photoDataUrl ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-2">
+                      <button type="button" onClick={() => { setPhotoTouched(true); setPhotoDataUrl(''); setPhotoFile(null); }} className="btn-danger-sm">Remove</button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="font-semibold text-neutral-700">Medical Documents</p>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">Blood Group Report</label>
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-start">
+                  <input type="file" accept="image/*,application/pdf" onChange={(e) => { setBloodTypeReportTouched(true); setBloodTypeReportFile(e.target.files?.[0] || null); }} className="input w-full xl:max-w-sm" title="Upload blood group report" aria-label="Upload blood group report" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    {bloodTypeReportDataUrl ? (
+                      <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-2">
+                        <a href={bloodTypeReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
+                      </div>
+                    ) : null}
+                    {bloodTypeReportDataUrl ? (
+                      <div className="rounded-xl border border-red-200 bg-red-50 p-2">
+                        <button type="button" onClick={() => { setBloodTypeReportTouched(true); setBloodTypeReportDataUrl(''); setBloodTypeReportFile(null); }} className="btn-danger-sm">Remove</button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">Prescription / Discharge Report</label>
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-start">
+                  <input type="file" accept="image/*,application/pdf" onChange={(e) => { setPrescriptionReportTouched(true); setPrescriptionOrDischargeReportFile(e.target.files?.[0] || null); }} className="input w-full xl:max-w-sm" title="Upload prescription or discharge report" aria-label="Upload prescription or discharge report" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    {prescriptionOrDischargeReportDataUrl ? (
+                      <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-2">
+                        <a href={prescriptionOrDischargeReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
+                      </div>
+                    ) : null}
+                    {prescriptionOrDischargeReportDataUrl ? (
+                      <div className="rounded-xl border border-red-200 bg-red-50 p-2">
+                        <button type="button" onClick={() => { setPrescriptionReportTouched(true); setPrescriptionOrDischargeReportDataUrl(''); setPrescriptionOrDischargeReportFile(null); }} className="btn-danger-sm">Remove</button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">Surgical Info / Report</label>
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-start">
+                  <input type="file" accept="image/*,application/pdf" onChange={(e) => { setSurgicalReportTouched(true); setSurgicalInfoReportFile(e.target.files?.[0] || null); }} className="input w-full xl:max-w-sm" title="Upload surgical info report" aria-label="Upload surgical info report" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    {surgicalInfoReportDataUrl ? (
+                      <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-2">
+                        <a href={surgicalInfoReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
+                      </div>
+                    ) : null}
+                    {surgicalInfoReportDataUrl ? (
+                      <div className="rounded-xl border border-red-200 bg-red-50 p-2">
+                        <button type="button" onClick={() => { setSurgicalReportTouched(true); setSurgicalInfoReportDataUrl(''); setSurgicalInfoReportFile(null); }} className="btn-danger-sm">Remove</button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <select value={bloodType} onChange={(e) => setBloodType(e.target.value)} className="input" title="Blood type" aria-label="Blood type">
+                <option value="">Blood Type</option>
+                <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+                <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+              </select>
+              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" className="input" />
+              <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="input" title="Date of birth" aria-label="Date of birth" />
+              <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" className="input" />
+            </div>
+
+            <textarea value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Allergies" className="input" rows={2} />
+            <textarea value={medications} onChange={(e) => setMedications(e.target.value)} placeholder="Medications" className="input" rows={2} />
+            <textarea value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} placeholder="Medical Conditions" className="input" rows={2} />
+
+            <div className="flex gap-3">
+              <button disabled={saving} type="submit" className="btn-primary-md disabled:opacity-60">
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+              <button type="button" onClick={onClose} className="btn-secondary-md">Cancel</button>
+            </div>
+          </form>
         </div>
-        <p className="text-sm text-yellow-600 mb-4">⚠️ QR code will remain unchanged</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="edit-full-name" className="block text-sm font-medium">Full Name</label>
-            <input id="edit-full-name" value={formData.fullName} onChange={(e) => setFormData({...formData, fullName: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" required />
-          </div>
-          <div>
-            <label htmlFor="edit-email" className="block text-sm font-medium">Email (optional)</label>
-            <input id="edit-email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" type="email" />
-          </div>
-          <div>
-            <label htmlFor="edit-blood-type" className="block text-sm font-medium">Blood Type</label>
-            <input id="edit-blood-type" value={formData.bloodType} onChange={(e) => setFormData({...formData, bloodType: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-          </div>
-          <div>
-            <label htmlFor="edit-emergency-contact" className="block text-sm font-medium">Emergency Contact</label>
-            <input id="edit-emergency-contact" value={formData.emergencyContact} onChange={(e) => setFormData({...formData, emergencyContact: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-          </div>
-          <div>
-            <label htmlFor="edit-phone" className="block text-sm font-medium">Phone Number</label>
-            <input id="edit-phone" value={formData.phoneNumber} onChange={(e) => setFormData({...formData, phoneNumber: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="edit-alt-1" className="block text-sm font-medium">Alternate Number 1</label>
-              <input id="edit-alt-1" value={formData.alternateNumber1} onChange={(e) => setFormData({...formData, alternateNumber1: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-            </div>
-            <div>
-              <label htmlFor="edit-alt-2" className="block text-sm font-medium">Alternate Number 2</label>
-              <input id="edit-alt-2" value={formData.alternateNumber2} onChange={(e) => setFormData({...formData, alternateNumber2: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-            </div>
-          </div>
-          <div>
-            <label htmlFor="edit-dob" className="block text-sm font-medium">Date of Birth</label>
-            <input id="edit-dob" type="date" value={formData.dateOfBirth} onChange={(e) => setFormData({...formData, dateOfBirth: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-          </div>
-          <div>
-            <label htmlFor="edit-address" className="block text-sm font-medium">Address</label>
-            <input id="edit-address" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" />
-          </div>
-          <div>
-            <label htmlFor="edit-allergies" className="block text-sm font-medium">Allergies</label>
-            <textarea id="edit-allergies" value={formData.allergies} onChange={(e) => setFormData({...formData, allergies: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
-          </div>
-          <div>
-            <label htmlFor="edit-medications" className="block text-sm font-medium">Medications</label>
-            <textarea id="edit-medications" value={formData.medications} onChange={(e) => setFormData({...formData, medications: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
-          </div>
-          <div>
-            <label htmlFor="edit-medical-conditions" className="block text-sm font-medium">Medical Conditions</label>
-            <textarea id="edit-medical-conditions" value={formData.medicalConditions} onChange={(e) => setFormData({...formData, medicalConditions: e.target.value})} className="mt-1 block w-full border rounded px-3 py-2" rows={2} />
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={onClose} className="px-4 py-2 border rounded hover:bg-gray-100">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600">Save Changes</button>
-          </div>
-        </form>
       </div>
     </div>
   );

@@ -19,7 +19,6 @@ export default function AdminLogin() {
   useEffect(() => {
     const checkAdminExists = async () => {
       try {
-        console.log('AdminLogin using API base:', apiBase);
         const res = await fetch(`${apiBase}/api/v1/admin/check`, {
           method: 'GET',
         });
@@ -37,10 +36,8 @@ export default function AdminLogin() {
         }
 
         setIsSetupMode(false);
-        setError('Unexpected admin-check response from server.');
       } catch (err) {
         setIsSetupMode(false);
-        setError('Could not check admin status. Please try again shortly.');
       } finally {
         setCheckingSetup(false);
       }
@@ -142,22 +139,13 @@ export default function AdminLogin() {
     }
   };
 
-  if (checkingSetup) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4">
-        <div className="text-center">
-          <p className="text-neutral-600">Checking admin status...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center gradient-primary px-4">
       <div className="max-w-md w-full card-elevated p-8 border border-primary-200">
         <h1 className="text-2xl font-bold text-neutral-900 mb-6">
           {isSetupMode ? 'Create Admin Account' : 'Admin Login'}
         </h1>
+        {checkingSetup ? <p className="mb-4 text-xs text-neutral-500">Checking admin setup...</p> : null}
         
         {isSetupMode ? (
           <form onSubmit={handleRegisterAdmin} className="space-y-4">

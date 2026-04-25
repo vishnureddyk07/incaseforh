@@ -39,7 +39,7 @@ export default function PoliceDashboard() {
         return;
       }
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/v1/sos`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/v1/sos?resolvedLimit=120`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 

@@ -10,6 +10,7 @@ const emergencyContactSchema = new mongoose.Schema(
 );
 
 const SosAlertSchema = new mongoose.Schema({
+  victimEmergencyInfoId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmergencyInfo', default: null },
   victimName: { type: String, default: '' },
   victimPhone: { type: String, default: '' },
   victimBloodType: { type: String, default: '' },
