@@ -80,6 +80,8 @@ interface Props {
 
 export default function QRStickerManagement({ token, backendApiBaseUrl }: Props) {
   const navigate = useNavigate();
+  const fallbackPublicAppUrl = 'https://incaseforh.vercel.app';
+  const publicAppUrl = (import.meta.env.VITE_PUBLIC_APP_URL || fallbackPublicAppUrl).replace(/\/+$/, '');
   const [tab, setTab] = useState<TabKey>('overview');
   const [error, setError] = useState<string | null>(null);
 
@@ -207,7 +209,12 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
       };
     }
 
-    void QRCodeLib.toDataURL(`${window.location.origin}/activate/${selectedSticker.uuid}`, {
+    const identifier = (selectedSticker.activatedBy?.email || selectedSticker.activatedBy?.phoneNumber || '').trim();
+    const scanUrl = selectedSticker.status === 'active' && identifier
+      ? `${publicAppUrl}/emergencyinfo/${encodeURIComponent(identifier)}`
+      : `${publicAppUrl}/activate/${selectedSticker.uuid}`;
+
+    void QRCodeLib.toDataURL(scanUrl, {
       width: 340,
       margin: 2,
       errorCorrectionLevel: 'H',
@@ -222,7 +229,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     return () => {
       active = false;
     };
-  }, [selectedBatchDetail, selectedStickerUuid]);
+  }, [selectedBatchDetail, selectedStickerUuid, publicAppUrl]);
 
   useEffect(() => {
     setPage(1);
@@ -517,9 +524,17 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     await navigator.clipboard.writeText(value);
   };
 
+  const getStickerScanUrl = (sticker: StickerRow) => {
+    const identifier = (sticker.activatedBy?.email || sticker.activatedBy?.phoneNumber || '').trim();
+    if (sticker.status === 'active' && identifier) {
+      return `${publicAppUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
+    }
+    return `${publicAppUrl}/activate/${sticker.uuid}`;
+  };
+
   const downloadStickerPng = async (sticker: StickerRow) => {
-    const activationUrl = `${window.location.origin}/activate/${sticker.uuid}`;
-    const dataUrl = await QRCodeLib.toDataURL(activationUrl, {
+    const scanUrl = getStickerScanUrl(sticker);
+    const dataUrl = await QRCodeLib.toDataURL(scanUrl, {
       width: 1200,
       margin: 2,
       errorCorrectionLevel: 'H',
@@ -533,6 +548,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
   };
 
   const selectedSticker = selectedBatchDetail?.stickers.find((sticker) => sticker.uuid === selectedStickerUuid) || selectedBatchDetail?.stickers[0] || null;
+  const selectedStickerScanUrl = selectedSticker ? getStickerScanUrl(selectedSticker) : '';
   const selectedBatchPackSync = derivePackSyncInfo(selectedBatchDetail?.batch, selectedBatchDetail?.stickers || []);
 
   const packSyncBadge = (batch: BatchRow, stickersForBatch: StickerRow[] = []) => {
@@ -878,7 +894,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                       ) : (
                         <div className="grid h-64 place-items-center rounded-lg bg-white text-sm text-gray-500">QR preview unavailable</div>
                       )}
-                      <p className="mt-3 text-center text-xs text-gray-500">Scan URL: {window.location.origin}/activate/{selectedSticker.uuid}</p>
+                      <p className="mt-3 text-center text-xs text-gray-500">Scan URL: {selectedStickerScanUrl}</p>
                     </div>
 
                     <div className="grid gap-2 text-sm text-gray-700">
@@ -891,7 +907,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
 
                     <div className="flex flex-wrap gap-2">
                       <button type="button" onClick={async () => { try { await downloadStickerPng(selectedSticker); } catch (err) { setError(err instanceof Error ? err.message : 'Failed to download sticker'); } }} className="rounded-lg bg-orange-600 px-3 py-2 text-sm font-semibold text-white">Download PNG</button>
-                      <button type="button" onClick={async () => { try { await copyToClipboard(`${window.location.origin}/activate/${selectedSticker.uuid}`); } catch (err) { setError(err instanceof Error ? err.message : 'Failed to copy link'); } }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700">Copy Activation URL</button>
+                      <button type="button" onClick={async () => { try { await copyToClipboard(selectedStickerScanUrl); } catch (err) { setError(err instanceof Error ? err.message : 'Failed to copy link'); } }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700">Copy Scan URL</button>
                       <button type="button" onClick={() => openReassignPage(selectedSticker.uuid)} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">Reassign</button>
                     </div>
                   </div>
