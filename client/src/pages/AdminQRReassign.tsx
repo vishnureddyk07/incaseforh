@@ -33,6 +33,7 @@ type StickerPayload = {
 };
 
 export default function AdminQRReassign() {
+  const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
   const { uuid = '' } = useParams();
   const navigate = useNavigate();
   const { token, user, isAuthenticated } = useAuth();
@@ -64,6 +65,10 @@ export default function AdminQRReassign() {
   const [bloodTypeReportFile, setBloodTypeReportFile] = useState<File | null>(null);
   const [prescriptionOrDischargeReportFile, setPrescriptionOrDischargeReportFile] = useState<File | null>(null);
   const [surgicalInfoReportFile, setSurgicalInfoReportFile] = useState<File | null>(null);
+  const [photoTouched, setPhotoTouched] = useState(false);
+  const [bloodTypeReportTouched, setBloodTypeReportTouched] = useState(false);
+  const [prescriptionReportTouched, setPrescriptionReportTouched] = useState(false);
+  const [surgicalReportTouched, setSurgicalReportTouched] = useState(false);
 
   const authHeaders = useMemo(
     () => ({ Authorization: `Bearer ${token || ''}`, 'Content-Type': 'application/json' }),
@@ -132,6 +137,10 @@ export default function AdminQRReassign() {
         setBloodTypeReportDataUrl(info.bloodTypeReport || '');
         setPrescriptionOrDischargeReportDataUrl(info.prescriptionOrDischargeReport || '');
         setSurgicalInfoReportDataUrl(info.surgicalInfoReport || '');
+        setPhotoTouched(false);
+        setBloodTypeReportTouched(false);
+        setPrescriptionReportTouched(false);
+        setSurgicalReportTouched(false);
 
         const existingContacts = Array.isArray(info.emergencyContacts)
           ? info.emergencyContacts.filter((c) => c && (c.name || c.phone)).map((c) => ({ name: c.name || '', phone: c.phone || '' }))
@@ -192,25 +201,25 @@ export default function AdminQRReassign() {
 
       if (photoFile) {
         payload.append('photo', photoFile);
-      } else {
+      } else if (photoTouched) {
         payload.append('photo', photoDataUrl);
       }
 
       if (bloodTypeReportFile) {
         payload.append('bloodTypeReport', bloodTypeReportFile);
-      } else {
+      } else if (bloodTypeReportTouched) {
         payload.append('bloodTypeReport', bloodTypeReportDataUrl);
       }
 
       if (prescriptionOrDischargeReportFile) {
         payload.append('prescriptionOrDischargeReport', prescriptionOrDischargeReportFile);
-      } else {
+      } else if (prescriptionReportTouched) {
         payload.append('prescriptionOrDischargeReport', prescriptionOrDischargeReportDataUrl);
       }
 
       if (surgicalInfoReportFile) {
         payload.append('surgicalInfoReport', surgicalInfoReportFile);
-      } else {
+      } else if (surgicalReportTouched) {
         payload.append('surgicalInfoReport', surgicalInfoReportDataUrl);
       }
 
@@ -224,9 +233,7 @@ export default function AdminQRReassign() {
 
       setProfileId(data?.emergencyInfo?._id || profileId);
       setSuccess('Profile updated successfully.');
-      setTimeout(() => {
-        navigate('/admin/dashboard');
-      }, 500);
+      navigate('/admin/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save profile');
     } finally {
@@ -234,14 +241,18 @@ export default function AdminQRReassign() {
     }
   };
 
-  if (loading) {
-    return <div className="min-h-screen grid place-items-center text-neutral-600">Loading profile...</div>;
-  }
-
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      setError('Uploaded photo is too large. Maximum allowed size is 5 MB.');
+      e.target.value = '';
+      return;
+    }
+
+    setError(null);
+    setPhotoTouched(true);
     setPhotoFile(file);
 
     const reader = new FileReader();
@@ -250,6 +261,26 @@ export default function AdminQRReassign() {
       setPhotoDataUrl(result);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleReportFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setTouched: (value: boolean) => void,
+    setFile: (value: File | null) => void,
+    label: string
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      setError(`${label} is too large. Maximum allowed size is 5 MB.`);
+      e.target.value = '';
+      return;
+    }
+
+    setError(null);
+    setTouched(true);
+    setFile(file);
   };
 
   return (
@@ -269,6 +300,12 @@ export default function AdminQRReassign() {
             Back to Dashboard
           </Link>
         </div>
+
+        {loading ? (
+          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            Loading profile data...
+          </div>
+        ) : null}
 
         {error ? <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
         {success ? <p className="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{success}</p> : null}
@@ -329,6 +366,7 @@ export default function AdminQRReassign() {
                 <button
                   type="button"
                   onClick={() => {
+                    setPhotoTouched(true);
                     setPhotoDataUrl('');
                     setPhotoFile(null);
                   }}
@@ -345,61 +383,79 @@ export default function AdminQRReassign() {
 
             <div>
               <label className="mb-1 block text-sm font-medium text-neutral-700">Blood Group Result</label>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-start">
                 <input
                   type="file"
                   accept="image/*,application/pdf"
-                  onChange={(e) => setBloodTypeReportFile(e.target.files?.[0] || null)}
-                  className="input max-w-sm"
+                  onChange={(e) => handleReportFileChange(e, setBloodTypeReportTouched, setBloodTypeReportFile, 'Uploaded blood group report')}
+                  className="input w-full xl:max-w-sm"
                   title="Upload blood group result"
                   aria-label="Upload blood group result"
                 />
-                {bloodTypeReportDataUrl ? (
-                  <a href={bloodTypeReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
-                ) : null}
-                {(bloodTypeReportDataUrl || bloodTypeReportFile) ? (
-                  <button type="button" onClick={() => { setBloodTypeReportDataUrl(''); setBloodTypeReportFile(null); }} className="btn-secondary-sm">Remove</button>
-                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  {bloodTypeReportDataUrl ? (
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-2">
+                      <a href={bloodTypeReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
+                    </div>
+                  ) : null}
+                  {(bloodTypeReportDataUrl || bloodTypeReportFile) ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-2">
+                      <button type="button" onClick={() => { setBloodTypeReportTouched(true); setBloodTypeReportDataUrl(''); setBloodTypeReportFile(null); }} className="btn-danger-sm">Remove</button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
 
             <div>
               <label className="mb-1 block text-sm font-medium text-neutral-700">Prescription / Discharge Report</label>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-start">
                 <input
                   type="file"
                   accept="image/*,application/pdf"
-                  onChange={(e) => setPrescriptionOrDischargeReportFile(e.target.files?.[0] || null)}
-                  className="input max-w-sm"
+                  onChange={(e) => handleReportFileChange(e, setPrescriptionReportTouched, setPrescriptionOrDischargeReportFile, 'Uploaded prescription/discharge report')}
+                  className="input w-full xl:max-w-sm"
                   title="Upload prescription or discharge report"
                   aria-label="Upload prescription or discharge report"
                 />
-                {prescriptionOrDischargeReportDataUrl ? (
-                  <a href={prescriptionOrDischargeReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
-                ) : null}
-                {(prescriptionOrDischargeReportDataUrl || prescriptionOrDischargeReportFile) ? (
-                  <button type="button" onClick={() => { setPrescriptionOrDischargeReportDataUrl(''); setPrescriptionOrDischargeReportFile(null); }} className="btn-secondary-sm">Remove</button>
-                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  {prescriptionOrDischargeReportDataUrl ? (
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-2">
+                      <a href={prescriptionOrDischargeReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
+                    </div>
+                  ) : null}
+                  {(prescriptionOrDischargeReportDataUrl || prescriptionOrDischargeReportFile) ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-2">
+                      <button type="button" onClick={() => { setPrescriptionReportTouched(true); setPrescriptionOrDischargeReportDataUrl(''); setPrescriptionOrDischargeReportFile(null); }} className="btn-danger-sm">Remove</button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
 
             <div>
               <label className="mb-1 block text-sm font-medium text-neutral-700">Surgical Info / Report</label>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-start">
                 <input
                   type="file"
                   accept="image/*,application/pdf"
-                  onChange={(e) => setSurgicalInfoReportFile(e.target.files?.[0] || null)}
-                  className="input max-w-sm"
+                  onChange={(e) => handleReportFileChange(e, setSurgicalReportTouched, setSurgicalInfoReportFile, 'Uploaded surgical info report')}
+                  className="input w-full xl:max-w-sm"
                   title="Upload surgical info report"
                   aria-label="Upload surgical info report"
                 />
-                {surgicalInfoReportDataUrl ? (
-                  <a href={surgicalInfoReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
-                ) : null}
-                {(surgicalInfoReportDataUrl || surgicalInfoReportFile) ? (
-                  <button type="button" onClick={() => { setSurgicalInfoReportDataUrl(''); setSurgicalInfoReportFile(null); }} className="btn-secondary-sm">Remove</button>
-                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  {surgicalInfoReportDataUrl ? (
+                    <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-2">
+                      <a href={surgicalInfoReportDataUrl} target="_blank" rel="noreferrer" className="btn-secondary-sm">Open Existing</a>
+                    </div>
+                  ) : null}
+                  {(surgicalInfoReportDataUrl || surgicalInfoReportFile) ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-2">
+                      <button type="button" onClick={() => { setSurgicalReportTouched(true); setSurgicalInfoReportDataUrl(''); setSurgicalInfoReportFile(null); }} className="btn-danger-sm">Remove</button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
