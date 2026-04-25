@@ -80,7 +80,7 @@ interface Props {
 
 export default function QRStickerManagement({ token, backendApiBaseUrl }: Props) {
   const navigate = useNavigate();
-  const fallbackPublicAppUrl = 'https://incaseforh-git-staging-k-vishnu-vardhan-reddys-projects.vercel.app';
+  const fallbackPublicAppUrl = 'https://incaseforh.vercel.app';
   const publicAppUrl = (import.meta.env.VITE_PUBLIC_APP_URL || fallbackPublicAppUrl).replace(/\/+$/, '');
   const [tab, setTab] = useState<TabKey>('overview');
   const [error, setError] = useState<string | null>(null);
