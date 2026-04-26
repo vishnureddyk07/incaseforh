@@ -33,7 +33,7 @@ type StickerPayload = {
 };
 
 export default function AdminQRReassign() {
-  const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
+  const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
   const { uuid = '' } = useParams();
   const navigate = useNavigate();
   const { token, user, isAuthenticated } = useAuth();
@@ -246,7 +246,7 @@ export default function AdminQRReassign() {
     if (!file) return;
 
     if (file.size > MAX_UPLOAD_SIZE_BYTES) {
-      setError('Uploaded photo is too large. Maximum allowed size is 5 MB.');
+      setError('Uploaded photo is too large. Maximum allowed size is 10 MB.');
       e.target.value = '';
       return;
     }
@@ -273,7 +273,7 @@ export default function AdminQRReassign() {
     if (!file) return;
 
     if (file.size > MAX_UPLOAD_SIZE_BYTES) {
-      setError(`${label} is too large. Maximum allowed size is 5 MB.`);
+      setError(`${label} is too large. Maximum allowed size is 10 MB.`);
       e.target.value = '';
       return;
     }
