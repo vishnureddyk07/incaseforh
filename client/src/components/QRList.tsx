@@ -388,8 +388,8 @@ export default function QRList() {
       }
       const isEmail = identifier.includes('@');
       const url = isEmail
-        ? `${API_BASE}/api/v1/emergency/${identifier}`
-        : `${API_BASE}/api/v1/emergency/phone/${identifier}`;
+        ? `${API_BASE}/api/v1/emergency/${encodeURIComponent(identifier)}`
+        : `${API_BASE}/api/v1/emergency/phone/${encodeURIComponent(identifier)}`;
       const res = await fetch(url, {
         method: 'PUT',
         headers: {
@@ -397,7 +397,10 @@ export default function QRList() {
         },
         body: payload,
       });
-      if (!res.ok) throw new Error('Failed to update');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Failed to update');
+      }
       // Refresh list
       const listRes = await fetch(`${API_BASE}/api/v1/emergency?limit=1000`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -408,7 +411,7 @@ export default function QRList() {
       setEditingRecord(null);
     } catch (err) {
       console.error(err);
-      alert('Failed to update record');
+      alert(err instanceof Error ? err.message : 'Failed to update record');
     }
   };
 

@@ -7,7 +7,7 @@ import EmergencyForm from "./EmergencyForm";
 const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, "");
 
 export default function EmergencyQRCode() {
-  const MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024;
+  const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
   // Fresh state every load (no localStorage persistence)
   const [emergencyInfo, setEmergencyInfo] = useState<EmergencyInfo>({
     fullName: "",
@@ -70,7 +70,7 @@ export default function EmergencyQRCode() {
   };
 
   const handlePhotoChange = (photoFile: File) => {
-    if (photoFile.size > MAX_PHOTO_SIZE_BYTES) {
+    if (photoFile.size > MAX_UPLOAD_SIZE_BYTES) {
       alert('Photo is too large. Please upload an image smaller than 10MB.');
       return;
     }
@@ -78,14 +78,26 @@ export default function EmergencyQRCode() {
   };
 
   const handleBloodTypeReportChange = (file: File | null) => {
+    if (file && file.size > MAX_UPLOAD_SIZE_BYTES) {
+      alert('Blood group report is too large. Please upload a file smaller than 10MB.');
+      return;
+    }
     setEmergencyInfo((prev) => ({ ...prev, bloodTypeReport: file }));
   };
 
   const handlePrescriptionOrDischargeReportChange = (file: File | null) => {
+    if (file && file.size > MAX_UPLOAD_SIZE_BYTES) {
+      alert('Prescription or discharge report is too large. Please upload a file smaller than 10MB.');
+      return;
+    }
     setEmergencyInfo((prev) => ({ ...prev, prescriptionOrDischargeReport: file }));
   };
 
   const handleSurgicalInfoReportChange = (file: File | null) => {
+    if (file && file.size > MAX_UPLOAD_SIZE_BYTES) {
+      alert('Medical report is too large. Please upload a file smaller than 10MB.');
+      return;
+    }
     setEmergencyInfo((prev) => ({ ...prev, surgicalInfoReport: file }));
   };
 

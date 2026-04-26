@@ -34,6 +34,10 @@ function RouteNormalizer() {
   const { pathname } = useLocation();
   const parts = pathname.split('/').filter(Boolean);
 
+  if (parts[0] === 'qr' && parts[1] === 'activate' && parts[2]) {
+    return <Navigate to={`/activate/${parts[2]}`} replace />;
+  }
+
   if (parts[0] === 'activate' && parts[1]) {
     return <Navigate to={`/activate/${parts[1]}`} replace />;
   }
@@ -118,6 +122,8 @@ function AppContent() {
       <Route path="/chatbot" element={<ChatBotPage />} />
       <Route path="/emergencyinfo/:email" element={<EmergencyInfoDisplay />} />
       <Route path="/emergencyinfo/:email/*" element={<EmergencyInfoDisplay />} />
+      <Route path="/qr/activate/:uuid" element={<ActivateQR />} />
+      <Route path="/qr/activate/:uuid/*" element={<ActivateQR />} />
       <Route path="/activate/:uuid" element={<ActivateQR />} />
       <Route path="/activate/:uuid/*" element={<ActivateQR />} />
       <Route path="/activation-success" element={<StickerActivationSuccess />} />

@@ -269,7 +269,7 @@ const ALLOWED_MIME_TYPES = [
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB max
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB max to match the client-side upload limit
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
       cb(null, true);
@@ -1305,35 +1305,102 @@ router.get('/emergency/phone/:phoneNumber', readLimiter, async (req, res) => {
 });
 
 // PUT: Update emergency info (admin-only, QR code preserved)
-router.put('/emergency/:email', requireAuth, requireAdmin, async (req, res) => {
+router.put('/emergency/:email', requireAuth, requireAdmin, upload.fields([
+  { name: 'photo', maxCount: 1 },
+  { name: 'bloodTypeReport', maxCount: 1 },
+  { name: 'prescriptionOrDischargeReport', maxCount: 1 },
+  { name: 'surgicalInfoReport', maxCount: 1 },
+]), async (req, res) => {
   try {
     const raw = req.params.email || '';
     const decoded = (() => { try { return decodeURIComponent(raw); } catch { return raw; } })();
     const needle = sanitizeStringParam(decoded).toLowerCase();
     if (!needle) return res.status(400).json({ error: 'Email parameter is required' });
-    
+
     const existing = await EmergencyInfo.findOne({ email: { $eq: needle } })
-      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport qrCode')
+      .select('_id')
       .collation({ locale: 'en', strength: 2 })
       .lean();
-    if (!existing) {
+    if (!existing?._id) {
       return res.status(404).json({ error: 'Record not found' });
     }
 
-    // Update only whitelisted fields with sanitized string values
-    const allowedFields = ['fullName', 'bloodType', 'emergencyContact', 'allergies', 
-                 'medications', 'medicalConditions', 'dateOfBirth', 'phoneNumber', 'address',
-                 'email'];
-    
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        const safe = sanitizeMongoValue(req.body[field]);
-        if (safe !== null) existing[field] = stripHtml(safe);
-      }
-    });
+    const uploadedFiles = req.files || {};
+    const photoFile = Array.isArray(uploadedFiles.photo) ? uploadedFiles.photo[0] : null;
+    const bloodTypeReportFile = Array.isArray(uploadedFiles.bloodTypeReport) ? uploadedFiles.bloodTypeReport[0] : null;
+    const prescriptionReportFile = Array.isArray(uploadedFiles.prescriptionOrDischargeReport) ? uploadedFiles.prescriptionOrDischargeReport[0] : null;
+    const surgicalReportFile = Array.isArray(uploadedFiles.surgicalInfoReport) ? uploadedFiles.surgicalInfoReport[0] : null;
 
-    await existing.save();
-    res.json({ message: 'Record updated', record: existing });
+    const photoDataUrl = uploadedFileToDataUrl(photoFile);
+    const bloodTypeReportDataUrl = uploadedFileToDataUrl(bloodTypeReportFile);
+    const prescriptionReportDataUrl = uploadedFileToDataUrl(prescriptionReportFile);
+    const surgicalReportDataUrl = uploadedFileToDataUrl(surgicalReportFile);
+
+    const emergencyContacts = Array.isArray(req.body?.emergencyContacts)
+      ? sanitizeContacts(req.body.emergencyContacts)
+      : typeof req.body?.emergencyContacts === 'string' && req.body.emergencyContacts.trim()
+        ? (() => {
+            try {
+              return sanitizeContacts(JSON.parse(req.body.emergencyContacts));
+            } catch {
+              return undefined;
+            }
+          })()
+        : undefined;
+
+    const normalizedEmail = normalizeOptionalString(req.body?.email, 200).toLowerCase();
+    const updateFields = {
+      fullName: normalizeOptionalString(req.body?.fullName, 200),
+      phoneNumber: normalizeOptionalString(req.body?.phoneNumber, 40),
+      dateOfBirth: normalizeOptionalString(req.body?.dateOfBirth, 40),
+      email: normalizedEmail || '',
+      bloodType: normalizeOptionalString(req.body?.bloodType, 20),
+      allergies: normalizeOptionalString(req.body?.allergies, 1000),
+      medications: normalizeOptionalString(req.body?.medications, 1000),
+      medicalConditions: normalizeOptionalString(req.body?.medicalConditions, 1000),
+      address: normalizeOptionalString(req.body?.address, 500),
+    };
+
+    if (photoDataUrl) {
+      updateFields.photo = photoDataUrl;
+    } else if (typeof req.body?.photo === 'string') {
+      const incomingPhoto = req.body.photo.trim();
+      if (!incomingPhoto) {
+        updateFields.photo = '';
+      } else if (incomingPhoto.startsWith('data:') || incomingPhoto.startsWith('http')) {
+        updateFields.photo = incomingPhoto;
+      }
+    }
+
+    if (bloodTypeReportDataUrl) {
+      updateFields.bloodTypeReport = bloodTypeReportDataUrl;
+    } else if (typeof req.body?.bloodTypeReport === 'string') {
+      updateFields.bloodTypeReport = req.body.bloodTypeReport.trim();
+    }
+
+    if (prescriptionReportDataUrl) {
+      updateFields.prescriptionOrDischargeReport = prescriptionReportDataUrl;
+    } else if (typeof req.body?.prescriptionOrDischargeReport === 'string') {
+      updateFields.prescriptionOrDischargeReport = req.body.prescriptionOrDischargeReport.trim();
+    }
+
+    if (surgicalReportDataUrl) {
+      updateFields.surgicalInfoReport = surgicalReportDataUrl;
+    } else if (typeof req.body?.surgicalInfoReport === 'string') {
+      updateFields.surgicalInfoReport = req.body.surgicalInfoReport.trim();
+    }
+
+    if (emergencyContacts) {
+      updateFields.emergencyContacts = emergencyContacts;
+    }
+
+    const updated = await EmergencyInfo.findByIdAndUpdate(
+      existing._id,
+      { $set: updateFields },
+      { new: true, runValidators: true }
+    );
+
+    res.json({ message: 'Record updated', record: updated });
   } catch (error) {
     console.error('Error updating record:', error);
     res.status(500).json({ error: 'Failed to update record' });
@@ -1341,7 +1408,12 @@ router.put('/emergency/:email', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // PUT: Update emergency info by phone (admin-only)
-router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (req, res) => {
+router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, upload.fields([
+  { name: 'photo', maxCount: 1 },
+  { name: 'bloodTypeReport', maxCount: 1 },
+  { name: 'prescriptionOrDischargeReport', maxCount: 1 },
+  { name: 'surgicalInfoReport', maxCount: 1 },
+]), async (req, res) => {
   try {
     const raw = req.params.phoneNumber || '';
     const decoded = (() => { try { return decodeURIComponent(raw); } catch { return raw; } })();
@@ -1349,25 +1421,88 @@ router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (re
     if (!needle) return res.status(400).json({ error: 'Phone number parameter is required' });
 
     const existing = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } })
-      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport qrCode')
+      .select('_id')
       .lean();
-    if (!existing) {
+    if (!existing?._id) {
       return res.status(404).json({ error: 'Record not found' });
     }
 
-    const allowedFields = ['fullName', 'bloodType', 'emergencyContact', 'allergies', 
-                 'medications', 'medicalConditions', 'dateOfBirth', 'phoneNumber', 'address',
-                 'email'];
-    
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        const safe = sanitizeMongoValue(req.body[field]);
-        if (safe !== null) existing[field] = stripHtml(safe);
-      }
-    });
+    const uploadedFiles = req.files || {};
+    const photoFile = Array.isArray(uploadedFiles.photo) ? uploadedFiles.photo[0] : null;
+    const bloodTypeReportFile = Array.isArray(uploadedFiles.bloodTypeReport) ? uploadedFiles.bloodTypeReport[0] : null;
+    const prescriptionReportFile = Array.isArray(uploadedFiles.prescriptionOrDischargeReport) ? uploadedFiles.prescriptionOrDischargeReport[0] : null;
+    const surgicalReportFile = Array.isArray(uploadedFiles.surgicalInfoReport) ? uploadedFiles.surgicalInfoReport[0] : null;
 
-    await existing.save();
-    res.json({ message: 'Record updated', record: existing });
+    const photoDataUrl = uploadedFileToDataUrl(photoFile);
+    const bloodTypeReportDataUrl = uploadedFileToDataUrl(bloodTypeReportFile);
+    const prescriptionReportDataUrl = uploadedFileToDataUrl(prescriptionReportFile);
+    const surgicalReportDataUrl = uploadedFileToDataUrl(surgicalReportFile);
+
+    const emergencyContacts = Array.isArray(req.body?.emergencyContacts)
+      ? sanitizeContacts(req.body.emergencyContacts)
+      : typeof req.body?.emergencyContacts === 'string' && req.body.emergencyContacts.trim()
+        ? (() => {
+            try {
+              return sanitizeContacts(JSON.parse(req.body.emergencyContacts));
+            } catch {
+              return undefined;
+            }
+          })()
+        : undefined;
+
+    const normalizedEmail = normalizeOptionalString(req.body?.email, 200).toLowerCase();
+    const updateFields = {
+      fullName: normalizeOptionalString(req.body?.fullName, 200),
+      phoneNumber: normalizeOptionalString(req.body?.phoneNumber, 40),
+      dateOfBirth: normalizeOptionalString(req.body?.dateOfBirth, 40),
+      email: normalizedEmail || '',
+      bloodType: normalizeOptionalString(req.body?.bloodType, 20),
+      allergies: normalizeOptionalString(req.body?.allergies, 1000),
+      medications: normalizeOptionalString(req.body?.medications, 1000),
+      medicalConditions: normalizeOptionalString(req.body?.medicalConditions, 1000),
+      address: normalizeOptionalString(req.body?.address, 500),
+    };
+
+    if (photoDataUrl) {
+      updateFields.photo = photoDataUrl;
+    } else if (typeof req.body?.photo === 'string') {
+      const incomingPhoto = req.body.photo.trim();
+      if (!incomingPhoto) {
+        updateFields.photo = '';
+      } else if (incomingPhoto.startsWith('data:') || incomingPhoto.startsWith('http')) {
+        updateFields.photo = incomingPhoto;
+      }
+    }
+
+    if (bloodTypeReportDataUrl) {
+      updateFields.bloodTypeReport = bloodTypeReportDataUrl;
+    } else if (typeof req.body?.bloodTypeReport === 'string') {
+      updateFields.bloodTypeReport = req.body.bloodTypeReport.trim();
+    }
+
+    if (prescriptionReportDataUrl) {
+      updateFields.prescriptionOrDischargeReport = prescriptionReportDataUrl;
+    } else if (typeof req.body?.prescriptionOrDischargeReport === 'string') {
+      updateFields.prescriptionOrDischargeReport = req.body.prescriptionOrDischargeReport.trim();
+    }
+
+    if (surgicalReportDataUrl) {
+      updateFields.surgicalInfoReport = surgicalReportDataUrl;
+    } else if (typeof req.body?.surgicalInfoReport === 'string') {
+      updateFields.surgicalInfoReport = req.body.surgicalInfoReport.trim();
+    }
+
+    if (emergencyContacts) {
+      updateFields.emergencyContacts = emergencyContacts;
+    }
+
+    const updated = await EmergencyInfo.findByIdAndUpdate(
+      existing._id,
+      { $set: updateFields },
+      { new: true, runValidators: true }
+    );
+
+    res.json({ message: 'Record updated', record: updated });
   } catch (error) {
     console.error('Error updating record by phone:', error);
     res.status(500).json({ error: 'Failed to update record' });

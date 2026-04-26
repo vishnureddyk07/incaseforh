@@ -41,6 +41,10 @@ export default function EmergencyForm({
     }
   };
 
+  const openFilePicker = (inputRef: React.RefObject<HTMLInputElement>) => {
+    inputRef.current?.click();
+  };
+
   return (
     <div className="space-y-6">
       {/* Photo Upload Section */}
@@ -97,8 +101,17 @@ export default function EmergencyForm({
             type="file"
             accept="image/*"
             onChange={handleRiderPhotoUpload}
-            className="hidden"
+            className="sr-only"
+            aria-label="Upload profile photo"
           />
+          <button
+            type="button"
+            onClick={() => openFilePicker(profilePhotoInputRef)}
+            className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+          >
+            <Upload className="h-4 w-4" />
+            Choose Photo
+          </button>
           <p className="text-xs text-slate-500">Max 10MB • JPG, PNG</p>
         </div>
       </div>
@@ -283,20 +296,25 @@ export default function EmergencyForm({
               <FileText className="h-4 w-4 text-red-600" />
               Blood Group Report
             </label>
-            <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center hover:bg-red-50 transition cursor-pointer">
+            <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center hover:bg-red-50 transition">
               <input
                 ref={bloodTypeReportInputRef}
                 type="file"
                 accept="image/*,application/pdf"
                 onChange={(e) => onBloodTypeReportChange?.(e.target.files?.[0] || null)}
-                className="hidden"
+                className="sr-only"
                 id="blood-report"
+                aria-label="Upload blood group report"
               />
-              <label htmlFor="blood-report" className="cursor-pointer">
-                <Upload className="h-5 w-5 text-slate-400 mx-auto mb-2" />
-                <p className="text-sm font-medium text-slate-700">Upload Blood Report</p>
-                <p className="text-xs text-slate-500 mt-1">PNG, JPG, PDF up to 10MB (Optional)</p>
-              </label>
+              <button
+                type="button"
+                onClick={() => openFilePicker(bloodTypeReportInputRef)}
+                className="mx-auto inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+              >
+                <Upload className="h-4 w-4" />
+                Upload Blood Report
+              </button>
+              <p className="mt-2 text-xs text-slate-500">PNG, JPG, PDF up to 10MB (Optional)</p>
             </div>
             {emergencyInfo.bloodTypeReport && (
               <p className="mt-2 text-xs text-green-600 font-medium">✓ {typeof emergencyInfo.bloodTypeReport === 'string' ? 'Report attached' : emergencyInfo.bloodTypeReport.name}</p>
@@ -383,20 +401,25 @@ export default function EmergencyForm({
                 <FileText className="h-4 w-4 text-purple-600" />
                 Discharge / Prescription
               </label>
-              <div className="border-2 border-dashed border-slate-300 rounded-lg p-3 text-center hover:bg-purple-50 transition cursor-pointer">
+              <div className="border-2 border-dashed border-slate-300 rounded-lg p-3 text-center hover:bg-purple-50 transition">
                 <input
                   ref={prescriptionReportInputRef}
                   type="file"
                   accept="image/*,application/pdf"
                   onChange={(e) => onPrescriptionOrDischargeReportChange?.(e.target.files?.[0] || null)}
-                  className="hidden"
+                  className="sr-only"
                   id="prescription-report"
+                  aria-label="Upload prescription or discharge report"
                 />
-                <label htmlFor="prescription-report" className="cursor-pointer">
-                  <Upload className="h-4 w-4 text-slate-400 mx-auto mb-1" />
-                  <p className="text-xs font-medium text-slate-700">Upload Document</p>
-                  <p className="text-xs text-slate-500">PNG, JPG, PDF</p>
-                </label>
+                <button
+                  type="button"
+                  onClick={() => openFilePicker(prescriptionReportInputRef)}
+                  className="mx-auto inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-white px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload Document
+                </button>
+                <p className="mt-2 text-xs text-slate-500">PNG, JPG, PDF</p>
               </div>
               {emergencyInfo.prescriptionOrDischargeReport && (
                 <p className="mt-2 text-xs text-green-600 font-medium">✓ {typeof emergencyInfo.prescriptionOrDischargeReport === 'string' ? 'Document attached' : emergencyInfo.prescriptionOrDischargeReport.name}</p>
@@ -409,20 +432,25 @@ export default function EmergencyForm({
                 <FileText className="h-4 w-4 text-purple-600" />
                 Medical Reports
               </label>
-              <div className="border-2 border-dashed border-slate-300 rounded-lg p-3 text-center hover:bg-purple-50 transition cursor-pointer">
+              <div className="border-2 border-dashed border-slate-300 rounded-lg p-3 text-center hover:bg-purple-50 transition">
                 <input
                   ref={medicalReportsInputRef}
                   type="file"
                   accept="image/*,application/pdf"
                   onChange={(e) => onSurgicalInfoReportChange?.(e.target.files?.[0] || null)}
-                  className="hidden"
+                  className="sr-only"
                   id="medical-reports"
+                  aria-label="Upload medical reports"
                 />
-                <label htmlFor="medical-reports" className="cursor-pointer">
-                  <Upload className="h-4 w-4 text-slate-400 mx-auto mb-1" />
-                  <p className="text-xs font-medium text-slate-700">Upload Document</p>
-                  <p className="text-xs text-slate-500">PNG, JPG, PDF</p>
-                </label>
+                <button
+                  type="button"
+                  onClick={() => openFilePicker(medicalReportsInputRef)}
+                  className="mx-auto inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-white px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload Document
+                </button>
+                <p className="mt-2 text-xs text-slate-500">PNG, JPG, PDF</p>
               </div>
               {emergencyInfo.surgicalInfoReport && (
                 <p className="mt-2 text-xs text-green-600 font-medium">✓ {typeof emergencyInfo.surgicalInfoReport === 'string' ? 'Report attached' : emergencyInfo.surgicalInfoReport.name}</p>
