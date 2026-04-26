@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, FileText, Heart, Phone, User, Shield, Upload, Users, Trash2 } from 'lucide-react';
 
@@ -37,9 +37,15 @@ type ActivationCheckResponse = {
 const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, '');
 
 export default function ActivateQR() {
+  const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
   const { uuid = '' } = useParams();
   const navigate = useNavigate();
   const apiBase = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+
+  const bloodTypeReportInputRef = useRef<HTMLInputElement | null>(null);
+  const prescriptionReportInputRef = useRef<HTMLInputElement | null>(null);
+  const medicalReportsInputRef = useRef<HTMLInputElement | null>(null);
+  const profilePhotoInputRef = useRef<HTMLInputElement | null>(null);
 
   const [check, setCheck] = useState<ActivationCheckResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -138,6 +144,31 @@ export default function ActivateQR() {
       if (prev.length <= 1) return prev;
       return prev.filter((_, i) => i !== idx);
     });
+  };
+
+  const openFilePicker = (inputRef: React.RefObject<HTMLInputElement | null>) => {
+    if (!inputRef.current) return;
+    inputRef.current.value = '';
+    inputRef.current.click();
+  };
+
+  const handleFileSelection = (
+    event: React.ChangeEvent<HTMLInputElement>,
+    setFile: (file: File | null) => void,
+    label: string
+  ) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) return;
+
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      setError(`${label} is too large. Maximum size is 10 MB.`);
+      setFile(null);
+      event.target.value = '';
+      return;
+    }
+
+    setError(null);
+    setFile(file);
   };
 
   const submitActivation = async (e: React.FormEvent) => {
@@ -364,21 +395,26 @@ export default function ActivateQR() {
                     <FileText className="h-4 w-4 text-blue-600" />
                     Blood Group Report
                   </label>
-                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center hover:bg-blue-50 transition cursor-pointer">
+                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center hover:bg-blue-50 transition">
                     <input
+                      ref={bloodTypeReportInputRef}
                       type="file"
                       accept="image/*,application/pdf"
-                      onChange={(e) => setBloodTypeReport(e.target.files?.[0] || null)}
-                      className="hidden"
-                      id="bloodTypeReport"
+                      onChange={(e) => handleFileSelection(e, setBloodTypeReport, 'Blood group report')}
+                      className="sr-only"
                       title="Upload blood group report"
                       aria-label="Upload blood group report"
                     />
-                    <label htmlFor="bloodTypeReport" className="cursor-pointer">
-                      <Upload className="h-5 w-5 text-slate-400 mx-auto mb-2" />
-                      <p className="text-sm font-medium text-slate-700">Click to upload or drag and drop</p>
-                      <p className="text-xs text-slate-500 mt-1">PNG, JPG, PDF up to 10MB (Optional)</p>
-                    </label>
+                    <button
+                      type="button"
+                      onClick={() => openFilePicker(bloodTypeReportInputRef)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Upload Blood Group Report
+                    </button>
+                    <p className="text-xs text-slate-500 mt-2">PNG, JPG, PDF up to 10MB (Optional)</p>
+                    {bloodTypeReport ? <p className="text-xs text-green-700 mt-2">Selected: {bloodTypeReport.name}</p> : null}
                   </div>
                   <p className="mt-2 text-xs text-slate-600">💡 Add your blood test report, lab card, or blood bank document for quick verification.</p>
                 </div>
@@ -522,21 +558,26 @@ export default function ActivateQR() {
                     <FileText className="h-4 w-4 text-purple-600" />
                     Discharge/Prescription
                   </label>
-                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-3 text-center hover:bg-purple-50 transition cursor-pointer">
+                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-3 text-center hover:bg-purple-50 transition">
                     <input
+                      ref={prescriptionReportInputRef}
                       type="file"
                       accept="image/*,application/pdf"
-                      onChange={(e) => setPrescriptionOrDischargeReport(e.target.files?.[0] || null)}
-                      className="hidden"
-                      id="prescriptionReport"
+                      onChange={(e) => handleFileSelection(e, setPrescriptionOrDischargeReport, 'Prescription or discharge report')}
+                      className="sr-only"
                       title="Upload prescription or discharge report"
                       aria-label="Upload prescription or discharge report"
                     />
-                    <label htmlFor="prescriptionReport" className="cursor-pointer">
-                      <Upload className="h-4 w-4 text-slate-400 mx-auto mb-1" />
-                      <p className="text-xs font-medium text-slate-700">Upload Document</p>
-                      <p className="text-xs text-slate-500">PNG, JPG, PDF</p>
-                    </label>
+                    <button
+                      type="button"
+                      onClick={() => openFilePicker(prescriptionReportInputRef)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-white px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Upload Document
+                    </button>
+                    <p className="text-xs text-slate-500 mt-2">PNG, JPG, PDF</p>
+                    {prescriptionOrDischargeReport ? <p className="text-xs text-green-700 mt-2">Selected: {prescriptionOrDischargeReport.name}</p> : null}
                   </div>
                   <p className="mt-2 text-xs text-slate-600">📄 Recent medical reports for treatment continuity</p>
                 </div>
@@ -545,21 +586,26 @@ export default function ActivateQR() {
                     <FileText className="h-4 w-4 text-purple-600" />
                     Medical Reports
                   </label>
-                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-3 text-center hover:bg-purple-50 transition cursor-pointer">
+                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-3 text-center hover:bg-purple-50 transition">
                     <input
+                      ref={medicalReportsInputRef}
                       type="file"
                       accept="image/*,application/pdf"
-                      onChange={(e) => setSurgicalInfoReport(e.target.files?.[0] || null)}
-                      className="hidden"
-                      id="medicalReports"
+                      onChange={(e) => handleFileSelection(e, setSurgicalInfoReport, 'Medical report')}
+                      className="sr-only"
                       title="Upload surgical information report"
                       aria-label="Upload surgical information report"
                     />
-                    <label htmlFor="medicalReports" className="cursor-pointer">
-                      <Upload className="h-4 w-4 text-slate-400 mx-auto mb-1" />
-                      <p className="text-xs font-medium text-slate-700">Upload Document</p>
-                      <p className="text-xs text-slate-500">PNG, JPG, PDF</p>
-                    </label>
+                    <button
+                      type="button"
+                      onClick={() => openFilePicker(medicalReportsInputRef)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-white px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Upload Document
+                    </button>
+                    <p className="text-xs text-slate-500 mt-2">PNG, JPG, PDF</p>
+                    {surgicalInfoReport ? <p className="text-xs text-green-700 mt-2">Selected: {surgicalInfoReport.name}</p> : null}
                   </div>
                   <p className="mt-2 text-xs text-slate-600">🏥 Scans, specialist notes & surgery reports</p>
                 </div>
@@ -577,21 +623,26 @@ export default function ActivateQR() {
             </div>
             <div className="p-6 text-center">
               <p className="text-sm text-slate-600 mb-4">Upload a clear photo to help responders identify you quickly</p>
-              <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:bg-cyan-50 transition cursor-pointer">
+              <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:bg-cyan-50 transition">
                 <input
+                  ref={profilePhotoInputRef}
                   type="file"
                   accept="image/*"
-                  onChange={(e) => setPhoto(e.target.files?.[0] || null)}
-                  className="hidden"
-                  id="profilePhoto"
+                  onChange={(e) => handleFileSelection(e, setPhoto, 'Profile photo')}
+                  className="sr-only"
                   title="Upload profile photo"
                   aria-label="Upload profile photo"
                 />
-                <label htmlFor="profilePhoto" className="cursor-pointer">
-                  <Upload className="h-8 w-8 text-slate-400 mx-auto mb-3" />
-                  <p className="text-sm font-medium text-slate-700">Click to upload or drag and drop</p>
-                  <p className="text-xs text-slate-500 mt-1">PNG, JPG up to 10MB (Optional)</p>
-                </label>
+                <button
+                  type="button"
+                  onClick={() => openFilePicker(profilePhotoInputRef)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-cyan-200 bg-white px-4 py-2 text-sm font-semibold text-cyan-700 hover:bg-cyan-50"
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload Profile Photo
+                </button>
+                <p className="text-xs text-slate-500 mt-2">PNG, JPG up to 10MB (Optional)</p>
+                {photo ? <p className="text-xs text-green-700 mt-2">Selected: {photo.name}</p> : null}
               </div>
             </div>
           </div>
