@@ -36,6 +36,24 @@ type ActivationCheckResponse = {
 
 const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, '');
 
+const readJsonResponse = async <T,>(res: Response): Promise<T> => {
+  const raw = await res.text();
+  if (!raw || !raw.trim()) {
+    return {} as T;
+  }
+
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('<')) {
+    throw new Error(`The server returned HTML instead of JSON. Check the backend URL or deployment. Status: ${res.status}.`);
+  }
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch (_error) {
+    throw new Error(`The server returned an invalid JSON response. Status: ${res.status}.`);
+  }
+};
+
 export default function ActivateQR() {
   const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
   const { uuid = '' } = useParams();
@@ -74,10 +92,22 @@ export default function ActivateQR() {
       setError(null);
       try {
         const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
-        const data = await res.json();
+        const data = await readJsonResponse<ActivationCheckResponse>(res);
         if (!res.ok) {
-          throw new Error(data.error || data.reason || 'Failed to load sticker');
+          throw new Error((data as { error?: string; reason?: string }).error || (data as { error?: string; reason?: string }).reason || 'Failed to load sticker');
         }
+        
+        // Check if this is a multi-profile QR for customer or business profiles
+        if (
+          data.sticker?.multiProfileMode &&
+          (data.sticker?.type === 'b2c' || data.sticker?.type === 'b2b')
+        ) {
+          if (active) {
+            navigate(`/qr/profiles/${encodeURIComponent(uuid)}`, { replace: true });
+          }
+          return;
+        }
+        
         if (active) setCheck(data);
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Failed to load sticker');
@@ -89,7 +119,7 @@ export default function ActivateQR() {
     return () => {
       active = false;
     };
-  }, [apiBase, uuid]);
+  }, [apiBase, uuid, navigate]);
 
   useEffect(() => {
     if (check?.status === 'active' && check.sticker?.activatedBy) {

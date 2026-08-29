@@ -3559,6 +3559,342 @@ router.patch('/chatbot/profile', requireChatbotAuth, upload.fields([
 
 // ── End CHATBOT endpoints ────────────────────────────────────────────
 
+// ── MULTI-PROFILE QR ENDPOINTS ──────────────────────────────────────
+
+// Public: Get list of profiles in a multi-profile QR (names only, no full data)
+router.get('/qr/:uuid/profiles', readLimiter, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid })
+      .select('uuid multiProfileMode profiles profileCount status type')
+      .lean();
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    if (!sticker.multiProfileMode) {
+      return res.status(400).json({ error: 'This QR does not have multi-profile mode enabled' });
+    }
+
+    // Multi-profile is allowed for customer and business QR types
+    if (sticker.type !== 'b2c' && sticker.type !== 'b2b') {
+      return res.status(403).json({ error: 'Multi-profile QR access is only available for B2C and B2B QR codes' });
+    }
+
+    // Return only names and IDs (no sensitive data for public scan)
+    const profileList = (sticker.profiles || []).map((profile) => ({
+      _id: profile._id.toString(),
+      profileId: profile.profileId.toString(),
+      profileName: profile.profileName,
+      profileEmail: profile.profileEmail,
+      addedAt: profile.addedAt,
+    }));
+
+    return res.json({
+      uuid: sticker.uuid,
+      multiProfileMode: true,
+      type: sticker.type,
+      profileCount: sticker.profileCount || profileList.length,
+      profiles: profileList,
+      status: sticker.status,
+    });
+  } catch (error) {
+    console.error('Error fetching profiles:', error);
+    return res.status(500).json({ error: 'Failed to fetch profiles' });
+  }
+});
+
+// Public: Get single profile from multi-profile QR (requires OTP auth)
+router.get('/qr/:uuid/profile/:profileId', requireChatbotAuth, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const profileId = sanitizeStringParam(req.params.profileId);
+
+    if (!uuid || !profileId) {
+      return res.status(400).json({ error: 'UUID and profileId are required' });
+    }
+
+    // Verify sticker exists and has multi-profile mode (B2B only)
+    const sticker = await QRSticker.findOne({ uuid })
+      .select('uuid multiProfileMode profiles type')
+      .lean();
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    if (!sticker.multiProfileMode) {
+      return res.status(400).json({ error: 'This QR does not have multi-profile mode enabled' });
+    }
+
+    // Multi-profile is allowed for customer and business QR types
+    if (sticker.type !== 'b2c' && sticker.type !== 'b2b') {
+      return res.status(403).json({ error: 'Multi-profile QR access is only available for B2C and B2B QR codes' });
+    }
+
+    // Find the profile in the QR
+    const profileEntry = (sticker.profiles || []).find(
+      (p) => p.profileId.toString() === profileId
+    );
+
+    if (!profileEntry) {
+      return res.status(404).json({ error: 'Profile not found in this QR' });
+    }
+
+    // Fetch the full emergency info (user authenticated via OTP)
+    const emergencyInfo = await EmergencyInfo.findById(profileEntry.profileId)
+      .select('_id fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
+      .lean();
+
+    if (!emergencyInfo) {
+      return res.status(404).json({ error: 'Profile data not found' });
+    }
+
+    res.json({
+      qrUuid: uuid,
+      profile: emergencyInfo,
+    });
+  } catch (error) {
+    console.error('Error fetching multi-profile QR data:', error);
+    return res.status(500).json({ error: 'Failed to fetch profile data' });
+  }
+});
+
+// Authenticated User: Create a new multi-profile QR batch for customer or business profiles
+router.post('/qr/create-multi', requireChatbotAuth, async (req, res) => {
+  try {
+    const { profileIds = [], type = 'b2c' } = req.body;
+
+    if (!Array.isArray(profileIds)) {
+      return res.status(400).json({ error: 'profileIds must be an array' });
+    }
+
+    if (!['b2c', 'b2b'].includes(type)) {
+      return res.status(400).json({ error: 'Multi-profile QR can only be created for B2C or B2B types' });
+    }
+
+    let profileEntries = [];
+
+    if (profileIds.length > 0) {
+      const validIds = profileIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+      if (validIds.length !== profileIds.length) {
+        return res.status(400).json({ error: 'Invalid profile IDs' });
+      }
+
+      const profiles = await EmergencyInfo.find({ _id: { $in: validIds } })
+        .select('_id fullName email phoneNumber')
+        .lean();
+
+      if (profiles.length !== validIds.length) {
+        return res.status(404).json({ error: 'One or more profiles not found' });
+      }
+
+      profileEntries = profiles.map((profile) => ({
+        profileId: profile._id,
+        addedBy: req.user.sub,
+        profileName: profile.fullName || 'Unknown',
+        profileEmail: profile.email || '',
+        profilePhone: profile.phoneNumber || '',
+        canEdit: false,
+        addedAt: new Date(),
+      }));
+    }
+
+    const uuid = uuidv4();
+    const sequence = await getNextSerialSequence();
+    const serialNumber = formatSerialNumber(sequence);
+    const batchId = await buildBatchId(type);
+
+    const sticker = await QRSticker.create({
+      uuid,
+      serialNumber,
+      status: 'active',
+      type,
+      batchId,
+      multiProfileMode: true,
+      profiles: profileEntries,
+      profileCount: profileEntries.length,
+      createdByUser: req.user.sub,
+    });
+
+    await QRBatch.create({
+      batchId,
+      quantity: 1,
+      type,
+      createdBy: req.user.email || 'user@unknown',
+      organizationName: type === 'b2b' ? 'Business Multi-Profile' : 'Customer Multi-Profile',
+      notes: profileEntries.length > 0
+        ? `Multi-profile QR with ${profileEntries.length} profiles (${type})`
+        : `Empty multi-profile QR ready for profile linking (${type})`,
+    });
+
+    res.status(201).json({
+      success: true,
+      sticker: {
+        uuid: sticker.uuid,
+        serialNumber: sticker.serialNumber,
+        batchId: sticker.batchId,
+        type,
+        multiProfileMode: true,
+        profileCount: profileEntries.length,
+        profiles: profileEntries.map((p) => ({
+          profileId: p.profileId.toString(),
+          profileName: p.profileName,
+          profileEmail: p.profileEmail,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Error creating multi-profile QR:', error);
+    return res.status(500).json({ error: 'Failed to create multi-profile QR' });
+  }
+});
+
+// Authenticated User: Add profile to existing multi-profile QR (owner only, B2B only)
+router.post('/qr/:uuid/add-profile', requireChatbotAuth, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const { profileId } = req.body;
+
+    if (!uuid || !profileId) {
+      return res.status(400).json({ error: 'UUID and profileId are required' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(profileId)) {
+      return res.status(400).json({ error: 'Invalid profileId' });
+    }
+
+    // Find the sticker
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    // Verify user is the owner
+    if (sticker.createdByUser.toString() !== req.user.sub) {
+      return res.status(403).json({ error: 'Only QR owner can add profiles' });
+    }
+
+    // Verify this is a valid multi-profile QR for customer or business use
+    if (!sticker.multiProfileMode || (sticker.type !== 'b2c' && sticker.type !== 'b2b')) {
+      return res.status(403).json({ error: 'This operation is only available for B2C and B2B multi-profile QRs' });
+    }
+
+    // Check if profile already exists in QR
+    const alreadyExists = sticker.profiles.some(
+      (p) => p.profileId.toString() === profileId
+    );
+    if (alreadyExists) {
+      return res.status(409).json({ error: 'Profile already added to this QR' });
+    }
+
+    // Fetch the emergency info
+    const emergency = await EmergencyInfo.findById(profileId)
+      .select('_id fullName email phoneNumber')
+      .lean();
+
+    if (!emergency) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    // Add to profiles array
+    sticker.profiles.push({
+      profileId: emergency._id,
+      addedBy: req.user.sub,
+      profileName: emergency.fullName || 'Unknown',
+      profileEmail: emergency.email || '',
+      profilePhone: emergency.phoneNumber || '',
+      canEdit: false,
+      addedAt: new Date(),
+    });
+
+    sticker.profileCount = sticker.profiles.length;
+    await sticker.save();
+
+    res.json({
+      success: true,
+      message: 'Profile added successfully',
+      sticker: {
+        uuid: sticker.uuid,
+        multiProfileMode: true,
+        type: sticker.type,
+        profileCount: sticker.profileCount,
+        profiles: sticker.profiles.map((p) => ({
+          profileId: p.profileId.toString(),
+          profileName: p.profileName,
+          profileEmail: p.profileEmail,
+          addedAt: p.addedAt,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Error adding profile to QR:', error);
+    return res.status(500).json({ error: 'Failed to add profile' });
+  }
+});
+
+// Authenticated User: Remove profile from multi-profile QR (owner only, B2B only)
+router.delete('/qr/:uuid/remove-profile/:profileId', requireChatbotAuth, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const profileId = sanitizeStringParam(req.params.profileId);
+
+    if (!uuid || !profileId) {
+      return res.status(400).json({ error: 'UUID and profileId are required' });
+    }
+
+    // Find the sticker
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    // Verify user is the owner
+    if (sticker.createdByUser.toString() !== req.user.sub) {
+      return res.status(403).json({ error: 'Only QR owner can remove profiles' });
+    }
+
+    // Verify this is a valid multi-profile QR for customer or business use
+    if (!sticker.multiProfileMode || (sticker.type !== 'b2c' && sticker.type !== 'b2b')) {
+      return res.status(403).json({ error: 'This operation is only available for B2C and B2B multi-profile QRs' });
+    }
+
+    // Remove the profile
+    sticker.profiles = sticker.profiles.filter(
+      (p) => p.profileId.toString() !== profileId
+    );
+
+    sticker.profileCount = sticker.profiles.length;
+    await sticker.save();
+
+    res.json({
+      success: true,
+      message: 'Profile removed successfully',
+      sticker: {
+        uuid: sticker.uuid,
+        multiProfileMode: true,
+        type: sticker.type,
+        profileCount: sticker.profileCount,
+        profiles: sticker.profiles.map((p) => ({
+          profileId: p.profileId.toString(),
+          profileName: p.profileName,
+          profileEmail: p.profileEmail,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Error removing profile from QR:', error);
+    return res.status(500).json({ error: 'Failed to remove profile' });
+  }
+});
+
+// ── End MULTI-PROFILE QR endpoints ──────────────────────────────────────────
+
 // ── Mount versioned router & backward-compat redirect ────────────────
 app.use('/api/v1', (req, res, next) => {
   if (!MONGODB_URI) {
