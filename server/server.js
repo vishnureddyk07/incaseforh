@@ -6,6 +6,8 @@ import rateLimit from 'express-rate-limit';
 import archiver from 'archiver';
 import QRCode from 'qrcode';
 import { createGzip, constants as zlibConstants } from 'node:zlib';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import EmergencyInfo from './models/EmergencyInfo.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -16,6 +18,10 @@ import SosAlert from './models/SosAlert.js';
 import QRSticker from './models/QRSticker.js';
 import QRBatch from './models/QRBatch.js';
 import { v4 as uuidv4 } from 'uuid';
+
+// Get directory name in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -92,7 +98,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // FOR FormData PARSING
 
 // Serve static files from public directory (service worker, etc.)
-app.use(express.static('public', {
+// Use absolute path to ensure it works in any deployment environment
+const publicDir = join(__dirname, 'public');
+app.use(express.static(publicDir, {
   maxAge: '1d',
   etag: false,
   setHeaders: (res, path) => {
