@@ -91,6 +91,17 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // FOR FormData PARSING
 
+// Serve static files from public directory (service worker, etc.)
+app.use(express.static('public', {
+  maxAge: '1d',
+  etag: false,
+  setHeaders: (res, path) => {
+    if (path.endsWith('.js') || path.endsWith('.json')) {
+      res.setHeader('Content-Type', path.endsWith('.json') ? 'application/json' : 'application/javascript');
+    }
+  }
+}));
+
 // ── Rate-limiting middleware ─────────────────────────────────────────
 // Shared handler for rate-limit responses
 const rateLimitHandler = (_req, res) => {
