@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertCircle, ChevronRight, Loader2 } from 'lucide-react';
+import { AlertCircle, ChevronRight, Loader2, Plus } from 'lucide-react';
 
 interface Profile {
   _id: string;
@@ -53,6 +53,12 @@ export default function ProfileSelector() {
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpLoading, setOtpLoading] = useState(false);
+  const [showAddProfileForm, setShowAddProfileForm] = useState(false);
+  const [addProfileName, setAddProfileName] = useState('');
+  const [addProfileEmail, setAddProfileEmail] = useState('');
+  const [addProfilePhone, setAddProfilePhone] = useState('');
+  const [addProfileLoading, setAddProfileLoading] = useState(false);
+  const [addProfileError, setAddProfileError] = useState<string | null>(null);
 
   // Fetch profile list from QR
   useEffect(() => {
@@ -197,6 +203,73 @@ export default function ProfileSelector() {
     }
   };
 
+  // Add a new profile to this multi-profile QR
+  const handleAddProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddProfileError(null);
+
+    if (!addProfileName.trim()) {
+      setAddProfileError('Profile name is required');
+      return;
+    }
+
+    if (!addProfilePhone.trim()) {
+      setAddProfileError('Phone number is required');
+      return;
+    }
+
+    try {
+      setAddProfileLoading(true);
+
+      // Activate a new profile on this QR (create emergency info)
+      const formData = new FormData();
+      formData.append('fullName', addProfileName.trim());
+      formData.append('phoneNumber', addProfilePhone.trim());
+      if (addProfileEmail.trim()) {
+        formData.append('email', addProfileEmail.trim());
+      }
+      formData.append('emergencyContacts', JSON.stringify([
+        { name: 'Emergency Contact', phone: addProfilePhone }
+      ]));
+      formData.append('bloodType', 'O+'); // Default
+      formData.append('allergies', 'None');
+      formData.append('medications', 'None');
+      formData.append('medicalConditions', 'None');
+
+      const activateRes = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!activateRes.ok) {
+        const error = await readJsonResponse<{ error?: string }>(activateRes).catch(() => ({ error: 'Failed to add profile' }));
+        if (error.error?.includes('maximum of 3 profiles')) {
+          throw new Error('This shared QR already has the maximum of 3 profiles.');
+        }
+        throw new Error(error.error || 'Failed to add profile');
+      }
+
+      const response = await readJsonResponse<{ emergencyInfo?: { _id: string }; sticker?: { profileCount: number } }>(activateRes);
+      
+      // Success! Refresh the profile list
+      setShowAddProfileForm(false);
+      setAddProfileName('');
+      setAddProfileEmail('');
+      setAddProfilePhone('');
+      
+      // Reload profiles
+      const reloadRes = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/profiles`);
+      if (reloadRes.ok) {
+        const updatedData: QRData = await readJsonResponse<QRData>(reloadRes);
+        setQrData(updatedData);
+      }
+    } catch (err) {
+      setAddProfileError(err instanceof Error ? err.message : 'Failed to add profile');
+    } finally {
+      setAddProfileLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -265,13 +338,13 @@ export default function ProfileSelector() {
           </p>
         </div>
 
-        {/* Profile List */}
+        {/* Profile List and Add Option */}
         <div className="bg-white shadow-lg px-4 py-2">
           {qrData.profiles.map((profile, index) => (
             <button
               key={profile.profileId}
               onClick={() => handleSelectProfile(profile.profileId)}
-              className={`w-full text-left p-4 border-b last:border-b-0 flex items-center justify-between hover:bg-blue-50 transition-colors ${
+              className={`w-full text-left p-4 border-b flex items-center justify-between hover:bg-blue-50 transition-colors ${
                 selectedProfile === profile.profileId ? 'bg-blue-50' : ''
               }`}
             >
@@ -284,6 +357,105 @@ export default function ProfileSelector() {
               <ChevronRight className="h-5 w-5 text-gray-400" />
             </button>
           ))}
+
+          {/* Add Profile Button */}
+          {qrData.profileCount < 3 && !showAddProfileForm && (
+            <button
+              onClick={() => {
+                setShowAddProfileForm(true);
+                setAddProfileError(null);
+              }}
+              className="w-full text-left p-4 border-t border-dashed border-blue-300 hover:bg-blue-50 transition-colors flex items-center gap-3 text-blue-600 font-semibold"
+            >
+              <Plus className="h-5 w-5" />
+              Add Profile ({qrData.profileCount}/3)
+            </button>
+          )}
+
+          {/* Add Profile Form */}
+          {showAddProfileForm && (
+            <div className="p-4 border-t border-dashed border-blue-300 bg-blue-50">
+              <h3 className="font-semibold text-gray-800 mb-4">Add New Profile</h3>
+              <form onSubmit={handleAddProfile} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={addProfileName}
+                    onChange={(e) => setAddProfileName(e.target.value)}
+                    placeholder="e.g., John Doe"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={addProfileLoading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Phone Number *
+                  </label>
+                  <input
+                    type="tel"
+                    value={addProfilePhone}
+                    onChange={(e) => setAddProfilePhone(e.target.value)}
+                    placeholder="+91 9876543210"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={addProfileLoading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Email (Optional)
+                  </label>
+                  <input
+                    type="email"
+                    value={addProfileEmail}
+                    onChange={(e) => setAddProfileEmail(e.target.value)}
+                    placeholder="john@example.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={addProfileLoading}
+                  />
+                </div>
+
+                {addProfileError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                    {addProfileError}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddProfileForm(false);
+                      setAddProfileName('');
+                      setAddProfileEmail('');
+                      setAddProfilePhone('');
+                      setAddProfileError(null);
+                    }}
+                    className="flex-1 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+                    disabled={addProfileLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                    disabled={addProfileLoading || !addProfileName.trim() || !addProfilePhone.trim()}
+                  >
+                    {addProfileLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Add Profile
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {qrData.profileCount >= 3 && (
+            <div className="p-4 border-t border-dashed border-amber-300 bg-amber-50 text-amber-700 text-sm">
+              Maximum 3 profiles reached
+            </div>
+          )}
         </div>
 
         {/* OTP Modal */}

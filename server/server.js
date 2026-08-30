@@ -2367,14 +2367,56 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       emergencyInfo = await EmergencyInfo.create(payload);
     }
 
+    if (sticker.multiProfileMode && (sticker.type === 'b2c' || sticker.type === 'b2b')) {
+      const maxAllowedProfiles = 3;
+      const profileIdString = String(emergencyInfo._id);
+      const alreadyLinked = (sticker.profiles || []).some((profile) => String(profile.profileId) === profileIdString);
+
+      if (!alreadyLinked) {
+        if ((sticker.profiles || []).length >= maxAllowedProfiles) {
+          return res.status(409).json({
+            error: 'This shared QR already has the maximum of 3 profiles. Please switch an existing profile instead.',
+          });
+        }
+
+        let userIdForProfile = sticker.createdByUser;
+        if (!userIdForProfile) {
+          const emailForUser = (emergencyInfo.email || `${emergencyInfo.phoneNumber || emergencyInfo._id.toString()}@local.user`).toLowerCase();
+          const safeEmail = String(emailForUser).trim();
+          let user = await User.findOne({ email: safeEmail }).select('_id').lean();
+          if (!user) {
+            const tempPassword = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+            const passwordHash = await bcrypt.hash(tempPassword, 10);
+            user = await User.create({
+              email: safeEmail,
+              passwordHash,
+              role: 'user',
+            });
+          }
+          userIdForProfile = user._id;
+        }
+
+        sticker.profiles.push({
+          profileId: emergencyInfo._id,
+          addedBy: userIdForProfile,
+          profileName: emergencyInfo.fullName || 'Unknown',
+          profileEmail: emergencyInfo.email || '',
+          profilePhone: emergencyInfo.phoneNumber || '',
+          canEdit: true,
+          addedAt: new Date(),
+        });
+        sticker.profileCount = sticker.profiles.length;
+      }
+    }
+
     if (sticker.status !== 'active' || String(sticker.activatedBy || '') !== String(emergencyInfo._id)) {
       sticker.status = 'active';
       sticker.activatedBy = emergencyInfo._id;
       if (!sticker.activatedAt) sticker.activatedAt = new Date();
       if (sticker.deactivatedAt) sticker.deactivatedAt = null;
       if (sticker.deactivatedReason) sticker.deactivatedReason = '';
-      await sticker.save();
     }
+    await sticker.save();
 
     let packSync = { enabled: false, syncedCount: 0, skippedCount: 0 };
     const batchMeta = await QRBatch.findOne({ batchId: sticker.batchId }).select('batchId quantity').lean();
@@ -3783,6 +3825,10 @@ router.post('/qr/:uuid/add-profile', requireChatbotAuth, async (req, res) => {
     // Verify this is a valid multi-profile QR for customer or business use
     if (!sticker.multiProfileMode || (sticker.type !== 'b2c' && sticker.type !== 'b2b')) {
       return res.status(403).json({ error: 'This operation is only available for B2C and B2B multi-profile QRs' });
+    }
+
+    if ((sticker.profiles || []).length >= 3) {
+      return res.status(409).json({ error: 'Shared QR profile limit reached. Maximum 3 profiles allowed.' });
     }
 
     // Check if profile already exists in QR

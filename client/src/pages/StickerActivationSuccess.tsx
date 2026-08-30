@@ -1,4 +1,5 @@
 import { useLocation, Link } from 'react-router-dom';
+import { Plus, Users } from 'lucide-react';
 
 type SuccessState = {
   riderName?: string;
@@ -11,6 +12,10 @@ type SuccessState = {
     syncedCount: number;
     skippedCount: number;
   };
+  isMultiProfile?: boolean;
+  qrUuid?: string;
+  qrType?: 'b2c' | 'b2b' | 'b2g';
+  profileCount?: number;
 };
 
 export default function StickerActivationSuccess() {
@@ -46,11 +51,46 @@ export default function StickerActivationSuccess() {
           </div>
         ) : null}
 
+        {state.isMultiProfile && (state.qrType === 'b2c' || state.qrType === 'b2b') ? (
+          <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-900">
+            <p className="font-semibold flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Shared QR Profile
+            </p>
+            <p className="mt-2">You can add up to 2 more family members or colleagues to this QR code. Each profile is protected by their own OTP.</p>
+            {state.profileCount ? (
+              <p className="mt-2 text-xs text-amber-700">
+                <strong>Profiles: {state.profileCount}/3</strong>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         <p className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
           Stick your QR on your helmet - it could save your life.
         </p>
 
         <div className="mt-6 flex flex-wrap justify-center gap-3">
+          {state.isMultiProfile && state.qrUuid && (state.qrType === 'b2c' || state.qrType === 'b2b') ? (
+            <>
+              <Link 
+                to={`/qr/profiles/${encodeURIComponent(state.qrUuid)}`}
+                className="btn-primary-md flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Add Profile
+              </Link>
+              {state.profileCount && state.profileCount > 1 ? (
+                <Link 
+                  to={`/qr/profiles/${encodeURIComponent(state.qrUuid)}`}
+                  className="btn-secondary-md flex items-center gap-2"
+                >
+                  <Users className="h-4 w-4" />
+                  Switch Profile
+                </Link>
+              ) : null}
+            </>
+          ) : null}
           {state.profileUrl ? (
             <a href={state.profileUrl} className="btn-primary-md">
               View your emergency profile

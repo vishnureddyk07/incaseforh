@@ -276,8 +276,12 @@ export default function ActivateQR() {
           bloodType: data?.emergencyInfo?.bloodType || bloodType,
           serialNumber: data?.sticker?.serialNumber || check?.sticker?.serialNumber || '',
           profileUrl: data?.profileUrl,
-            packSync: data?.packSync,
+          packSync: data?.packSync,
           qrActivationUrl: `${window.location.origin}/activate/${uuid}`,
+          isMultiProfile: check?.sticker?.multiProfileMode,
+          qrUuid: uuid,
+          qrType: check?.sticker?.type as 'b2c' | 'b2b' | 'b2g' | undefined,
+          profileCount: data?.sticker?.profileCount || 1,
         },
       });
     } catch (err) {
