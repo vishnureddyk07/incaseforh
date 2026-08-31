@@ -6,6 +6,8 @@ import rateLimit from 'express-rate-limit';
 import archiver from 'archiver';
 import QRCode from 'qrcode';
 import { createGzip, constants as zlibConstants } from 'node:zlib';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import EmergencyInfo from './models/EmergencyInfo.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -16,6 +18,10 @@ import SosAlert from './models/SosAlert.js';
 import QRSticker from './models/QRSticker.js';
 import QRBatch from './models/QRBatch.js';
 import { v4 as uuidv4 } from 'uuid';
+
+// Get directory name in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -90,6 +96,19 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // FOR FormData PARSING
+
+// Serve static files from public directory (service worker, etc.)
+// Use absolute path to ensure it works in any deployment environment
+const publicDir = join(__dirname, 'public');
+app.use(express.static(publicDir, {
+  maxAge: '1d',
+  etag: false,
+  setHeaders: (res, path) => {
+    if (path.endsWith('.js') || path.endsWith('.json')) {
+      res.setHeader('Content-Type', path.endsWith('.json') ? 'application/json' : 'application/javascript');
+    }
+  }
+}));
 
 // ── Rate-limiting middleware ─────────────────────────────────────────
 // Shared handler for rate-limit responses
@@ -269,7 +288,7 @@ const ALLOWED_MIME_TYPES = [
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB max
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB max to match the client-side upload limit
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
       cb(null, true);
@@ -1305,35 +1324,102 @@ router.get('/emergency/phone/:phoneNumber', readLimiter, async (req, res) => {
 });
 
 // PUT: Update emergency info (admin-only, QR code preserved)
-router.put('/emergency/:email', requireAuth, requireAdmin, async (req, res) => {
+router.put('/emergency/:email', requireAuth, requireAdmin, upload.fields([
+  { name: 'photo', maxCount: 1 },
+  { name: 'bloodTypeReport', maxCount: 1 },
+  { name: 'prescriptionOrDischargeReport', maxCount: 1 },
+  { name: 'surgicalInfoReport', maxCount: 1 },
+]), async (req, res) => {
   try {
     const raw = req.params.email || '';
     const decoded = (() => { try { return decodeURIComponent(raw); } catch { return raw; } })();
     const needle = sanitizeStringParam(decoded).toLowerCase();
     if (!needle) return res.status(400).json({ error: 'Email parameter is required' });
-    
+
     const existing = await EmergencyInfo.findOne({ email: { $eq: needle } })
-      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport qrCode')
+      .select('_id')
       .collation({ locale: 'en', strength: 2 })
       .lean();
-    if (!existing) {
+    if (!existing?._id) {
       return res.status(404).json({ error: 'Record not found' });
     }
 
-    // Update only whitelisted fields with sanitized string values
-    const allowedFields = ['fullName', 'bloodType', 'emergencyContact', 'allergies', 
-                 'medications', 'medicalConditions', 'dateOfBirth', 'phoneNumber', 'address',
-                 'email'];
-    
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        const safe = sanitizeMongoValue(req.body[field]);
-        if (safe !== null) existing[field] = stripHtml(safe);
-      }
-    });
+    const uploadedFiles = req.files || {};
+    const photoFile = Array.isArray(uploadedFiles.photo) ? uploadedFiles.photo[0] : null;
+    const bloodTypeReportFile = Array.isArray(uploadedFiles.bloodTypeReport) ? uploadedFiles.bloodTypeReport[0] : null;
+    const prescriptionReportFile = Array.isArray(uploadedFiles.prescriptionOrDischargeReport) ? uploadedFiles.prescriptionOrDischargeReport[0] : null;
+    const surgicalReportFile = Array.isArray(uploadedFiles.surgicalInfoReport) ? uploadedFiles.surgicalInfoReport[0] : null;
 
-    await existing.save();
-    res.json({ message: 'Record updated', record: existing });
+    const photoDataUrl = uploadedFileToDataUrl(photoFile);
+    const bloodTypeReportDataUrl = uploadedFileToDataUrl(bloodTypeReportFile);
+    const prescriptionReportDataUrl = uploadedFileToDataUrl(prescriptionReportFile);
+    const surgicalReportDataUrl = uploadedFileToDataUrl(surgicalReportFile);
+
+    const emergencyContacts = Array.isArray(req.body?.emergencyContacts)
+      ? sanitizeContacts(req.body.emergencyContacts)
+      : typeof req.body?.emergencyContacts === 'string' && req.body.emergencyContacts.trim()
+        ? (() => {
+            try {
+              return sanitizeContacts(JSON.parse(req.body.emergencyContacts));
+            } catch {
+              return undefined;
+            }
+          })()
+        : undefined;
+
+    const normalizedEmail = normalizeOptionalString(req.body?.email, 200).toLowerCase();
+    const updateFields = {
+      fullName: normalizeOptionalString(req.body?.fullName, 200),
+      phoneNumber: normalizeOptionalString(req.body?.phoneNumber, 40),
+      dateOfBirth: normalizeOptionalString(req.body?.dateOfBirth, 40),
+      email: normalizedEmail || '',
+      bloodType: normalizeOptionalString(req.body?.bloodType, 20),
+      allergies: normalizeOptionalString(req.body?.allergies, 1000),
+      medications: normalizeOptionalString(req.body?.medications, 1000),
+      medicalConditions: normalizeOptionalString(req.body?.medicalConditions, 1000),
+      address: normalizeOptionalString(req.body?.address, 500),
+    };
+
+    if (photoDataUrl) {
+      updateFields.photo = photoDataUrl;
+    } else if (typeof req.body?.photo === 'string') {
+      const incomingPhoto = req.body.photo.trim();
+      if (!incomingPhoto) {
+        updateFields.photo = '';
+      } else if (incomingPhoto.startsWith('data:') || incomingPhoto.startsWith('http')) {
+        updateFields.photo = incomingPhoto;
+      }
+    }
+
+    if (bloodTypeReportDataUrl) {
+      updateFields.bloodTypeReport = bloodTypeReportDataUrl;
+    } else if (typeof req.body?.bloodTypeReport === 'string') {
+      updateFields.bloodTypeReport = req.body.bloodTypeReport.trim();
+    }
+
+    if (prescriptionReportDataUrl) {
+      updateFields.prescriptionOrDischargeReport = prescriptionReportDataUrl;
+    } else if (typeof req.body?.prescriptionOrDischargeReport === 'string') {
+      updateFields.prescriptionOrDischargeReport = req.body.prescriptionOrDischargeReport.trim();
+    }
+
+    if (surgicalReportDataUrl) {
+      updateFields.surgicalInfoReport = surgicalReportDataUrl;
+    } else if (typeof req.body?.surgicalInfoReport === 'string') {
+      updateFields.surgicalInfoReport = req.body.surgicalInfoReport.trim();
+    }
+
+    if (emergencyContacts) {
+      updateFields.emergencyContacts = emergencyContacts;
+    }
+
+    const updated = await EmergencyInfo.findByIdAndUpdate(
+      existing._id,
+      { $set: updateFields },
+      { new: true, runValidators: true }
+    );
+
+    res.json({ message: 'Record updated', record: updated });
   } catch (error) {
     console.error('Error updating record:', error);
     res.status(500).json({ error: 'Failed to update record' });
@@ -1341,7 +1427,12 @@ router.put('/emergency/:email', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // PUT: Update emergency info by phone (admin-only)
-router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (req, res) => {
+router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, upload.fields([
+  { name: 'photo', maxCount: 1 },
+  { name: 'bloodTypeReport', maxCount: 1 },
+  { name: 'prescriptionOrDischargeReport', maxCount: 1 },
+  { name: 'surgicalInfoReport', maxCount: 1 },
+]), async (req, res) => {
   try {
     const raw = req.params.phoneNumber || '';
     const decoded = (() => { try { return decodeURIComponent(raw); } catch { return raw; } })();
@@ -1349,25 +1440,88 @@ router.put('/emergency/phone/:phoneNumber', requireAuth, requireAdmin, async (re
     if (!needle) return res.status(400).json({ error: 'Phone number parameter is required' });
 
     const existing = await EmergencyInfo.findOne({ phoneNumber: { $eq: needle } })
-      .select('fullName email phoneNumber bloodType emergencyContacts allergies medications medicalConditions dateOfBirth address photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport qrCode')
+      .select('_id')
       .lean();
-    if (!existing) {
+    if (!existing?._id) {
       return res.status(404).json({ error: 'Record not found' });
     }
 
-    const allowedFields = ['fullName', 'bloodType', 'emergencyContact', 'allergies', 
-                 'medications', 'medicalConditions', 'dateOfBirth', 'phoneNumber', 'address',
-                 'email'];
-    
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        const safe = sanitizeMongoValue(req.body[field]);
-        if (safe !== null) existing[field] = stripHtml(safe);
-      }
-    });
+    const uploadedFiles = req.files || {};
+    const photoFile = Array.isArray(uploadedFiles.photo) ? uploadedFiles.photo[0] : null;
+    const bloodTypeReportFile = Array.isArray(uploadedFiles.bloodTypeReport) ? uploadedFiles.bloodTypeReport[0] : null;
+    const prescriptionReportFile = Array.isArray(uploadedFiles.prescriptionOrDischargeReport) ? uploadedFiles.prescriptionOrDischargeReport[0] : null;
+    const surgicalReportFile = Array.isArray(uploadedFiles.surgicalInfoReport) ? uploadedFiles.surgicalInfoReport[0] : null;
 
-    await existing.save();
-    res.json({ message: 'Record updated', record: existing });
+    const photoDataUrl = uploadedFileToDataUrl(photoFile);
+    const bloodTypeReportDataUrl = uploadedFileToDataUrl(bloodTypeReportFile);
+    const prescriptionReportDataUrl = uploadedFileToDataUrl(prescriptionReportFile);
+    const surgicalReportDataUrl = uploadedFileToDataUrl(surgicalReportFile);
+
+    const emergencyContacts = Array.isArray(req.body?.emergencyContacts)
+      ? sanitizeContacts(req.body.emergencyContacts)
+      : typeof req.body?.emergencyContacts === 'string' && req.body.emergencyContacts.trim()
+        ? (() => {
+            try {
+              return sanitizeContacts(JSON.parse(req.body.emergencyContacts));
+            } catch {
+              return undefined;
+            }
+          })()
+        : undefined;
+
+    const normalizedEmail = normalizeOptionalString(req.body?.email, 200).toLowerCase();
+    const updateFields = {
+      fullName: normalizeOptionalString(req.body?.fullName, 200),
+      phoneNumber: normalizeOptionalString(req.body?.phoneNumber, 40),
+      dateOfBirth: normalizeOptionalString(req.body?.dateOfBirth, 40),
+      email: normalizedEmail || '',
+      bloodType: normalizeOptionalString(req.body?.bloodType, 20),
+      allergies: normalizeOptionalString(req.body?.allergies, 1000),
+      medications: normalizeOptionalString(req.body?.medications, 1000),
+      medicalConditions: normalizeOptionalString(req.body?.medicalConditions, 1000),
+      address: normalizeOptionalString(req.body?.address, 500),
+    };
+
+    if (photoDataUrl) {
+      updateFields.photo = photoDataUrl;
+    } else if (typeof req.body?.photo === 'string') {
+      const incomingPhoto = req.body.photo.trim();
+      if (!incomingPhoto) {
+        updateFields.photo = '';
+      } else if (incomingPhoto.startsWith('data:') || incomingPhoto.startsWith('http')) {
+        updateFields.photo = incomingPhoto;
+      }
+    }
+
+    if (bloodTypeReportDataUrl) {
+      updateFields.bloodTypeReport = bloodTypeReportDataUrl;
+    } else if (typeof req.body?.bloodTypeReport === 'string') {
+      updateFields.bloodTypeReport = req.body.bloodTypeReport.trim();
+    }
+
+    if (prescriptionReportDataUrl) {
+      updateFields.prescriptionOrDischargeReport = prescriptionReportDataUrl;
+    } else if (typeof req.body?.prescriptionOrDischargeReport === 'string') {
+      updateFields.prescriptionOrDischargeReport = req.body.prescriptionOrDischargeReport.trim();
+    }
+
+    if (surgicalReportDataUrl) {
+      updateFields.surgicalInfoReport = surgicalReportDataUrl;
+    } else if (typeof req.body?.surgicalInfoReport === 'string') {
+      updateFields.surgicalInfoReport = req.body.surgicalInfoReport.trim();
+    }
+
+    if (emergencyContacts) {
+      updateFields.emergencyContacts = emergencyContacts;
+    }
+
+    const updated = await EmergencyInfo.findByIdAndUpdate(
+      existing._id,
+      { $set: updateFields },
+      { new: true, runValidators: true }
+    );
+
+    res.json({ message: 'Record updated', record: updated });
   } catch (error) {
     console.error('Error updating record by phone:', error);
     res.status(500).json({ error: 'Failed to update record' });
@@ -2081,7 +2235,8 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
       const identifier =
         activatedBy?.email || activatedBy?.phoneNumber || String(sticker.activatedBy);
 
-      const redirectTo = `${frontendUrl}/activate/${sticker.uuid}`;
+      const emergencyProfileUrl = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
+      const redirectTo = emergencyProfileUrl;
       if (!wantsJson) {
         return res.redirect(302, redirectTo);
       }
@@ -2092,7 +2247,7 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
           ...sticker,
           activatedBy,
         },
-        emergencyProfileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}`,
+        emergencyProfileUrl,
         redirectTo,
       });
     }
@@ -2231,14 +2386,56 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       emergencyInfo = await EmergencyInfo.create(payload);
     }
 
+    if (sticker.multiProfileMode && (sticker.type === 'b2c' || sticker.type === 'b2b')) {
+      const maxAllowedProfiles = 3;
+      const profileIdString = String(emergencyInfo._id);
+      const alreadyLinked = (sticker.profiles || []).some((profile) => String(profile.profileId) === profileIdString);
+
+      if (!alreadyLinked) {
+        if ((sticker.profiles || []).length >= maxAllowedProfiles) {
+          return res.status(409).json({
+            error: 'This shared QR already has the maximum of 3 profiles. Please switch an existing profile instead.',
+          });
+        }
+
+        let userIdForProfile = sticker.createdByUser;
+        if (!userIdForProfile) {
+          const emailForUser = (emergencyInfo.email || `${emergencyInfo.phoneNumber || emergencyInfo._id.toString()}@local.user`).toLowerCase();
+          const safeEmail = String(emailForUser).trim();
+          let user = await User.findOne({ email: safeEmail }).select('_id').lean();
+          if (!user) {
+            const tempPassword = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+            const passwordHash = await bcrypt.hash(tempPassword, 10);
+            user = await User.create({
+              email: safeEmail,
+              passwordHash,
+              role: 'user',
+            });
+          }
+          userIdForProfile = user._id;
+        }
+
+        sticker.profiles.push({
+          profileId: emergencyInfo._id,
+          addedBy: userIdForProfile,
+          profileName: emergencyInfo.fullName || 'Unknown',
+          profileEmail: emergencyInfo.email || '',
+          profilePhone: emergencyInfo.phoneNumber || '',
+          canEdit: true,
+          addedAt: new Date(),
+        });
+        sticker.profileCount = sticker.profiles.length;
+      }
+    }
+
     if (sticker.status !== 'active' || String(sticker.activatedBy || '') !== String(emergencyInfo._id)) {
       sticker.status = 'active';
       sticker.activatedBy = emergencyInfo._id;
       if (!sticker.activatedAt) sticker.activatedAt = new Date();
       if (sticker.deactivatedAt) sticker.deactivatedAt = null;
       if (sticker.deactivatedReason) sticker.deactivatedReason = '';
-      await sticker.save();
     }
+    await sticker.save();
 
     let packSync = { enabled: false, syncedCount: 0, skippedCount: 0 };
     const batchMeta = await QRBatch.findOne({ batchId: sticker.batchId }).select('batchId quantity').lean();
@@ -3422,6 +3619,346 @@ router.patch('/chatbot/profile', requireChatbotAuth, upload.fields([
 });
 
 // ── End CHATBOT endpoints ────────────────────────────────────────────
+
+// ── MULTI-PROFILE QR ENDPOINTS ──────────────────────────────────────
+
+// Public: Get list of profiles in a multi-profile QR (names only, no full data)
+router.get('/qr/:uuid/profiles', readLimiter, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid })
+      .select('uuid multiProfileMode profiles profileCount status type')
+      .lean();
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    if (!sticker.multiProfileMode) {
+      return res.status(400).json({ error: 'This QR does not have multi-profile mode enabled' });
+    }
+
+    // Multi-profile is allowed for customer and business QR types
+    if (sticker.type !== 'b2c' && sticker.type !== 'b2b') {
+      return res.status(403).json({ error: 'Multi-profile QR access is only available for B2C and B2B QR codes' });
+    }
+
+    // Return only names and IDs (no sensitive data for public scan)
+    const profileList = (sticker.profiles || []).map((profile) => ({
+      _id: profile._id.toString(),
+      profileId: profile.profileId.toString(),
+      profileName: profile.profileName,
+      profileEmail: profile.profileEmail,
+      addedAt: profile.addedAt,
+    }));
+
+    return res.json({
+      uuid: sticker.uuid,
+      multiProfileMode: true,
+      type: sticker.type,
+      profileCount: sticker.profileCount || profileList.length,
+      profiles: profileList,
+      status: sticker.status,
+    });
+  } catch (error) {
+    console.error('Error fetching profiles:', error);
+    return res.status(500).json({ error: 'Failed to fetch profiles' });
+  }
+});
+
+// Public: Get single profile from multi-profile QR (requires OTP auth)
+router.get('/qr/:uuid/profile/:profileId', requireChatbotAuth, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const profileId = sanitizeStringParam(req.params.profileId);
+
+    if (!uuid || !profileId) {
+      return res.status(400).json({ error: 'UUID and profileId are required' });
+    }
+
+    // Verify sticker exists and has multi-profile mode (B2B only)
+    const sticker = await QRSticker.findOne({ uuid })
+      .select('uuid multiProfileMode profiles type')
+      .lean();
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    if (!sticker.multiProfileMode) {
+      return res.status(400).json({ error: 'This QR does not have multi-profile mode enabled' });
+    }
+
+    // Multi-profile is allowed for customer and business QR types
+    if (sticker.type !== 'b2c' && sticker.type !== 'b2b') {
+      return res.status(403).json({ error: 'Multi-profile QR access is only available for B2C and B2B QR codes' });
+    }
+
+    // Find the profile in the QR
+    const profileEntry = (sticker.profiles || []).find(
+      (p) => p.profileId.toString() === profileId
+    );
+
+    if (!profileEntry) {
+      return res.status(404).json({ error: 'Profile not found in this QR' });
+    }
+
+    // Fetch the full emergency info (user authenticated via OTP)
+    const emergencyInfo = await EmergencyInfo.findById(profileEntry.profileId)
+      .select('_id fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
+      .lean();
+
+    if (!emergencyInfo) {
+      return res.status(404).json({ error: 'Profile data not found' });
+    }
+
+    res.json({
+      qrUuid: uuid,
+      profile: emergencyInfo,
+    });
+  } catch (error) {
+    console.error('Error fetching multi-profile QR data:', error);
+    return res.status(500).json({ error: 'Failed to fetch profile data' });
+  }
+});
+
+// Authenticated User: Create a new multi-profile QR batch for customer or business profiles
+router.post('/qr/create-multi', requireChatbotAuth, async (req, res) => {
+  try {
+    const { profileIds = [], type = 'b2c' } = req.body;
+
+    if (!Array.isArray(profileIds)) {
+      return res.status(400).json({ error: 'profileIds must be an array' });
+    }
+
+    if (!['b2c', 'b2b'].includes(type)) {
+      return res.status(400).json({ error: 'Multi-profile QR can only be created for B2C or B2B types' });
+    }
+
+    let profileEntries = [];
+
+    if (profileIds.length > 0) {
+      const validIds = profileIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+      if (validIds.length !== profileIds.length) {
+        return res.status(400).json({ error: 'Invalid profile IDs' });
+      }
+
+      const profiles = await EmergencyInfo.find({ _id: { $in: validIds } })
+        .select('_id fullName email phoneNumber')
+        .lean();
+
+      if (profiles.length !== validIds.length) {
+        return res.status(404).json({ error: 'One or more profiles not found' });
+      }
+
+      profileEntries = profiles.map((profile) => ({
+        profileId: profile._id,
+        addedBy: req.user.sub,
+        profileName: profile.fullName || 'Unknown',
+        profileEmail: profile.email || '',
+        profilePhone: profile.phoneNumber || '',
+        canEdit: false,
+        addedAt: new Date(),
+      }));
+    }
+
+    const uuid = uuidv4();
+    const sequence = await getNextSerialSequence();
+    const serialNumber = formatSerialNumber(sequence);
+    const batchId = await buildBatchId(type);
+
+    const sticker = await QRSticker.create({
+      uuid,
+      serialNumber,
+      status: 'active',
+      type,
+      batchId,
+      multiProfileMode: true,
+      profiles: profileEntries,
+      profileCount: profileEntries.length,
+      createdByUser: req.user.sub,
+    });
+
+    await QRBatch.create({
+      batchId,
+      quantity: 1,
+      type,
+      createdBy: req.user.email || 'user@unknown',
+      organizationName: type === 'b2b' ? 'Business Multi-Profile' : 'Customer Multi-Profile',
+      notes: profileEntries.length > 0
+        ? `Multi-profile QR with ${profileEntries.length} profiles (${type})`
+        : `Empty multi-profile QR ready for profile linking (${type})`,
+    });
+
+    res.status(201).json({
+      success: true,
+      sticker: {
+        uuid: sticker.uuid,
+        serialNumber: sticker.serialNumber,
+        batchId: sticker.batchId,
+        type,
+        multiProfileMode: true,
+        profileCount: profileEntries.length,
+        profiles: profileEntries.map((p) => ({
+          profileId: p.profileId.toString(),
+          profileName: p.profileName,
+          profileEmail: p.profileEmail,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Error creating multi-profile QR:', error);
+    return res.status(500).json({ error: 'Failed to create multi-profile QR' });
+  }
+});
+
+// Authenticated User: Add profile to existing multi-profile QR (owner only, B2B only)
+router.post('/qr/:uuid/add-profile', requireChatbotAuth, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const { profileId } = req.body;
+
+    if (!uuid || !profileId) {
+      return res.status(400).json({ error: 'UUID and profileId are required' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(profileId)) {
+      return res.status(400).json({ error: 'Invalid profileId' });
+    }
+
+    // Find the sticker
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    // Verify user is the owner
+    if (sticker.createdByUser.toString() !== req.user.sub) {
+      return res.status(403).json({ error: 'Only QR owner can add profiles' });
+    }
+
+    // Verify this is a valid multi-profile QR for customer or business use
+    if (!sticker.multiProfileMode || (sticker.type !== 'b2c' && sticker.type !== 'b2b')) {
+      return res.status(403).json({ error: 'This operation is only available for B2C and B2B multi-profile QRs' });
+    }
+
+    if ((sticker.profiles || []).length >= 3) {
+      return res.status(409).json({ error: 'Shared QR profile limit reached. Maximum 3 profiles allowed.' });
+    }
+
+    // Check if profile already exists in QR
+    const alreadyExists = sticker.profiles.some(
+      (p) => p.profileId.toString() === profileId
+    );
+    if (alreadyExists) {
+      return res.status(409).json({ error: 'Profile already added to this QR' });
+    }
+
+    // Fetch the emergency info
+    const emergency = await EmergencyInfo.findById(profileId)
+      .select('_id fullName email phoneNumber')
+      .lean();
+
+    if (!emergency) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    // Add to profiles array
+    sticker.profiles.push({
+      profileId: emergency._id,
+      addedBy: req.user.sub,
+      profileName: emergency.fullName || 'Unknown',
+      profileEmail: emergency.email || '',
+      profilePhone: emergency.phoneNumber || '',
+      canEdit: false,
+      addedAt: new Date(),
+    });
+
+    sticker.profileCount = sticker.profiles.length;
+    await sticker.save();
+
+    res.json({
+      success: true,
+      message: 'Profile added successfully',
+      sticker: {
+        uuid: sticker.uuid,
+        multiProfileMode: true,
+        type: sticker.type,
+        profileCount: sticker.profileCount,
+        profiles: sticker.profiles.map((p) => ({
+          profileId: p.profileId.toString(),
+          profileName: p.profileName,
+          profileEmail: p.profileEmail,
+          addedAt: p.addedAt,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Error adding profile to QR:', error);
+    return res.status(500).json({ error: 'Failed to add profile' });
+  }
+});
+
+// Authenticated User: Remove profile from multi-profile QR (owner only, B2B only)
+router.delete('/qr/:uuid/remove-profile/:profileId', requireChatbotAuth, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const profileId = sanitizeStringParam(req.params.profileId);
+
+    if (!uuid || !profileId) {
+      return res.status(400).json({ error: 'UUID and profileId are required' });
+    }
+
+    // Find the sticker
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    // Verify user is the owner
+    if (sticker.createdByUser.toString() !== req.user.sub) {
+      return res.status(403).json({ error: 'Only QR owner can remove profiles' });
+    }
+
+    // Verify this is a valid multi-profile QR for customer or business use
+    if (!sticker.multiProfileMode || (sticker.type !== 'b2c' && sticker.type !== 'b2b')) {
+      return res.status(403).json({ error: 'This operation is only available for B2C and B2B multi-profile QRs' });
+    }
+
+    // Remove the profile
+    sticker.profiles = sticker.profiles.filter(
+      (p) => p.profileId.toString() !== profileId
+    );
+
+    sticker.profileCount = sticker.profiles.length;
+    await sticker.save();
+
+    res.json({
+      success: true,
+      message: 'Profile removed successfully',
+      sticker: {
+        uuid: sticker.uuid,
+        multiProfileMode: true,
+        type: sticker.type,
+        profileCount: sticker.profileCount,
+        profiles: sticker.profiles.map((p) => ({
+          profileId: p.profileId.toString(),
+          profileName: p.profileName,
+          profileEmail: p.profileEmail,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Error removing profile from QR:', error);
+    return res.status(500).json({ error: 'Failed to remove profile' });
+  }
+});
+
+// ── End MULTI-PROFILE QR endpoints ──────────────────────────────────────────
 
 // ── Mount versioned router & backward-compat redirect ────────────────
 app.use('/api/v1', (req, res, next) => {
