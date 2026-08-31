@@ -2081,8 +2081,7 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
       const identifier =
         activatedBy?.email || activatedBy?.phoneNumber || String(sticker.activatedBy);
 
-      const emergencyProfileUrl = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
-      const redirectTo = emergencyProfileUrl;
+      const redirectTo = `${frontendUrl}/activate/${sticker.uuid}`;
       if (!wantsJson) {
         return res.redirect(302, redirectTo);
       }
@@ -2093,7 +2092,7 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
           ...sticker,
           activatedBy,
         },
-        emergencyProfileUrl,
+        emergencyProfileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}`,
         redirectTo,
       });
     }
