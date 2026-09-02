@@ -88,6 +88,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
 
   const [quantity, setQuantity] = useState(50);
   const [type, setType] = useState<'b2c' | 'b2b' | 'b2g'>('b2c');
+  const [multiProfileMode, setMultiProfileMode] = useState(false);
   const [organizationName, setOrganizationName] = useState('');
   const [notes, setNotes] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -236,14 +237,28 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     setError(null);
     setGenerateResult(null);
     try {
-      const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/generate`, {
-        method: 'POST',
-        headers: { ...authHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity, type, organizationName, notes }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to generate');
-      setGenerateResult({ batchId: data.batchId, quantity: data.quantity });
+      if (multiProfileMode && (type === 'b2c' || type === 'b2b')) {
+        const res = await fetch(`${backendApiBaseUrl}/api/v1/qr/create-multi`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profileIds: [], type }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create multi-profile QR');
+        setGenerateResult({
+          batchId: data.sticker?.batchId || data.sticker?.uuid || 'multi-profile',
+          quantity: 1,
+        });
+      } else {
+        const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/generate`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quantity, type, organizationName, notes }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to generate');
+        setGenerateResult({ batchId: data.batchId, quantity: data.quantity });
+      }
       await fetchStats();
       await fetchBatches();
     } catch (err) {
@@ -626,7 +641,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-gray-700">Quantity (max 500)</label>
-              <input type="number" min={1} max={500} value={quantity} onChange={(e) => setQuantity(Number(e.target.value || 1))} className="mt-1 w-full rounded-lg border px-3 py-2" aria-label="Batch quantity" title="Batch quantity" placeholder="Enter quantity" />
+              <input type="number" min={1} max={500} value={quantity} onChange={(e) => setQuantity(Number(e.target.value || 1))} className="mt-1 w-full rounded-lg border px-3 py-2" aria-label="Batch quantity" title="Batch quantity" placeholder="Enter quantity" disabled={multiProfileMode} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Type</label>
@@ -636,6 +651,21 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
                 <option value="b2g">B2G</option>
               </select>
             </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <label className="flex items-center gap-3 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={multiProfileMode}
+                onChange={(e) => setMultiProfileMode(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Create as multi-profile QR
+            </label>
+            <p className="mt-2 text-xs text-gray-600">
+              Works for B2C and B2B only. This creates one shared QR; you can add profiles afterward.
+            </p>
           </div>
 
           {(type === 'b2b' || type === 'b2g') && (
