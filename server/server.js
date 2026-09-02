@@ -3726,8 +3726,8 @@ router.get('/qr/:uuid/profile/:profileId', requireChatbotAuth, async (req, res) 
   }
 });
 
-// Authenticated User: Create a new multi-profile QR batch for customer or business profiles
-router.post('/qr/create-multi', requireChatbotAuth, async (req, res) => {
+// Administrators: Create a new multi-profile QR batch for customer or business profiles
+router.post('/qr/create-multi', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { profileIds = [], type = 'b2c' } = req.body;
 
