@@ -73,3 +73,5 @@ npx playwright test
 Additional implementation and handover documents are in `docs/`.
 
 Backup instructions are in `backups/README.md`.
+
+> Staging deploy note: trigger refresh on 2026-09-04.
