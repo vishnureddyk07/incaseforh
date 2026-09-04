@@ -10,6 +10,19 @@ const assignedToSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const profileEntrySchema = new mongoose.Schema(
+  {
+    profileId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmergencyInfo', required: true },
+    addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    profileName: { type: String, default: '' },
+    profileEmail: { type: String, default: '' },
+    profilePhone: { type: String, default: '' },
+    canEdit: { type: Boolean, default: false },
+    addedAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
 const qrStickerSchema = new mongoose.Schema({
   uuid: { type: String, required: true, unique: true, index: true },
   serialNumber: { type: String, required: true, unique: true, index: true },
@@ -27,6 +40,10 @@ const qrStickerSchema = new mongoose.Schema({
   },
   batchId: { type: String, required: true, index: true },
   assignedTo: { type: assignedToSchema, default: undefined },
+  multiProfileMode: { type: Boolean, default: false, index: true },
+  profiles: [profileEntrySchema],
+  profileCount: { type: Number, default: 0 },
+  createdByUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   activatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'EmergencyInfo', default: null },
   activatedAt: { type: Date, default: null, index: true },
   deactivatedAt: { type: Date, default: null },
@@ -43,5 +60,8 @@ qrStickerSchema.index({ batchId: 1 });
 qrStickerSchema.index({ activatedAt: -1 });
 qrStickerSchema.index({ activatedBy: 1, activatedAt: -1 });
 qrStickerSchema.index({ createdAt: -1 });
+qrStickerSchema.index({ multiProfileMode: 1 });
+qrStickerSchema.index({ createdByUser: 1 });
+qrStickerSchema.index({ 'profiles.profileId': 1 });
 
 export default mongoose.model('QRSticker', qrStickerSchema);
