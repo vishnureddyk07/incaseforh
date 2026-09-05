@@ -2387,12 +2387,11 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
     }
 
     if (sticker.multiProfileMode && (sticker.type === 'b2c' || sticker.type === 'b2b')) {
-      const maxAllowedProfiles = 3;
       const profileIdString = String(emergencyInfo._id);
       const alreadyLinked = (sticker.profiles || []).some((profile) => String(profile.profileId) === profileIdString);
 
       if (!alreadyLinked) {
-        if ((sticker.profiles || []).length >= maxAllowedProfiles) {
+        if ((sticker.profiles || []).length >= MAX_MULTI_PROFILE_COUNT) {
           return res.status(409).json({
             error: 'This shared QR already has the maximum of 3 profiles. Please switch an existing profile instead.',
           });
@@ -2415,16 +2414,24 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
           userIdForProfile = user._id;
         }
 
-        sticker.profiles.push({
+        const isFirstProfile = (sticker.profiles || []).length === 0;
+        const profileEntry = {
           profileId: emergencyInfo._id,
           addedBy: userIdForProfile,
+          profileType: isFirstProfile ? 'PRIMARY' : 'SECONDARY',
           profileName: emergencyInfo.fullName || 'Unknown',
           profileEmail: emergencyInfo.email || '',
           profilePhone: emergencyInfo.phoneNumber || '',
           canEdit: true,
           addedAt: new Date(),
-        });
+        };
+
+        sticker.profiles.push(profileEntry);
         sticker.profileCount = sticker.profiles.length;
+
+        if (isFirstProfile) {
+          sticker.activeProfileId = emergencyInfo._id;
+        }
       }
     }
 
@@ -3341,6 +3348,12 @@ const otpStorage = new Map();
 const otpAuditTrail = [];
 const OTP_VALIDITY_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_LENGTH = 6;
+const MAX_MULTI_PROFILE_COUNT = 3;
+
+const normalizeProfileEntryType = (profileType) => {
+  if (profileType === 'PRIMARY') return 'PRIMARY';
+  return 'SECONDARY';
+};
 
 // Helper: Generate random OTP
 const generateOTP = () => {
@@ -3846,7 +3859,7 @@ router.post('/qr/:uuid/add-profile', requireChatbotAuth, async (req, res) => {
       return res.status(403).json({ error: 'This operation is only available for B2C and B2B multi-profile QRs' });
     }
 
-    if ((sticker.profiles || []).length >= 3) {
+    if ((sticker.profiles || []).length >= MAX_MULTI_PROFILE_COUNT) {
       return res.status(409).json({ error: 'Shared QR profile limit reached. Maximum 3 profiles allowed.' });
     }
 
@@ -3867,10 +3880,15 @@ router.post('/qr/:uuid/add-profile', requireChatbotAuth, async (req, res) => {
       return res.status(404).json({ error: 'Profile not found' });
     }
 
-    // Add to profiles array
+    if ((sticker.profiles || []).length === 0) {
+      sticker.activeProfileId = emergency._id;
+    }
+
+    const profileType = (sticker.profiles || []).length === 0 ? 'PRIMARY' : 'SECONDARY';
     sticker.profiles.push({
       profileId: emergency._id,
       addedBy: req.user.sub,
+      profileType: normalizeProfileEntryType(profileType),
       profileName: emergency.fullName || 'Unknown',
       profileEmail: emergency.email || '',
       profilePhone: emergency.phoneNumber || '',

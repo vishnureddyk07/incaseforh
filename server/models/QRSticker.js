@@ -14,6 +14,12 @@ const profileEntrySchema = new mongoose.Schema(
   {
     profileId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmergencyInfo', required: true },
     addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    profileType: {
+      type: String,
+      enum: ['PRIMARY', 'SECONDARY'],
+      default: 'SECONDARY',
+      index: true,
+    },
     profileName: { type: String, default: '' },
     profileEmail: { type: String, default: '' },
     profilePhone: { type: String, default: '' },
@@ -43,6 +49,7 @@ const qrStickerSchema = new mongoose.Schema({
   multiProfileMode: { type: Boolean, default: false, index: true },
   profiles: [profileEntrySchema],
   profileCount: { type: Number, default: 0 },
+  activeProfileId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmergencyInfo', default: null },
   createdByUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   activatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'EmergencyInfo', default: null },
   activatedAt: { type: Date, default: null, index: true },
