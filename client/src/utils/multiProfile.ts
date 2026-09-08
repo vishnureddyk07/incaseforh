@@ -1,4 +1,4 @@
-export const MAX_MULTI_PROFILE_COUNT = 2;
+export const MAX_MULTI_PROFILE_COUNT = 3;
 
 export type ProfileRole = 'PRIMARY' | 'SECONDARY';
 

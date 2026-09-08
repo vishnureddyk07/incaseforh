@@ -7,11 +7,12 @@ import {
 } from '../utils/multiProfile';
 
 describe('multi profile rules', () => {
-  it('allows up to two profiles on a shared QR', () => {
-    expect(MAX_MULTI_PROFILE_COUNT).toBe(2);
+  it('allows up to three profiles on a shared QR', () => {
+    expect(MAX_MULTI_PROFILE_COUNT).toBe(3);
     expect(canAddProfile([])).toBe(true);
     expect(canAddProfile(Array.from({ length: 1 }, (_, index) => ({ profileId: `id-${index}` })))).toBe(true);
-    expect(canAddProfile(Array.from({ length: 2 }, (_, index) => ({ profileId: `id-${index}` })))).toBe(false);
+    expect(canAddProfile(Array.from({ length: 2 }, (_, index) => ({ profileId: `id-${index}` })))).toBe(true);
+    expect(canAddProfile(Array.from({ length: 3 }, (_, index) => ({ profileId: `id-${index}` })))).toBe(false);
   });
 
   it('marks the first profile as primary and later ones as secondary', () => {
