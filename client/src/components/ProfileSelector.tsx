@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertCircle, ChevronRight, Loader2, Plus } from 'lucide-react';
 
 interface Profile {
@@ -39,6 +39,7 @@ const readJsonResponse = async <T,>(res: Response): Promise<T> => {
 
 export default function ProfileSelector() {
   const { uuid = '' } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const apiBase = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
@@ -60,6 +61,8 @@ export default function ProfileSelector() {
   const [addProfilePhone, setAddProfilePhone] = useState('');
   const [addProfileLoading, setAddProfileLoading] = useState(false);
   const [addProfileError, setAddProfileError] = useState<string | null>(null);
+  const [otpPurpose, setOtpPurpose] = useState<'switch' | 'add'>('switch');
+  const [addProfileOtpVerified, setAddProfileOtpVerified] = useState(false);
 
   // Fetch profile list from QR
   useEffect(() => {
@@ -80,6 +83,14 @@ export default function ProfileSelector() {
         if (data.profiles.length === 1) {
           setSelectedProfile(data.profiles[0].profileId);
         }
+
+        if (searchParams.get('action') === 'add') {
+          const activeProfileId = sessionStorage.getItem('activeProfileId') || data.profiles[0]?.profileId;
+          if (activeProfileId) {
+            setAddProfileOtpVerified(false);
+            handleSelectProfile(activeProfileId, 'add');
+          }
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load profiles');
       } finally {
@@ -93,14 +104,26 @@ export default function ProfileSelector() {
   }, [uuid, apiBase]);
 
   // Handle profile selection and OTP flow
-  const handleSelectProfile = (profileId: string) => {
+  const handleSelectProfile = (profileId: string, purpose: 'switch' | 'add' = 'switch') => {
     setSelectedProfile(profileId);
+    setOtpPurpose(purpose);
     setShowOTPModal(true);
     setOtpSent(false);
     setOtpContact('');
     setOtpRequestId('');
     setOtp('');
     setOtpError(null);
+  };
+
+  const handleAddProfileClick = () => {
+    const activeProfileId = sessionStorage.getItem('activeProfileId') || qrData?.profiles[0]?.profileId;
+    if (!activeProfileId) {
+      setAddProfileError('Select an existing profile before adding another profile.');
+      return;
+    }
+
+    setAddProfileOtpVerified(false);
+    handleSelectProfile(activeProfileId, 'add');
   };
 
   // Request OTP
@@ -180,6 +203,17 @@ export default function ProfileSelector() {
       sessionStorage.setItem('activeProfileId', selectedProfile);
       sessionStorage.setItem('activeQrUuid', uuid);
 
+      if (otpPurpose === 'add') {
+        setAddProfileOtpVerified(true);
+        setShowOTPModal(false);
+        setOtpSent(false);
+        setOtpRequestId('');
+        setOtp('');
+        setOtpError(null);
+        setShowAddProfileForm(true);
+        return;
+      }
+
       // OTP verified! Now fetch the profile data with the token
       const profileRes = await fetch(
         `${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/profile/${encodeURIComponent(selectedProfile)}`,
@@ -243,9 +277,12 @@ export default function ProfileSelector() {
       formData.append('allergies', 'None');
       formData.append('medications', 'None');
       formData.append('medicalConditions', 'None');
+      formData.append('mode', 'add-profile');
 
+      const chatbotEditToken = sessionStorage.getItem('chatbotEditToken') || '';
       const activateRes = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}`, {
         method: 'POST',
+        headers: chatbotEditToken ? { Authorization: `Bearer ${chatbotEditToken}` } : undefined,
         body: formData,
       });
 
@@ -311,7 +348,7 @@ export default function ProfileSelector() {
 
   if (
     !qrData ||
-    !qrData.multiProfileMode ||
+    qrData.status !== 'active' ||
     (qrData.type !== 'b2c' && qrData.type !== 'b2b')
   ) {
     return (
@@ -369,10 +406,7 @@ export default function ProfileSelector() {
           {/* Add Profile Button */}
           {qrData.profileCount < 3 && !showAddProfileForm && (
             <button
-              onClick={() => {
-                setShowAddProfileForm(true);
-                setAddProfileError(null);
-              }}
+              onClick={handleAddProfileClick}
               className="w-full text-left p-4 border-t border-dashed border-blue-300 hover:bg-blue-50 transition-colors flex items-center gap-3 text-blue-600 font-semibold"
             >
               <Plus className="h-5 w-5" />
@@ -381,7 +415,7 @@ export default function ProfileSelector() {
           )}
 
           {/* Add Profile Form */}
-          {showAddProfileForm && (
+          {showAddProfileForm && addProfileOtpVerified && (
             <div className="p-4 border-t border-dashed border-blue-300 bg-blue-50">
               <h3 className="font-semibold text-gray-800 mb-4">Add New Profile</h3>
               <form onSubmit={handleAddProfile} className="space-y-3">

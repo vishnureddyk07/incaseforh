@@ -158,6 +158,9 @@ export default function ActivateQR() {
       : null;
     const destination = check.emergencyProfileUrl || localEmergencyProfileUrl || safeRedirectTo;
     if (!destination) return;
+    // Remember which sticker this profile came from so the emergency info page
+    // can offer "Add Profile" / "Switch Account" even for a not-yet-multi sticker.
+    sessionStorage.setItem('activeQrUuid', uuid);
     window.location.replace(destination);
   }, [check]);
 

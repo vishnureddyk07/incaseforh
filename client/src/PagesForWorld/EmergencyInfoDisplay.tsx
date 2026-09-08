@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Phone, AlertCircle, Loader, Droplet, Users, Copy } from 'lucide-react';
 import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../utils/deviceId';
 import { maskPhoneNumber } from '../utils/privacy';
@@ -43,6 +43,7 @@ type EmergencyInfo = {
 
 export default function EmergencyInfoDisplay() {
   const { email: identifierParam } = useParams();
+  const navigate = useNavigate();
   const [info, setInfo] = useState<EmergencyInfo | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationName, setLocationName] = useState<string | null>(null);
@@ -57,6 +58,7 @@ export default function EmergencyInfoDisplay() {
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>('');
   const [deviceIdCopied, setDeviceIdCopied] = useState(false);
+  const activeQrUuid = sessionStorage.getItem('activeQrUuid');
 
   const fallbackPhotoDataUrl =
     'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
@@ -723,6 +725,25 @@ export default function EmergencyInfoDisplay() {
         >
           📞 Call Emergency Services (108)
         </button>
+
+        {activeQrUuid && (
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => navigate(`/qr/profiles/${encodeURIComponent(activeQrUuid)}?action=add`)}
+              className="rounded-lg border-2 border-blue-600 bg-white px-3 py-3 text-sm font-bold text-blue-700 shadow-md transition-colors hover:bg-blue-50"
+            >
+              + Add Profile
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/qr/profiles/${encodeURIComponent(activeQrUuid)}?action=switch`)}
+              className="rounded-lg border-2 border-indigo-600 bg-indigo-600 px-3 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-indigo-700"
+            >
+              Switch Account
+            </button>
+          </div>
+        )}
 
         <div className="text-center py-6 border-t border-gray-200">
           <p className="font-bold text-gray-900">INcase - Emergency Response System</p>
