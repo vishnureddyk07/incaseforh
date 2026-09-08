@@ -84,7 +84,7 @@ export default function ProfileSelector() {
           setSelectedProfile(data.profiles[0].profileId);
         }
 
-        if (searchParams.get('action') === 'add' && data.profileCount < 3) {
+        if (searchParams.get('action') === 'add' && data.profileCount < 2) {
           const activeProfileId = sessionStorage.getItem('activeProfileId') || data.profiles[0]?.profileId;
           if (activeProfileId) {
             setAddProfileOtpVerified(false);
@@ -288,8 +288,8 @@ export default function ProfileSelector() {
 
       if (!activateRes.ok) {
         const error = await readJsonResponse<{ error?: string }>(activateRes).catch(() => ({ error: 'Failed to add profile' }));
-        if (error.error?.includes('maximum of 3 profiles')) {
-          throw new Error('This shared QR already has the maximum of 3 profiles.');
+        if (error.error?.includes('maximum of 2 profiles')) {
+          throw new Error('This shared QR already has the maximum of 2 profiles.');
         }
         throw new Error(error.error || 'Failed to add profile');
       }
@@ -404,13 +404,13 @@ export default function ProfileSelector() {
           ))}
 
           {/* Add Profile Button */}
-          {qrData.profileCount < 3 && !showAddProfileForm && (
+          {qrData.profileCount < 2 && !showAddProfileForm && (
             <button
               onClick={handleAddProfileClick}
               className="w-full text-left p-4 border-t border-dashed border-blue-300 hover:bg-blue-50 transition-colors flex items-center gap-3 text-blue-600 font-semibold"
             >
               <Plus className="h-5 w-5" />
-              Add Profile ({qrData.profileCount}/3)
+              Add Profile ({qrData.profileCount}/2)
             </button>
           )}
 
@@ -493,9 +493,9 @@ export default function ProfileSelector() {
             </div>
           )}
 
-          {qrData.profileCount >= 3 && (
+          {qrData.profileCount >= 2 && (
             <div className="p-4 border-t border-dashed border-amber-300 bg-amber-50 text-amber-700 text-sm">
-              Maximum 3 profiles reached
+              Maximum 2 profiles reached
             </div>
           )}
         </div>

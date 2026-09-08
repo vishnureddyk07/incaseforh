@@ -57,10 +57,10 @@ export default function StickerActivationSuccess() {
               <Users className="h-4 w-4" />
               Shared QR Profile
             </p>
-            <p className="mt-2">You can add up to 2 more family members or colleagues to this QR code. Each profile is protected by their own OTP.</p>
+            <p className="mt-2">You can add up to 1 more family member or colleague to this QR code. Each profile is protected by their own OTP.</p>
             {state.profileCount ? (
               <p className="mt-2 text-xs text-amber-700">
-                <strong>Profiles: {state.profileCount}/3</strong>
+                <strong>Profiles: {state.profileCount}/2</strong>
               </p>
             ) : null}
           </div>

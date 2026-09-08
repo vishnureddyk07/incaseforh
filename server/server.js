@@ -2468,7 +2468,7 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       if (!alreadyLinked) {
         if ((sticker.profiles || []).length >= MAX_MULTI_PROFILE_COUNT) {
           return res.status(409).json({
-            error: 'This shared QR already has the maximum of 3 profiles. Please switch an existing profile instead.',
+            error: 'This shared QR already has the maximum of 2 profiles. Please switch an existing profile instead.',
           });
         }
 
@@ -3408,7 +3408,7 @@ const otpStorage = new Map();
 const otpAuditTrail = [];
 const OTP_VALIDITY_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_LENGTH = 6;
-const MAX_MULTI_PROFILE_COUNT = 3;
+const MAX_MULTI_PROFILE_COUNT = 2;
 
 const normalizeProfileEntryType = (profileType) => {
   if (profileType === 'PRIMARY') return 'PRIMARY';
@@ -4001,7 +4001,7 @@ router.post('/qr/:uuid/add-profile', requireChatbotAuth, async (req, res) => {
     }
 
     if ((sticker.profiles || []).length >= MAX_MULTI_PROFILE_COUNT) {
-      return res.status(409).json({ error: 'Shared QR profile limit reached. Maximum 3 profiles allowed.' });
+      return res.status(409).json({ error: 'Shared QR profile limit reached. Maximum 2 profiles allowed.' });
     }
 
     // Check if profile already exists in QR
