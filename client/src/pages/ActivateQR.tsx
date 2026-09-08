@@ -19,6 +19,7 @@ type ActivationCheckResponse = {
     serialNumber: string;
     type: 'b2c' | 'b2b' | 'b2g';
     status: string;
+    multiProfileMode?: boolean;
     activatedBy?: {
       fullName?: string;
       email?: string;
@@ -339,6 +340,25 @@ export default function ActivateQR() {
                 <p className="text-sm text-green-700 mt-1">Your profile is active. Update details anytime—changes save automatically.</p>
               </div>
             </div>
+          </div>
+        ) : null}
+
+        {check.status === 'active' && (check.sticker?.type === 'b2c' || check.sticker?.type === 'b2b') ? (
+          <div className="mb-8 grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=add`)}
+              className="rounded-lg border-2 border-blue-600 bg-white px-3 py-3 text-sm font-bold text-blue-700 shadow-md transition-colors hover:bg-blue-50"
+            >
+              + Add Profile
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=switch`)}
+              className="rounded-lg border-2 border-indigo-600 bg-indigo-600 px-3 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-indigo-700"
+            >
+              Switch Account
+            </button>
           </div>
         ) : null}
 
