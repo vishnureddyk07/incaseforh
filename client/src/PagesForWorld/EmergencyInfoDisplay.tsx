@@ -751,7 +751,7 @@ export default function EmergencyInfoDisplay() {
               onClick={() => navigate(`/qr/profiles/${encodeURIComponent(activeQrUuid)}?action=switch`)}
               className="rounded-lg border-2 border-indigo-600 bg-indigo-600 px-3 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-indigo-700"
             >
-              Switch Account
+              Switch Profile
             </button>
           </div>
         )}

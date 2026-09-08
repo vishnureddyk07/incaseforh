@@ -59,6 +59,8 @@ export default function ProfileSelector() {
   const [addProfileName, setAddProfileName] = useState('');
   const [addProfileEmail, setAddProfileEmail] = useState('');
   const [addProfilePhone, setAddProfilePhone] = useState('');
+  const [addProfileContactName, setAddProfileContactName] = useState('');
+  const [addProfileContactPhone, setAddProfileContactPhone] = useState('');
   const [addProfileLoading, setAddProfileLoading] = useState(false);
   const [addProfileError, setAddProfileError] = useState<string | null>(null);
   const [otpPurpose, setOtpPurpose] = useState<'switch' | 'add'>('switch');
@@ -260,6 +262,11 @@ export default function ProfileSelector() {
       return;
     }
 
+    if (!addProfileContactName.trim() || !addProfileContactPhone.trim()) {
+      setAddProfileError('Emergency contact name and phone number are required');
+      return;
+    }
+
     try {
       setAddProfileLoading(true);
 
@@ -271,7 +278,7 @@ export default function ProfileSelector() {
         formData.append('email', addProfileEmail.trim());
       }
       formData.append('emergencyContacts', JSON.stringify([
-        { name: 'Emergency Contact', phone: addProfilePhone }
+        { name: addProfileContactName.trim(), phone: addProfileContactPhone.trim() }
       ]));
       formData.append('bloodType', 'O+'); // Default
       formData.append('allergies', 'None');
@@ -301,6 +308,8 @@ export default function ProfileSelector() {
       setAddProfileName('');
       setAddProfileEmail('');
       setAddProfilePhone('');
+      setAddProfileContactName('');
+      setAddProfileContactPhone('');
       
       // Reload profiles
       const reloadRes = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/profiles`);
@@ -458,6 +467,32 @@ export default function ProfileSelector() {
                     disabled={addProfileLoading}
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Emergency Contact Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={addProfileContactName}
+                    onChange={(e) => setAddProfileContactName(e.target.value)}
+                    placeholder="e.g., Parent or Spouse"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={addProfileLoading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Emergency Contact Phone *
+                  </label>
+                  <input
+                    type="tel"
+                    value={addProfileContactPhone}
+                    onChange={(e) => setAddProfileContactPhone(e.target.value)}
+                    placeholder="e.g., +91 9876543211"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={addProfileLoading}
+                  />
+                </div>
 
                 {addProfileError && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
@@ -473,6 +508,8 @@ export default function ProfileSelector() {
                       setAddProfileName('');
                       setAddProfileEmail('');
                       setAddProfilePhone('');
+                      setAddProfileContactName('');
+                      setAddProfileContactPhone('');
                       setAddProfileError(null);
                     }}
                     className="flex-1 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
@@ -483,7 +520,7 @@ export default function ProfileSelector() {
                   <button
                     type="submit"
                     className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                    disabled={addProfileLoading || !addProfileName.trim() || !addProfilePhone.trim()}
+                    disabled={addProfileLoading || !addProfileName.trim() || !addProfilePhone.trim() || !addProfileContactName.trim() || !addProfileContactPhone.trim()}
                   >
                     {addProfileLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                     Add Profile
