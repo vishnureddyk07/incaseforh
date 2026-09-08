@@ -2229,6 +2229,20 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
     }
 
     if (sticker.status === 'active' && sticker.activatedBy) {
+      if (sticker.type === 'b2c' || sticker.type === 'b2b') {
+        const profileSelectorUrl = `${frontendUrl}/qr/profiles/${encodeURIComponent(sticker.uuid)}`;
+        if (!wantsJson) {
+          return res.redirect(302, profileSelectorUrl);
+        }
+
+        return res.json({
+          status: 'active',
+          sticker,
+          profileSelectorUrl,
+          redirectTo: profileSelectorUrl,
+        });
+      }
+
       const activatedBy = await EmergencyInfo.findById(sticker.activatedBy)
         .select('fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
         .lean();

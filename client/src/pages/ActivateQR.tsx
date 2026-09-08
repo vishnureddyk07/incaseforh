@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertCircle, FileText, Heart, Phone, User, Shield, Upload, Users, Trash2 } from 'lucide-react';
 
 type EmergencyContact = { name: string; phone: string };
@@ -59,6 +59,7 @@ export default function ActivateQR() {
   const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
   const { uuid = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const apiBase = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
   const bloodTypeReportInputRef = useRef<HTMLInputElement | null>(null);
@@ -100,7 +101,8 @@ export default function ActivateQR() {
         
         // Check if this is a multi-profile QR for customer or business profiles
         if (
-          data.sticker?.multiProfileMode &&
+          !searchParams.has('edit') &&
+          data.status === 'active' &&
           (data.sticker?.type === 'b2c' || data.sticker?.type === 'b2b')
         ) {
           if (active) {
@@ -120,7 +122,7 @@ export default function ActivateQR() {
     return () => {
       active = false;
     };
-  }, [apiBase, uuid, navigate]);
+  }, [apiBase, uuid, navigate, searchParams]);
 
   useEffect(() => {
     if (check?.status === 'active' && check.sticker?.activatedBy) {
@@ -146,7 +148,7 @@ export default function ActivateQR() {
   }, [check]);
 
   useEffect(() => {
-    if (check?.status !== 'active') return;
+    if (check?.status !== 'active' || searchParams.has('edit')) return;
     const activeIdentifier = (
       check.sticker?.activatedBy?.email?.trim()
       || check.sticker?.activatedBy?.phoneNumber?.trim()
@@ -163,7 +165,7 @@ export default function ActivateQR() {
     // can offer "Add Profile" / "Switch Account" even for a not-yet-multi sticker.
     sessionStorage.setItem('activeQrUuid', uuid);
     window.location.replace(destination);
-  }, [check]);
+  }, [check, searchParams]);
 
   const updateContact = (idx: number, key: keyof EmergencyContact, value: string) => {
     setContacts((prev) => prev.map((c, i) => (i === idx ? { ...c, [key]: value } : c)));

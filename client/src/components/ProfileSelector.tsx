@@ -535,6 +535,14 @@ export default function ProfileSelector() {
               Maximum 2 profiles reached
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={() => navigate(`/activate/${encodeURIComponent(uuid)}?edit=1`)}
+            className="w-full border-t border-slate-200 px-4 py-4 text-left font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            Update Profile
+          </button>
         </div>
 
         {/* OTP Modal */}
