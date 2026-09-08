@@ -394,6 +394,19 @@ export default function ProfileSelector() {
 
         {/* Profile List and Add Option */}
         <div className="bg-white shadow-lg px-4 py-2">
+          {qrData.profiles.length === 0 && (
+            <div className="p-4 text-center">
+              <p className="text-sm text-gray-600 mb-3">This QR does not have an active profile yet.</p>
+              <button
+                type="button"
+                onClick={() => navigate(`/activate/${encodeURIComponent(uuid)}`)}
+                className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700"
+              >
+                Activate First Profile
+              </button>
+            </div>
+          )}
+
           {qrData.profiles.map((profile, index) => (
             <button
               key={profile.profileId}
@@ -413,7 +426,7 @@ export default function ProfileSelector() {
           ))}
 
           {/* Add Profile Button */}
-          {qrData.profileCount < 2 && !showAddProfileForm && (
+          {qrData.profiles.length > 0 && qrData.profileCount < 2 && !showAddProfileForm && (
             <button
               onClick={handleAddProfileClick}
               className="w-full text-left p-4 border-t border-dashed border-blue-300 hover:bg-blue-50 transition-colors flex items-center gap-3 text-blue-600 font-semibold"
@@ -536,13 +549,13 @@ export default function ProfileSelector() {
             </div>
           )}
 
-          <button
+          {qrData.profiles.length > 0 && <button
             type="button"
             onClick={() => navigate(`/activate/${encodeURIComponent(uuid)}?edit=1`)}
             className="w-full border-t border-slate-200 px-4 py-4 text-left font-semibold text-slate-700 transition-colors hover:bg-slate-50"
           >
             Update Profile
-          </button>
+          </button>}
         </div>
 
         {/* OTP Modal */}

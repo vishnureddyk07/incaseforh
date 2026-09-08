@@ -20,6 +20,7 @@ type ActivationCheckResponse = {
     type: 'b2c' | 'b2b' | 'b2g';
     status: string;
     multiProfileMode?: boolean;
+    profileCount?: number;
     activatedBy?: {
       fullName?: string;
       email?: string;
@@ -103,6 +104,7 @@ export default function ActivateQR() {
         if (
           !searchParams.has('edit') &&
           data.status === 'active' &&
+          (data.sticker?.activatedBy || (data.sticker?.multiProfileMode && data.sticker?.profileCount)) &&
           (data.sticker?.type === 'b2c' || data.sticker?.type === 'b2b')
         ) {
           if (active) {
@@ -271,7 +273,7 @@ export default function ActivateQR() {
         throw new Error(data.error || 'Activation failed');
       }
 
-      if (check?.status === 'active' && data?.profileUrl) {
+      if (check?.status === 'active' && check.sticker?.activatedBy && data?.profileUrl) {
         window.location.assign(data.profileUrl);
         return;
       }
@@ -307,6 +309,8 @@ export default function ActivateQR() {
 
   if (!check) return null;
 
+  const hasExistingProfile = check.status === 'active' && Boolean(check.sticker?.activatedBy);
+
   if (check.status === 'deactivated') {
     return (
       <div className="min-h-screen bg-white px-4 py-10">
@@ -333,7 +337,7 @@ export default function ActivateQR() {
           <p className="text-lg text-slate-600">Complete your safety information to enable instant emergency assistance</p>
         </div>
 
-        {check.status === 'active' ? (
+        {hasExistingProfile ? (
           <div className="mb-6 rounded-2xl border-l-4 border-l-green-500 bg-gradient-to-r from-green-50 to-emerald-50 p-5 shadow-sm">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
@@ -704,10 +708,10 @@ export default function ActivateQR() {
             className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-bold py-3.5 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:opacity-60 text-lg flex items-center justify-center gap-2"
           >
             <Shield className="h-5 w-5" />
-            {submitting ? (check.status === 'active' ? 'Updating Profile...' : 'Activating Sticker...') : (check.status === 'active' ? 'Update Profile' : 'Activate Sticker')}
+            {submitting ? (hasExistingProfile ? 'Updating Profile...' : 'Activating Sticker...') : (hasExistingProfile ? 'Update Profile' : 'Activate Sticker')}
           </button>
 
-          {check.status === 'active' && (check.sticker?.type === 'b2c' || check.sticker?.type === 'b2b') ? (
+          {hasExistingProfile && (check.sticker?.type === 'b2c' || check.sticker?.type === 'b2b') ? (
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
