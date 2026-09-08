@@ -5,6 +5,7 @@ import { AlertCircle, ChevronRight, Loader2, Plus } from 'lucide-react';
 interface Profile {
   _id: string;
   profileId: string;
+  profileType?: 'PRIMARY' | 'SECONDARY';
   profileName: string;
   profileEmail?: string;
   addedAt?: string;
@@ -408,21 +409,38 @@ export default function ProfileSelector() {
           )}
 
           {qrData.profiles.map((profile, index) => (
-            <button
+            <div
               key={profile.profileId}
-              onClick={() => handleSelectProfile(profile.profileId)}
-              className={`w-full text-left p-4 border-b flex items-center justify-between hover:bg-blue-50 transition-colors ${
+              className={`w-full border-b p-4 transition-colors ${
                 selectedProfile === profile.profileId ? 'bg-blue-50' : ''
               }`}
             >
-              <div className="flex-1">
-                <p className="font-semibold text-gray-800">{profile.profileName || `Profile ${index + 1}`}</p>
-                {profile.profileEmail && (
-                  <p className="text-sm text-gray-500">{profile.profileEmail}</p>
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleSelectProfile(profile.profileId)}
+                  className="min-w-0 flex-1 text-left hover:text-blue-700"
+                >
+                  <p className="font-semibold text-gray-800">{profile.profileName || `Profile ${index + 1}`}</p>
+                  <p className="text-xs font-medium text-slate-500">
+                    {profile.profileType === 'PRIMARY' || index === 0 ? 'Primary Profile' : 'Profile'}
+                  </p>
+                  {profile.profileEmail && (
+                    <p className="text-sm text-gray-500">{profile.profileEmail}</p>
+                  )}
+                </button>
+                {(profile.profileType === 'PRIMARY' || index === 0) && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/activate/${encodeURIComponent(uuid)}?edit=1`)}
+                    className="shrink-0 rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-white"
+                  >
+                    Update Profile
+                  </button>
                 )}
+                <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" />
               </div>
-              <ChevronRight className="h-5 w-5 text-gray-400" />
-            </button>
+            </div>
           ))}
 
           {/* Add Profile Button */}
@@ -549,13 +567,6 @@ export default function ProfileSelector() {
             </div>
           )}
 
-          {qrData.profiles.length > 0 && <button
-            type="button"
-            onClick={() => navigate(`/activate/${encodeURIComponent(uuid)}?edit=1`)}
-            className="w-full border-t border-slate-200 px-4 py-4 text-left font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-          >
-            Update Profile
-          </button>}
         </div>
 
         {/* OTP Modal */}

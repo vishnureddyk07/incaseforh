@@ -3810,6 +3810,7 @@ router.get('/qr/:uuid/profiles', readLimiter, async (req, res) => {
     const profileList = (sticker.profiles || []).map((profile) => ({
       _id: profile._id.toString(),
       profileId: profile.profileId.toString(),
+      profileType: profile.profileType,
       profileName: profile.profileName,
       profileEmail: profile.profileEmail,
       addedAt: profile.addedAt,
