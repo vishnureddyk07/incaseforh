@@ -2235,7 +2235,10 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
       const identifier =
         activatedBy?.email || activatedBy?.phoneNumber || String(sticker.activatedBy);
 
-      const emergencyProfileUrl = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
+      // Carry the sticker uuid through so the client can offer "Add Profile" /
+      // "Switch Account" even though this is a server-side redirect (no
+      // sessionStorage access) straight from the physical sticker's QR code.
+      const emergencyProfileUrl = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}?qr=${encodeURIComponent(sticker.uuid)}`;
       const redirectTo = emergencyProfileUrl;
       if (!wantsJson) {
         return res.redirect(302, redirectTo);
@@ -2552,7 +2555,7 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       emergencyInfo,
       sticker,
       packSync,
-      profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(profileIdentifier)}`,
+      profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(profileIdentifier)}?qr=${encodeURIComponent(uuid)}`,
     });
   } catch (error) {
     console.error('Error activating sticker:', error);

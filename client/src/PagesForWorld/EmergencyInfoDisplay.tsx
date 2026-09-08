@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Phone, AlertCircle, Loader, Droplet, Users, Copy } from 'lucide-react';
 import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../utils/deviceId';
 import { maskPhoneNumber } from '../utils/privacy';
@@ -44,6 +44,7 @@ type EmergencyInfo = {
 export default function EmergencyInfoDisplay() {
   const { email: identifierParam } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [info, setInfo] = useState<EmergencyInfo | null>(null);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationName, setLocationName] = useState<string | null>(null);
@@ -58,7 +59,17 @@ export default function EmergencyInfoDisplay() {
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>('');
   const [deviceIdCopied, setDeviceIdCopied] = useState(false);
-  const activeQrUuid = sessionStorage.getItem('activeQrUuid');
+  // The physical sticker's QR code hits the backend directly, which 302-redirects
+  // here server-side (no sessionStorage access), so the uuid is carried via ?qr=.
+  // Fall back to sessionStorage for the client-side ProfileSelector navigation path.
+  const qrUuidFromQuery = searchParams.get('qr');
+  const activeQrUuid = qrUuidFromQuery || sessionStorage.getItem('activeQrUuid');
+
+  useEffect(() => {
+    if (qrUuidFromQuery) {
+      sessionStorage.setItem('activeQrUuid', qrUuidFromQuery);
+    }
+  }, [qrUuidFromQuery]);
 
   const fallbackPhotoDataUrl =
     'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
