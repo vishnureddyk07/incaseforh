@@ -49,7 +49,8 @@ export default function ProfileSelector() {
   const [verifyingOTP, setVerifyingOTP] = useState(false);
   const [showOTPModal, setShowOTPModal] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otpContact, setOtpContact] = useState('');
+  const [otpRequestId, setOtpRequestId] = useState('');
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpLoading, setOtpLoading] = useState(false);
@@ -96,15 +97,16 @@ export default function ProfileSelector() {
     setSelectedProfile(profileId);
     setShowOTPModal(true);
     setOtpSent(false);
-    setPhoneNumber('');
+    setOtpContact('');
+    setOtpRequestId('');
     setOtp('');
     setOtpError(null);
   };
 
   // Request OTP
   const handleRequestOTP = async () => {
-    if (!phoneNumber.trim()) {
-      setOtpError('Phone number is required');
+    if (!selectedProfile) {
+      setOtpError('No profile selected');
       return;
     }
 
@@ -115,7 +117,7 @@ export default function ProfileSelector() {
       const res = await fetch(`${apiBase}/api/v1/chatbot/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: phoneNumber.trim() }),
+        body: JSON.stringify({ qrUuid: uuid, profileId: selectedProfile }),
       });
 
       if (!res.ok) {
@@ -123,11 +125,16 @@ export default function ProfileSelector() {
         throw new Error(error.error || 'Failed to send OTP');
       }
 
-      const data = await readJsonResponse<{ otp?: string }>(res);
+      const data = await readJsonResponse<{ otp?: string; requestId?: string; phoneNumber?: string }>(res);
+      if (!data.requestId) {
+        throw new Error('The OTP request was not created. Please try again.');
+      }
       setOtpSent(true);
+      setOtpRequestId(data.requestId);
+      setOtpContact(data.phoneNumber || 'the registered contact');
       setOtp('');
       setOtpError(null);
-      console.log('OTP sent to:', phoneNumber);
+      console.log('OTP sent to the registered profile contact');
       if (data.otp) {
         console.log('Development mode - OTP:', data.otp);
       }
@@ -146,8 +153,8 @@ export default function ProfileSelector() {
       return;
     }
 
-    if (!selectedProfile) {
-      setOtpError('No profile selected');
+    if (!selectedProfile || !otpRequestId) {
+      setOtpError('Request a new OTP for this profile');
       return;
     }
 
@@ -159,10 +166,7 @@ export default function ProfileSelector() {
       const verifyRes = await fetch(`${apiBase}/api/v1/chatbot/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          phoneNumber: phoneNumber.trim(), 
-          otp: otp.trim() 
-        }),
+        body: JSON.stringify({ requestId: otpRequestId, otp: otp.trim() }),
       });
 
       if (!verifyRes.ok) {
@@ -171,6 +175,10 @@ export default function ProfileSelector() {
       }
 
       const { accessToken } = await readJsonResponse<{ accessToken: string }>(verifyRes);
+
+      sessionStorage.setItem('chatbotEditToken', accessToken);
+      sessionStorage.setItem('activeProfileId', selectedProfile);
+      sessionStorage.setItem('activeQrUuid', uuid);
 
       // OTP verified! Now fetch the profile data with the token
       const profileRes = await fetch(
@@ -465,23 +473,9 @@ export default function ProfileSelector() {
               <h2 className="text-xl font-bold text-gray-800 mb-2">Secure access</h2>
               <p className="text-gray-600 mb-5 text-sm">
                 {otpSent
-                  ? 'We sent a 6-digit code to this number. Enter it below to continue.'
-                  : 'Choose a profile and verify your phone number to view the saved details.'}
+                  ? `We sent a 6-digit code to ${otpContact || 'the registered contact'}. Enter it below to continue.`
+                  : 'A verification code will be sent to the registered contact for this profile.'}
               </p>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Phone Number
-                </label>
-                <input
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="+91 9876543210"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={otpLoading}
-                />
-              </div>
 
               {otpSent && (
                 <div className="mb-4">
@@ -512,7 +506,8 @@ export default function ProfileSelector() {
                     setShowOTPModal(false);
                     setSelectedProfile(null);
                     setOtpSent(false);
-                    setPhoneNumber('');
+                    setOtpContact('');
+                    setOtpRequestId('');
                     setOtp('');
                     setOtpError(null);
                   }}
@@ -535,7 +530,7 @@ export default function ProfileSelector() {
                   <button
                     onClick={handleRequestOTP}
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                    disabled={otpLoading || !phoneNumber.trim()}
+                    disabled={otpLoading || !selectedProfile}
                   >
                     {otpLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                     Send code

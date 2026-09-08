@@ -3366,15 +3366,37 @@ const generateOTP = () => {
 router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
   try {
     const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
-    if (!phoneNumber) {
-      return res.status(400).json({ error: 'Phone number is required' });
+    const qrUuid = normalizeOptionalString(req.body?.qrUuid, 120);
+    const requestedProfileId = normalizeOptionalString(req.body?.profileId, 80);
+    let emergency;
+
+    if (qrUuid && requestedProfileId) {
+      const sticker = await QRSticker.findOne({ uuid: sanitizeStringParam(qrUuid) })
+        .select('multiProfileMode type profiles')
+        .lean();
+      if (!sticker || !sticker.multiProfileMode || !['b2c', 'b2b'].includes(sticker.type)) {
+        return res.status(404).json({ error: 'Multi-profile QR not found' });
+      }
+
+      const profileEntry = (sticker.profiles || []).find(
+        (profile) => profile.profileId.toString() === requestedProfileId
+      );
+      if (!profileEntry) {
+        return res.status(404).json({ error: 'Profile not found in this QR' });
+      }
+
+      emergency = await EmergencyInfo.findById(profileEntry.profileId)
+        .select('_id fullName phoneNumber email')
+        .lean();
+    } else if (phoneNumber) {
+      emergency = await EmergencyInfo.findOne({ phoneNumber })
+        .select('_id fullName phoneNumber email')
+        .lean();
+    } else {
+      return res.status(400).json({ error: 'A QR profile or phone number is required' });
     }
 
     // Check if user exists with this phone number
-    const emergency = await EmergencyInfo.findOne({ phoneNumber })
-      .select('_id fullName phoneNumber email')
-      .lean();
-    
     if (!emergency) {
       // Don't reveal whether phone exists (security)
       return res.status(404).json({ error: 'No profile found with this phone number' });
@@ -3384,10 +3406,15 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + OTP_VALIDITY_MS);
     
-    otpStorage.set(phoneNumber, {
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+    const otpKey = qrUuid && requestedProfileId ? requestId : emergency.phoneNumber;
+    otpStorage.set(otpKey, {
       otp,
       expiresAt,
       emergencyInfoId: emergency._id.toString(),
+      phoneNumber: emergency.phoneNumber,
+      qrUuid: qrUuid || null,
+      profileId: requestedProfileId || emergency._id.toString(),
       attempts: 0,
     });
 
@@ -3398,9 +3425,11 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
       actorRole: 'public',
       action: 'chatbot_otp_sent',
       details: {
-        phoneNumber,
+        phoneNumber: emergency.phoneNumber,
         otp,
         emergencyInfoId: emergency._id.toString(),
+        qrUuid: qrUuid || null,
+        profileId: requestedProfileId || emergency._id.toString(),
         expiresAt: expiresAt.toISOString(),
       },
       createdAt: new Date().toISOString(),
@@ -3413,20 +3442,24 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
       actor: { sub: 'chatbot-system', email: 'chatbot@system', role: 'public' },
       action: 'chatbot_otp_sent',
       details: {
-        phoneNumber,
+        phoneNumber: emergency.phoneNumber,
         otp,
         emergencyInfoId: emergency._id.toString(),
+        qrUuid: qrUuid || null,
+        profileId: requestedProfileId || emergency._id.toString(),
         expiresAt: expiresAt.toISOString(),
       },
     });
 
     // TODO: In production, send OTP via SMS service (Twilio, AWS SNS, etc.)
     // For now, log it for development
-    console.log(`📱 OTP sent to ${phoneNumber}: ${otp}`);
+    console.log(`📱 OTP sent to ${emergency.phoneNumber}: ${otp}`);
 
     res.status(200).json({
       message: 'OTP sent successfully',
-      phoneNumber,
+      requestId,
+      phoneNumber: emergency.phoneNumber,
+      profileId: requestedProfileId || emergency._id.toString(),
       // SMS integration is pending, so expose OTP to support/staging flows.
       otp,
       expiresIn: '5 minutes',
@@ -3441,13 +3474,15 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
 router.post('/chatbot/verify-otp', createLimiter, async (req, res) => {
   try {
     const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
+    const requestId = normalizeOptionalString(req.body?.requestId, 120);
     const otp = normalizeOptionalString(req.body?.otp, 10);
 
-    if (!phoneNumber || !otp) {
-      return res.status(400).json({ error: 'Phone number and OTP are required' });
+    if ((!phoneNumber && !requestId) || !otp) {
+      return res.status(400).json({ error: 'OTP and its request reference are required' });
     }
 
-    const otpData = otpStorage.get(phoneNumber);
+    const otpKey = requestId || phoneNumber;
+    const otpData = otpStorage.get(otpKey);
     
     if (!otpData) {
       return res.status(404).json({ error: 'OTP not found or expired' });
@@ -3455,13 +3490,13 @@ router.post('/chatbot/verify-otp', createLimiter, async (req, res) => {
 
     // Check if OTP has expired
     if (new Date() > otpData.expiresAt) {
-      otpStorage.delete(phoneNumber);
+      otpStorage.delete(otpKey);
       return res.status(410).json({ error: 'OTP has expired. Please request a new one.' });
     }
 
     // Check maximum attempts (3 attempts per OTP)
     if (otpData.attempts >= 3) {
-      otpStorage.delete(phoneNumber);
+      otpStorage.delete(otpKey);
       return res.status(429).json({ error: 'Too many incorrect attempts. Please request a new OTP.' });
     }
 
@@ -3493,12 +3528,13 @@ router.post('/chatbot/verify-otp', createLimiter, async (req, res) => {
     );
 
     // Clear OTP after successful verification
-    otpStorage.delete(phoneNumber);
+    otpStorage.delete(otpKey);
 
     res.status(200).json({
       message: 'OTP verified successfully',
       accessToken,
       profileId: emergencyInfo._id.toString(),
+      qrUuid: otpData.qrUuid,
       fullName: emergencyInfo.fullName,
       phoneNumber: emergencyInfo.phoneNumber,
       email: emergencyInfo.email,
@@ -3718,6 +3754,10 @@ router.get('/qr/:uuid/profile/:profileId', requireChatbotAuth, async (req, res) 
 
     if (!profileEntry) {
       return res.status(404).json({ error: 'Profile not found in this QR' });
+    }
+
+    if (req.user.sub !== profileEntry.profileId.toString()) {
+      return res.status(403).json({ error: 'OTP verification does not authorize this profile' });
     }
 
     // Fetch the full emergency info (user authenticated via OTP)
