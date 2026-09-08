@@ -6,6 +6,8 @@ import rateLimit from 'express-rate-limit';
 import archiver from 'archiver';
 import QRCode from 'qrcode';
 import { createGzip, constants as zlibConstants } from 'node:zlib';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import EmergencyInfo from './models/EmergencyInfo.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -16,6 +18,10 @@ import SosAlert from './models/SosAlert.js';
 import QRSticker from './models/QRSticker.js';
 import QRBatch from './models/QRBatch.js';
 import { v4 as uuidv4 } from 'uuid';
+
+// Get directory name in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Only load .env locally, not in production (Render uses dashboard env vars)
 if (process.env.NODE_ENV !== 'production') {
@@ -90,6 +96,19 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // FOR FormData PARSING
+
+// Serve static files from public directory (service worker, etc.)
+// Use absolute path to ensure it works in any deployment environment
+const publicDir = join(__dirname, 'public');
+app.use(express.static(publicDir, {
+  maxAge: '1d',
+  etag: false,
+  setHeaders: (res, path) => {
+    if (path.endsWith('.js') || path.endsWith('.json')) {
+      res.setHeader('Content-Type', path.endsWith('.json') ? 'application/json' : 'application/javascript');
+    }
+  }
+}));
 
 // ── Rate-limiting middleware ─────────────────────────────────────────
 // Shared handler for rate-limit responses
@@ -2210,13 +2229,30 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
     }
 
     if (sticker.status === 'active' && sticker.activatedBy) {
+      if (sticker.type === 'b2c' || sticker.type === 'b2b') {
+        const profileSelectorUrl = `${frontendUrl}/qr/profiles/${encodeURIComponent(sticker.uuid)}`;
+        if (!wantsJson) {
+          return res.redirect(302, profileSelectorUrl);
+        }
+
+        return res.json({
+          status: 'active',
+          sticker,
+          profileSelectorUrl,
+          redirectTo: profileSelectorUrl,
+        });
+      }
+
       const activatedBy = await EmergencyInfo.findById(sticker.activatedBy)
         .select('fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
         .lean();
       const identifier =
         activatedBy?.email || activatedBy?.phoneNumber || String(sticker.activatedBy);
 
-      const emergencyProfileUrl = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
+      // Carry the sticker uuid through so the client can offer "Add Profile" /
+      // "Switch Account" even though this is a server-side redirect (no
+      // sessionStorage access) straight from the physical sticker's QR code.
+      const emergencyProfileUrl = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}?qr=${encodeURIComponent(sticker.uuid)}`;
       const redirectTo = emergencyProfileUrl;
       if (!wantsJson) {
         return res.redirect(302, redirectTo);
@@ -2249,6 +2285,20 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
   }
 });
 
+// Find the User account backing a multi-profile QR entry, creating a placeholder if none exists.
+const ensureUserForProfile = async (fallbackUserId, profileDoc) => {
+  if (fallbackUserId) return fallbackUserId;
+  const emailForUser = (profileDoc.email || `${profileDoc.phoneNumber || profileDoc._id.toString()}@local.user`).toLowerCase();
+  const safeEmail = String(emailForUser).trim();
+  let user = await User.findOne({ email: safeEmail }).select('_id').lean();
+  if (!user) {
+    const tempPassword = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    user = await User.create({ email: safeEmail, passwordHash, role: 'user' });
+  }
+  return user._id;
+};
+
 // Public: activate pre-printed sticker with emergency profile data
 router.post('/qr/activate/:uuid', createLimiter, upload.fields([
   { name: 'photo', maxCount: 1 },
@@ -2271,6 +2321,37 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       return res.status(410).json({ error: sticker.deactivatedReason || 'Sticker is deactivated' });
     }
     const isExistingActiveProfile = sticker.status === 'active' && Boolean(sticker.activatedBy);
+
+    const addProfileMode = normalizeOptionalString(req.body?.mode, 20) === 'add-profile';
+    if (addProfileMode) {
+      if (!isExistingActiveProfile) {
+        return res.status(400).json({ error: 'A profile must already be active on this QR before adding another.' });
+      }
+      if (sticker.type !== 'b2c' && sticker.type !== 'b2b') {
+        return res.status(403).json({ error: 'Adding a profile is only available for B2C and B2B QR codes.' });
+      }
+
+      const authHeader = req.headers.authorization || '';
+      const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (!bearerToken) {
+        return res.status(401).json({ error: 'OTP verification is required before adding a profile.' });
+      }
+
+      let otpSessionProfileId = null;
+      try {
+        const payload = jwt.verify(bearerToken, JWT_SECRET);
+        if (payload.type !== 'chatbot-edit-session') {
+          throw new Error('wrong token type');
+        }
+        otpSessionProfileId = payload.sub;
+      } catch {
+        return res.status(401).json({ error: 'Invalid or expired OTP session. Please verify again.' });
+      }
+
+      if (otpSessionProfileId !== String(sticker.activatedBy)) {
+        return res.status(403).json({ error: 'OTP verification does not authorize adding a profile to this QR.' });
+      }
+    }
 
     const fullName = normalizeOptionalString(req.body?.fullName, 200);
     const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
@@ -2344,7 +2425,7 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
     };
 
     let existing = null;
-    if (isExistingActiveProfile) {
+    if (isExistingActiveProfile && !addProfileMode) {
       existing = await EmergencyInfo.findById(sticker.activatedBy);
     }
     if (!existing) {
@@ -2367,18 +2448,79 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       emergencyInfo = await EmergencyInfo.create(payload);
     }
 
-    if (sticker.status !== 'active' || String(sticker.activatedBy || '') !== String(emergencyInfo._id)) {
+    if ((sticker.multiProfileMode || addProfileMode) && (sticker.type === 'b2c' || sticker.type === 'b2b')) {
+      if (addProfileMode && !sticker.multiProfileMode) {
+        // First time this sticker is being shared: upgrade it and backfill the
+        // already-active profile as PRIMARY so it shows up alongside the new one.
+        sticker.multiProfileMode = true;
+        const primaryAlreadyLinked = (sticker.profiles || []).some(
+          (profile) => String(profile.profileId) === String(sticker.activatedBy)
+        );
+        if (!primaryAlreadyLinked) {
+          const primaryInfo = await EmergencyInfo.findById(sticker.activatedBy)
+            .select('fullName email phoneNumber')
+            .lean();
+          if (primaryInfo) {
+            const primaryUserId = await ensureUserForProfile(sticker.createdByUser, primaryInfo);
+            sticker.profiles.push({
+              profileId: sticker.activatedBy,
+              addedBy: primaryUserId,
+              profileType: 'PRIMARY',
+              profileName: primaryInfo.fullName || 'Unknown',
+              profileEmail: primaryInfo.email || '',
+              profilePhone: primaryInfo.phoneNumber || '',
+              canEdit: true,
+              addedAt: sticker.activatedAt || new Date(),
+            });
+          }
+        }
+      }
+
+      const profileIdString = String(emergencyInfo._id);
+      const alreadyLinked = (sticker.profiles || []).some((profile) => String(profile.profileId) === profileIdString);
+
+      if (!alreadyLinked) {
+        if ((sticker.profiles || []).length >= MAX_MULTI_PROFILE_COUNT) {
+          return res.status(409).json({
+            error: 'This shared QR already has the maximum of 3 profiles. Please switch an existing profile instead.',
+          });
+        }
+
+        const userIdForProfile = await ensureUserForProfile(sticker.createdByUser, emergencyInfo);
+
+        const isFirstProfile = (sticker.profiles || []).length === 0;
+        const profileEntry = {
+          profileId: emergencyInfo._id,
+          addedBy: userIdForProfile,
+          profileType: isFirstProfile ? 'PRIMARY' : 'SECONDARY',
+          profileName: emergencyInfo.fullName || 'Unknown',
+          profileEmail: emergencyInfo.email || '',
+          profilePhone: emergencyInfo.phoneNumber || '',
+          canEdit: true,
+          addedAt: new Date(),
+        };
+
+        sticker.profiles.push(profileEntry);
+        sticker.profileCount = sticker.profiles.length;
+
+        if (isFirstProfile) {
+          sticker.activeProfileId = emergencyInfo._id;
+        }
+      }
+    }
+
+    if (!addProfileMode && (sticker.status !== 'active' || String(sticker.activatedBy || '') !== String(emergencyInfo._id))) {
       sticker.status = 'active';
       sticker.activatedBy = emergencyInfo._id;
       if (!sticker.activatedAt) sticker.activatedAt = new Date();
       if (sticker.deactivatedAt) sticker.deactivatedAt = null;
       if (sticker.deactivatedReason) sticker.deactivatedReason = '';
-      await sticker.save();
     }
+    await sticker.save();
 
     let packSync = { enabled: false, syncedCount: 0, skippedCount: 0 };
     const batchMeta = await QRBatch.findOne({ batchId: sticker.batchId }).select('batchId quantity').lean();
-    const shouldSyncTwoStickerPack = Number(batchMeta?.quantity || 0) === 2;
+    const shouldSyncTwoStickerPack = !addProfileMode && Number(batchMeta?.quantity || 0) === 2;
 
     if (shouldSyncTwoStickerPack) {
       const siblings = await QRSticker.find({
@@ -2423,11 +2565,11 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
 
     return res.status(isExistingActiveProfile ? 200 : 201).json({
       success: true,
-      mode: isExistingActiveProfile ? 'updated' : 'activated',
+      mode: addProfileMode ? 'profile-added' : (isExistingActiveProfile ? 'updated' : 'activated'),
       emergencyInfo,
       sticker,
       packSync,
-      profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(profileIdentifier)}`,
+      profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(profileIdentifier)}?qr=${encodeURIComponent(uuid)}`,
     });
   } catch (error) {
     console.error('Error activating sticker:', error);
@@ -3280,6 +3422,12 @@ const otpStorage = new Map();
 const otpAuditTrail = [];
 const OTP_VALIDITY_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_LENGTH = 6;
+const MAX_MULTI_PROFILE_COUNT = 3;
+
+const normalizeProfileEntryType = (profileType) => {
+  if (profileType === 'PRIMARY') return 'PRIMARY';
+  return 'SECONDARY';
+};
 
 // Helper: Generate random OTP
 const generateOTP = () => {
@@ -3292,15 +3440,48 @@ const generateOTP = () => {
 router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
   try {
     const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
-    if (!phoneNumber) {
-      return res.status(400).json({ error: 'Phone number is required' });
+    const qrUuid = normalizeOptionalString(req.body?.qrUuid, 120);
+    const requestedProfileId = normalizeOptionalString(req.body?.profileId, 80);
+    let emergency;
+
+    if (qrUuid && requestedProfileId) {
+      const sticker = await QRSticker.findOne({ uuid: sanitizeStringParam(qrUuid) })
+        .select('multiProfileMode type profiles status activatedBy')
+        .lean();
+      if (!sticker || sticker.status !== 'active' || !['b2c', 'b2b'].includes(sticker.type)) {
+        return res.status(404).json({ error: 'Multi-profile QR not found' });
+      }
+
+      let targetProfileId = null;
+      if (sticker.multiProfileMode) {
+        const profileEntry = (sticker.profiles || []).find(
+          (profile) => profile.profileId.toString() === requestedProfileId
+        );
+        if (!profileEntry) {
+          return res.status(404).json({ error: 'Profile not found in this QR' });
+        }
+        targetProfileId = profileEntry.profileId;
+      } else {
+        // Not multi-profile yet: only the sticker's current active profile can
+        // request an OTP - this authorizes upgrading the sticker to add a second profile.
+        if (!sticker.activatedBy || sticker.activatedBy.toString() !== requestedProfileId) {
+          return res.status(404).json({ error: 'Profile not found in this QR' });
+        }
+        targetProfileId = sticker.activatedBy;
+      }
+
+      emergency = await EmergencyInfo.findById(targetProfileId)
+        .select('_id fullName phoneNumber email')
+        .lean();
+    } else if (phoneNumber) {
+      emergency = await EmergencyInfo.findOne({ phoneNumber })
+        .select('_id fullName phoneNumber email')
+        .lean();
+    } else {
+      return res.status(400).json({ error: 'A QR profile or phone number is required' });
     }
 
     // Check if user exists with this phone number
-    const emergency = await EmergencyInfo.findOne({ phoneNumber })
-      .select('_id fullName phoneNumber email')
-      .lean();
-    
     if (!emergency) {
       // Don't reveal whether phone exists (security)
       return res.status(404).json({ error: 'No profile found with this phone number' });
@@ -3310,10 +3491,15 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + OTP_VALIDITY_MS);
     
-    otpStorage.set(phoneNumber, {
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+    const otpKey = qrUuid && requestedProfileId ? requestId : emergency.phoneNumber;
+    otpStorage.set(otpKey, {
       otp,
       expiresAt,
       emergencyInfoId: emergency._id.toString(),
+      phoneNumber: emergency.phoneNumber,
+      qrUuid: qrUuid || null,
+      profileId: requestedProfileId || emergency._id.toString(),
       attempts: 0,
     });
 
@@ -3324,9 +3510,11 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
       actorRole: 'public',
       action: 'chatbot_otp_sent',
       details: {
-        phoneNumber,
+        phoneNumber: emergency.phoneNumber,
         otp,
         emergencyInfoId: emergency._id.toString(),
+        qrUuid: qrUuid || null,
+        profileId: requestedProfileId || emergency._id.toString(),
         expiresAt: expiresAt.toISOString(),
       },
       createdAt: new Date().toISOString(),
@@ -3339,20 +3527,24 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
       actor: { sub: 'chatbot-system', email: 'chatbot@system', role: 'public' },
       action: 'chatbot_otp_sent',
       details: {
-        phoneNumber,
+        phoneNumber: emergency.phoneNumber,
         otp,
         emergencyInfoId: emergency._id.toString(),
+        qrUuid: qrUuid || null,
+        profileId: requestedProfileId || emergency._id.toString(),
         expiresAt: expiresAt.toISOString(),
       },
     });
 
     // TODO: In production, send OTP via SMS service (Twilio, AWS SNS, etc.)
     // For now, log it for development
-    console.log(`📱 OTP sent to ${phoneNumber}: ${otp}`);
+    console.log(`📱 OTP sent to ${emergency.phoneNumber}: ${otp}`);
 
     res.status(200).json({
       message: 'OTP sent successfully',
-      phoneNumber,
+      requestId,
+      phoneNumber: emergency.phoneNumber,
+      profileId: requestedProfileId || emergency._id.toString(),
       // SMS integration is pending, so expose OTP to support/staging flows.
       otp,
       expiresIn: '5 minutes',
@@ -3367,13 +3559,15 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
 router.post('/chatbot/verify-otp', createLimiter, async (req, res) => {
   try {
     const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
+    const requestId = normalizeOptionalString(req.body?.requestId, 120);
     const otp = normalizeOptionalString(req.body?.otp, 10);
 
-    if (!phoneNumber || !otp) {
-      return res.status(400).json({ error: 'Phone number and OTP are required' });
+    if ((!phoneNumber && !requestId) || !otp) {
+      return res.status(400).json({ error: 'OTP and its request reference are required' });
     }
 
-    const otpData = otpStorage.get(phoneNumber);
+    const otpKey = requestId || phoneNumber;
+    const otpData = otpStorage.get(otpKey);
     
     if (!otpData) {
       return res.status(404).json({ error: 'OTP not found or expired' });
@@ -3381,13 +3575,13 @@ router.post('/chatbot/verify-otp', createLimiter, async (req, res) => {
 
     // Check if OTP has expired
     if (new Date() > otpData.expiresAt) {
-      otpStorage.delete(phoneNumber);
+      otpStorage.delete(otpKey);
       return res.status(410).json({ error: 'OTP has expired. Please request a new one.' });
     }
 
     // Check maximum attempts (3 attempts per OTP)
     if (otpData.attempts >= 3) {
-      otpStorage.delete(phoneNumber);
+      otpStorage.delete(otpKey);
       return res.status(429).json({ error: 'Too many incorrect attempts. Please request a new OTP.' });
     }
 
@@ -3419,12 +3613,13 @@ router.post('/chatbot/verify-otp', createLimiter, async (req, res) => {
     );
 
     // Clear OTP after successful verification
-    otpStorage.delete(phoneNumber);
+    otpStorage.delete(otpKey);
 
     res.status(200).json({
       message: 'OTP verified successfully',
       accessToken,
       profileId: emergencyInfo._id.toString(),
+      qrUuid: otpData.qrUuid,
       fullName: emergencyInfo.fullName,
       phoneNumber: emergencyInfo.phoneNumber,
       email: emergencyInfo.email,
@@ -3558,6 +3753,386 @@ router.patch('/chatbot/profile', requireChatbotAuth, upload.fields([
 });
 
 // ── End CHATBOT endpoints ────────────────────────────────────────────
+
+// ── MULTI-PROFILE QR ENDPOINTS ──────────────────────────────────────
+
+// Public: Get list of profiles in a multi-profile QR (names only, no full data)
+router.get('/qr/:uuid/profiles', readLimiter, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    const sticker = await QRSticker.findOne({ uuid })
+      .select('uuid multiProfileMode profiles profileCount status type activatedBy activatedAt')
+      .lean();
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    // Multi-profile is allowed for customer and business QR types
+    if (sticker.type !== 'b2c' && sticker.type !== 'b2b') {
+      return res.status(403).json({ error: 'Multi-profile QR access is only available for B2C and B2B QR codes' });
+    }
+
+    if (!sticker.multiProfileMode) {
+      // Not upgraded to multi-profile yet: surface the single active profile
+      // so the scan-time UI can offer "Add Profile" as the upgrade path.
+      if (sticker.status !== 'active' || !sticker.activatedBy) {
+        return res.status(400).json({ error: 'This QR does not have multi-profile mode enabled' });
+      }
+
+      const activeProfile = await EmergencyInfo.findById(sticker.activatedBy)
+        .select('_id fullName email')
+        .lean();
+
+      return res.json({
+        uuid: sticker.uuid,
+        multiProfileMode: false,
+        type: sticker.type,
+        profileCount: activeProfile ? 1 : 0,
+        profiles: activeProfile
+          ? [{
+              _id: activeProfile._id.toString(),
+              profileId: activeProfile._id.toString(),
+              profileName: activeProfile.fullName,
+              profileEmail: activeProfile.email,
+              addedAt: sticker.activatedAt,
+            }]
+          : [],
+        status: sticker.status,
+      });
+    }
+
+    // Return only names and IDs (no sensitive data for public scan)
+    const profileList = (sticker.profiles || []).map((profile) => ({
+      _id: profile._id.toString(),
+      profileId: profile.profileId.toString(),
+      profileType: profile.profileType,
+      profileName: profile.profileName,
+      profileEmail: profile.profileEmail,
+      addedAt: profile.addedAt,
+    }));
+
+    return res.json({
+      uuid: sticker.uuid,
+      multiProfileMode: true,
+      type: sticker.type,
+      profileCount: sticker.profileCount || profileList.length,
+      profiles: profileList,
+      status: sticker.status,
+    });
+  } catch (error) {
+    console.error('Error fetching profiles:', error);
+    return res.status(500).json({ error: 'Failed to fetch profiles' });
+  }
+});
+
+// Public: Get single profile from multi-profile QR (requires OTP auth)
+router.get('/qr/:uuid/profile/:profileId', requireChatbotAuth, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const profileId = sanitizeStringParam(req.params.profileId);
+
+    if (!uuid || !profileId) {
+      return res.status(400).json({ error: 'UUID and profileId are required' });
+    }
+
+    // Verify sticker exists and belongs to a supported QR type
+    const sticker = await QRSticker.findOne({ uuid })
+      .select('uuid multiProfileMode profiles type activatedBy')
+      .lean();
+
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    // Multi-profile is allowed for customer and business QR types
+    if (sticker.type !== 'b2c' && sticker.type !== 'b2b') {
+      return res.status(403).json({ error: 'Multi-profile QR access is only available for B2C and B2B QR codes' });
+    }
+
+    // Resolve which EmergencyInfo record this profileId refers to. Once the
+    // sticker has been upgraded it's one of sticker.profiles; before that
+    // upgrade the sticker only has its single activatedBy profile.
+    let resolvedProfileId = null;
+    if (sticker.multiProfileMode) {
+      const profileEntry = (sticker.profiles || []).find(
+        (p) => p.profileId.toString() === profileId
+      );
+      if (!profileEntry) {
+        return res.status(404).json({ error: 'Profile not found in this QR' });
+      }
+      resolvedProfileId = profileEntry.profileId.toString();
+    } else if (sticker.activatedBy && sticker.activatedBy.toString() === profileId) {
+      resolvedProfileId = sticker.activatedBy.toString();
+    } else {
+      return res.status(404).json({ error: 'Profile not found in this QR' });
+    }
+
+    if (req.user.sub !== resolvedProfileId) {
+      return res.status(403).json({ error: 'OTP verification does not authorize this profile' });
+    }
+
+    // Fetch the full emergency info (user authenticated via OTP)
+    const emergencyInfo = await EmergencyInfo.findById(resolvedProfileId)
+      .select('_id fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
+      .lean();
+
+    if (!emergencyInfo) {
+      return res.status(404).json({ error: 'Profile data not found' });
+    }
+
+    res.json({
+      qrUuid: uuid,
+      profile: emergencyInfo,
+    });
+  } catch (error) {
+    console.error('Error fetching multi-profile QR data:', error);
+    return res.status(500).json({ error: 'Failed to fetch profile data' });
+  }
+});
+
+// Administrators: Create a new multi-profile QR batch for customer or business profiles
+router.post('/qr/create-multi', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { profileIds = [], type = 'b2c' } = req.body;
+
+    if (!Array.isArray(profileIds)) {
+      return res.status(400).json({ error: 'profileIds must be an array' });
+    }
+
+    if (!['b2c', 'b2b'].includes(type)) {
+      return res.status(400).json({ error: 'Multi-profile QR can only be created for B2C or B2B types' });
+    }
+
+    let profileEntries = [];
+
+    if (profileIds.length > 0) {
+      const validIds = profileIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+      if (validIds.length !== profileIds.length) {
+        return res.status(400).json({ error: 'Invalid profile IDs' });
+      }
+
+      const profiles = await EmergencyInfo.find({ _id: { $in: validIds } })
+        .select('_id fullName email phoneNumber')
+        .lean();
+
+      if (profiles.length !== validIds.length) {
+        return res.status(404).json({ error: 'One or more profiles not found' });
+      }
+
+      profileEntries = profiles.map((profile) => ({
+        profileId: profile._id,
+        addedBy: req.user.sub,
+        profileName: profile.fullName || 'Unknown',
+        profileEmail: profile.email || '',
+        profilePhone: profile.phoneNumber || '',
+        canEdit: false,
+        addedAt: new Date(),
+      }));
+    }
+
+    const uuid = uuidv4();
+    const sequence = await getNextSerialSequence();
+    const serialNumber = formatSerialNumber(sequence);
+    const batchId = await buildBatchId(type);
+
+    const sticker = await QRSticker.create({
+      uuid,
+      serialNumber,
+      status: 'active',
+      type,
+      batchId,
+      multiProfileMode: true,
+      profiles: profileEntries,
+      profileCount: profileEntries.length,
+      createdByUser: req.user.sub,
+    });
+
+    await QRBatch.create({
+      batchId,
+      quantity: 1,
+      type,
+      createdBy: req.user.email || 'user@unknown',
+      organizationName: type === 'b2b' ? 'Business Multi-Profile' : 'Customer Multi-Profile',
+      notes: profileEntries.length > 0
+        ? `Multi-profile QR with ${profileEntries.length} profiles (${type})`
+        : `Empty multi-profile QR ready for profile linking (${type})`,
+    });
+
+    res.status(201).json({
+      success: true,
+      sticker: {
+        uuid: sticker.uuid,
+        serialNumber: sticker.serialNumber,
+        batchId: sticker.batchId,
+        type,
+        multiProfileMode: true,
+        profileCount: profileEntries.length,
+        profiles: profileEntries.map((p) => ({
+          profileId: p.profileId.toString(),
+          profileName: p.profileName,
+          profileEmail: p.profileEmail,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Error creating multi-profile QR:', error);
+    return res.status(500).json({ error: 'Failed to create multi-profile QR' });
+  }
+});
+
+// Authenticated User: Add profile to existing multi-profile QR (owner only, B2B only)
+router.post('/qr/:uuid/add-profile', requireChatbotAuth, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const { profileId } = req.body;
+
+    if (!uuid || !profileId) {
+      return res.status(400).json({ error: 'UUID and profileId are required' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(profileId)) {
+      return res.status(400).json({ error: 'Invalid profileId' });
+    }
+
+    // Find the sticker
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    // Verify user is the owner
+    if (sticker.createdByUser.toString() !== req.user.sub) {
+      return res.status(403).json({ error: 'Only QR owner can add profiles' });
+    }
+
+    // Verify this is a valid multi-profile QR for customer or business use
+    if (!sticker.multiProfileMode || (sticker.type !== 'b2c' && sticker.type !== 'b2b')) {
+      return res.status(403).json({ error: 'This operation is only available for B2C and B2B multi-profile QRs' });
+    }
+
+    if ((sticker.profiles || []).length >= MAX_MULTI_PROFILE_COUNT) {
+      return res.status(409).json({ error: 'Shared QR profile limit reached. Maximum 2 profiles allowed.' });
+    }
+
+    // Check if profile already exists in QR
+    const alreadyExists = sticker.profiles.some(
+      (p) => p.profileId.toString() === profileId
+    );
+    if (alreadyExists) {
+      return res.status(409).json({ error: 'Profile already added to this QR' });
+    }
+
+    // Fetch the emergency info
+    const emergency = await EmergencyInfo.findById(profileId)
+      .select('_id fullName email phoneNumber')
+      .lean();
+
+    if (!emergency) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    if ((sticker.profiles || []).length === 0) {
+      sticker.activeProfileId = emergency._id;
+    }
+
+    const profileType = (sticker.profiles || []).length === 0 ? 'PRIMARY' : 'SECONDARY';
+    sticker.profiles.push({
+      profileId: emergency._id,
+      addedBy: req.user.sub,
+      profileType: normalizeProfileEntryType(profileType),
+      profileName: emergency.fullName || 'Unknown',
+      profileEmail: emergency.email || '',
+      profilePhone: emergency.phoneNumber || '',
+      canEdit: false,
+      addedAt: new Date(),
+    });
+
+    sticker.profileCount = sticker.profiles.length;
+    await sticker.save();
+
+    res.json({
+      success: true,
+      message: 'Profile added successfully',
+      sticker: {
+        uuid: sticker.uuid,
+        multiProfileMode: true,
+        type: sticker.type,
+        profileCount: sticker.profileCount,
+        profiles: sticker.profiles.map((p) => ({
+          profileId: p.profileId.toString(),
+          profileName: p.profileName,
+          profileEmail: p.profileEmail,
+          addedAt: p.addedAt,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Error adding profile to QR:', error);
+    return res.status(500).json({ error: 'Failed to add profile' });
+  }
+});
+
+// Authenticated User: Remove profile from multi-profile QR (owner only, B2B only)
+router.delete('/qr/:uuid/remove-profile/:profileId', requireChatbotAuth, async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const profileId = sanitizeStringParam(req.params.profileId);
+
+    if (!uuid || !profileId) {
+      return res.status(400).json({ error: 'UUID and profileId are required' });
+    }
+
+    // Find the sticker
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) {
+      return res.status(404).json({ error: 'QR not found' });
+    }
+
+    // Verify user is the owner
+    if (sticker.createdByUser.toString() !== req.user.sub) {
+      return res.status(403).json({ error: 'Only QR owner can remove profiles' });
+    }
+
+    // Verify this is a valid multi-profile QR for customer or business use
+    if (!sticker.multiProfileMode || (sticker.type !== 'b2c' && sticker.type !== 'b2b')) {
+      return res.status(403).json({ error: 'This operation is only available for B2C and B2B multi-profile QRs' });
+    }
+
+    // Remove the profile
+    sticker.profiles = sticker.profiles.filter(
+      (p) => p.profileId.toString() !== profileId
+    );
+
+    sticker.profileCount = sticker.profiles.length;
+    await sticker.save();
+
+    res.json({
+      success: true,
+      message: 'Profile removed successfully',
+      sticker: {
+        uuid: sticker.uuid,
+        multiProfileMode: true,
+        type: sticker.type,
+        profileCount: sticker.profileCount,
+        profiles: sticker.profiles.map((p) => ({
+          profileId: p.profileId.toString(),
+          profileName: p.profileName,
+          profileEmail: p.profileEmail,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Error removing profile from QR:', error);
+    return res.status(500).json({ error: 'Failed to remove profile' });
+  }
+});
+
+// ── End MULTI-PROFILE QR endpoints ──────────────────────────────────────────
 
 // ── Mount versioned router & backward-compat redirect ────────────────
 app.use('/api/v1', (req, res, next) => {
