@@ -84,7 +84,7 @@ export default function ProfileSelector() {
           setSelectedProfile(data.profiles[0].profileId);
         }
 
-        if (searchParams.get('action') === 'add') {
+        if (searchParams.get('action') === 'add' && data.profileCount < 3) {
           const activeProfileId = sessionStorage.getItem('activeProfileId') || data.profiles[0]?.profileId;
           if (activeProfileId) {
             setAddProfileOtpVerified(false);
