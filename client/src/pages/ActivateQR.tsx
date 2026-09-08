@@ -19,6 +19,7 @@ type ActivationCheckResponse = {
     serialNumber: string;
     type: 'b2c' | 'b2b' | 'b2g';
     status: string;
+    multiProfileMode?: boolean;
     activatedBy?: {
       fullName?: string;
       email?: string;
@@ -35,6 +36,24 @@ type ActivationCheckResponse = {
 };
 
 const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, '');
+
+const readJsonResponse = async <T,>(res: Response): Promise<T> => {
+  const raw = await res.text();
+  if (!raw || !raw.trim()) {
+    return {} as T;
+  }
+
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('<')) {
+    throw new Error(`The server returned HTML instead of JSON. Check the backend URL or deployment. Status: ${res.status}.`);
+  }
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch (_error) {
+    throw new Error(`The server returned an invalid JSON response. Status: ${res.status}.`);
+  }
+};
 
 export default function ActivateQR() {
   const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
@@ -74,10 +93,22 @@ export default function ActivateQR() {
       setError(null);
       try {
         const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
-        const data = await res.json();
+        const data = await readJsonResponse<ActivationCheckResponse>(res);
         if (!res.ok) {
-          throw new Error(data.error || data.reason || 'Failed to load sticker');
+          throw new Error((data as { error?: string; reason?: string }).error || (data as { error?: string; reason?: string }).reason || 'Failed to load sticker');
         }
+        
+        // Check if this is a multi-profile QR for customer or business profiles
+        if (
+          data.sticker?.multiProfileMode &&
+          (data.sticker?.type === 'b2c' || data.sticker?.type === 'b2b')
+        ) {
+          if (active) {
+            navigate(`/qr/profiles/${encodeURIComponent(uuid)}`, { replace: true });
+          }
+          return;
+        }
+        
         if (active) setCheck(data);
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Failed to load sticker');
@@ -89,7 +120,7 @@ export default function ActivateQR() {
     return () => {
       active = false;
     };
-  }, [apiBase, uuid]);
+  }, [apiBase, uuid, navigate]);
 
   useEffect(() => {
     if (check?.status === 'active' && check.sticker?.activatedBy) {
@@ -128,6 +159,9 @@ export default function ActivateQR() {
       : null;
     const destination = check.emergencyProfileUrl || localEmergencyProfileUrl || safeRedirectTo;
     if (!destination) return;
+    // Remember which sticker this profile came from so the emergency info page
+    // can offer "Add Profile" / "Switch Account" even for a not-yet-multi sticker.
+    sessionStorage.setItem('activeQrUuid', uuid);
     window.location.replace(destination);
   }, [check]);
 
@@ -246,8 +280,12 @@ export default function ActivateQR() {
           bloodType: data?.emergencyInfo?.bloodType || bloodType,
           serialNumber: data?.sticker?.serialNumber || check?.sticker?.serialNumber || '',
           profileUrl: data?.profileUrl,
-            packSync: data?.packSync,
+          packSync: data?.packSync,
           qrActivationUrl: `${window.location.origin}/activate/${uuid}`,
+          isMultiProfile: check?.sticker?.multiProfileMode,
+          qrUuid: uuid,
+          qrType: check?.sticker?.type as 'b2c' | 'b2b' | 'b2g' | undefined,
+          profileCount: data?.sticker?.profileCount || 1,
         },
       });
     } catch (err) {
@@ -302,6 +340,25 @@ export default function ActivateQR() {
                 <p className="text-sm text-green-700 mt-1">Your profile is active. Update details anytime—changes save automatically.</p>
               </div>
             </div>
+          </div>
+        ) : null}
+
+        {check.status === 'active' && (check.sticker?.type === 'b2c' || check.sticker?.type === 'b2b') ? (
+          <div className="mb-8 grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=add`)}
+              className="rounded-lg border-2 border-blue-600 bg-white px-3 py-3 text-sm font-bold text-blue-700 shadow-md transition-colors hover:bg-blue-50"
+            >
+              + Add Profile
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=switch`)}
+              className="rounded-lg border-2 border-indigo-600 bg-indigo-600 px-3 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-indigo-700"
+            >
+              Switch Account
+            </button>
           </div>
         ) : null}
 
