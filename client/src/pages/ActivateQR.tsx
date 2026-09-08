@@ -343,25 +343,6 @@ export default function ActivateQR() {
           </div>
         ) : null}
 
-        {check.status === 'active' && (check.sticker?.type === 'b2c' || check.sticker?.type === 'b2b') ? (
-          <div className="mb-8 grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=add`)}
-              className="rounded-lg border-2 border-blue-600 bg-white px-3 py-3 text-sm font-bold text-blue-700 shadow-md transition-colors hover:bg-blue-50"
-            >
-              + Add Profile
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=switch`)}
-              className="rounded-lg border-2 border-indigo-600 bg-indigo-600 px-3 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-indigo-700"
-            >
-              Switch Account
-            </button>
-          </div>
-        ) : null}
-
         <div className="mb-8 rounded-2xl border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50 to-indigo-50 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
@@ -723,6 +704,25 @@ export default function ActivateQR() {
             <Shield className="h-5 w-5" />
             {submitting ? (check.status === 'active' ? 'Updating Profile...' : 'Activating Sticker...') : (check.status === 'active' ? 'Update Profile' : 'Activate Sticker')}
           </button>
+
+          {check.status === 'active' && (check.sticker?.type === 'b2c' || check.sticker?.type === 'b2b') ? (
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=add`)}
+                className="rounded-lg border-2 border-blue-600 bg-white px-3 py-3 text-sm font-bold text-blue-700 shadow-md transition-colors hover:bg-blue-50"
+              >
+                + Add Profile
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=switch`)}
+                className="rounded-lg border-2 border-indigo-600 bg-indigo-600 px-3 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-indigo-700"
+              >
+                Switch Account
+              </button>
+            </div>
+          ) : null}
 
           <div className="text-center space-y-3">
             <p className="text-sm text-slate-600">
