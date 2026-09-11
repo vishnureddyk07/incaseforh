@@ -150,7 +150,14 @@ export default function ActivateQR() {
   }, [check]);
 
   useEffect(() => {
-    if (check?.status !== 'active' || searchParams.has('edit')) return;
+   if (
+  check?.status !== 'active' ||
+  searchParams.has('edit') ||
+  searchParams.get('action') === 'add' ||
+  searchParams.get('action') === 'switch'
+) {
+  return;
+}
     const activeIdentifier = (
       check.sticker?.activatedBy?.email?.trim()
       || check.sticker?.activatedBy?.phoneNumber?.trim()

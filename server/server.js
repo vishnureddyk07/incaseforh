@@ -70,14 +70,15 @@ const redirectLegacyEmergencyInfoRoute = (req, res, next) => {
 app.use(redirectLegacyEmergencyInfoRoute);
 app.use((req, res, next) => {
   console.log(`Request: ${req.method} ${req.url}`);
-  const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://10.5.12.85:5173',
-    'http://10.5.12.85:5174',
-    'https://incaseforh.vercel.app',
-    /^https:\/\/incaseforh-.*\.vercel\.app$/
-  ];
+ const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+  'http://10.5.12.85:5173',
+  'http://10.5.12.85:5174',
+  'https://incaseforh.vercel.app',
+  /^https:\/\/incaseforh-.*\.vercel\.app$/
+];
   const origin = req.headers.origin;
   const allowed = allowedOrigins.some(ao => 
     typeof ao === 'string' ? ao === origin : ao.test(origin)
@@ -3210,9 +3211,7 @@ router.get('/sos/stream/subscribe', requireAuth, requirePoliceOrAmbulance, (req,
   // Set up SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  
+  res.setHeader('Connection', 'keep-alive');  
   // Send initial connection confirmation
   res.write(`:Connected - ready for real-time SOS alerts\n\n`);
   
