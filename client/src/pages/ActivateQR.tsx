@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertCircle, FileText, Heart, Phone, User, Shield, Upload, Users, Trash2 } from 'lucide-react';
 
 type EmergencyContact = { name: string; phone: string };
@@ -19,6 +19,8 @@ type ActivationCheckResponse = {
     serialNumber: string;
     type: 'b2c' | 'b2b' | 'b2g';
     status: string;
+    multiProfileMode?: boolean;
+    profileCount?: number;
     activatedBy?: {
       fullName?: string;
       email?: string;
@@ -36,10 +38,29 @@ type ActivationCheckResponse = {
 
 const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, '');
 
+const readJsonResponse = async <T,>(res: Response): Promise<T> => {
+  const raw = await res.text();
+  if (!raw || !raw.trim()) {
+    return {} as T;
+  }
+
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('<')) {
+    throw new Error(`The server returned HTML instead of JSON. Check the backend URL or deployment. Status: ${res.status}.`);
+  }
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch (_error) {
+    throw new Error(`The server returned an invalid JSON response. Status: ${res.status}.`);
+  }
+};
+
 export default function ActivateQR() {
   const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
   const { uuid = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const apiBase = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
   const bloodTypeReportInputRef = useRef<HTMLInputElement | null>(null);
@@ -74,10 +95,24 @@ export default function ActivateQR() {
       setError(null);
       try {
         const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
-        const data = await res.json();
+        const data = await readJsonResponse<ActivationCheckResponse>(res);
         if (!res.ok) {
-          throw new Error(data.error || data.reason || 'Failed to load sticker');
+          throw new Error((data as { error?: string; reason?: string }).error || (data as { error?: string; reason?: string }).reason || 'Failed to load sticker');
         }
+        
+        // Check if this is a multi-profile QR for customer or business profiles
+        if (
+          !searchParams.has('edit') &&
+          data.status === 'active' &&
+          (data.sticker?.activatedBy || (data.sticker?.multiProfileMode && data.sticker?.profileCount)) &&
+          (data.sticker?.type === 'b2c' || data.sticker?.type === 'b2b')
+        ) {
+          if (active) {
+            navigate(`/qr/profiles/${encodeURIComponent(uuid)}`, { replace: true });
+          }
+          return;
+        }
+        
         if (active) setCheck(data);
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Failed to load sticker');
@@ -89,7 +124,7 @@ export default function ActivateQR() {
     return () => {
       active = false;
     };
-  }, [apiBase, uuid]);
+  }, [apiBase, uuid, navigate, searchParams]);
 
   useEffect(() => {
     if (check?.status === 'active' && check.sticker?.activatedBy) {
@@ -115,7 +150,14 @@ export default function ActivateQR() {
   }, [check]);
 
   useEffect(() => {
-    if (check?.status !== 'active') return;
+   if (
+  check?.status !== 'active' ||
+  searchParams.has('edit') ||
+  searchParams.get('action') === 'add' ||
+  searchParams.get('action') === 'switch'
+) {
+  return;
+}
     const activeIdentifier = (
       check.sticker?.activatedBy?.email?.trim()
       || check.sticker?.activatedBy?.phoneNumber?.trim()
@@ -128,8 +170,11 @@ export default function ActivateQR() {
       : null;
     const destination = check.emergencyProfileUrl || localEmergencyProfileUrl || safeRedirectTo;
     if (!destination) return;
+    // Remember which sticker this profile came from so the emergency info page
+    // can offer "Add Profile" / "Switch Account" even for a not-yet-multi sticker.
+    sessionStorage.setItem('activeQrUuid', uuid);
     window.location.replace(destination);
-  }, [check]);
+  }, [check, searchParams]);
 
   const updateContact = (idx: number, key: keyof EmergencyContact, value: string) => {
     setContacts((prev) => prev.map((c, i) => (i === idx ? { ...c, [key]: value } : c)));
@@ -211,6 +256,11 @@ export default function ActivateQR() {
       }
 
       const formData = new FormData();
+      const isAddProfile = searchParams.get('action') === 'add';
+
+if (isAddProfile) {
+  formData.append('mode', 'add-profile');
+}
       formData.append('fullName', fullName);
       formData.append('phoneNumber', phoneNumber);
       formData.append('dateOfBirth', dateOfBirth);
@@ -235,7 +285,7 @@ export default function ActivateQR() {
         throw new Error(data.error || 'Activation failed');
       }
 
-      if (check?.status === 'active' && data?.profileUrl) {
+      if (check?.status === 'active' && check.sticker?.activatedBy && data?.profileUrl) {
         window.location.assign(data.profileUrl);
         return;
       }
@@ -246,8 +296,12 @@ export default function ActivateQR() {
           bloodType: data?.emergencyInfo?.bloodType || bloodType,
           serialNumber: data?.sticker?.serialNumber || check?.sticker?.serialNumber || '',
           profileUrl: data?.profileUrl,
-            packSync: data?.packSync,
+          packSync: data?.packSync,
           qrActivationUrl: `${window.location.origin}/activate/${uuid}`,
+          isMultiProfile: check?.sticker?.multiProfileMode,
+          qrUuid: uuid,
+          qrType: check?.sticker?.type as 'b2c' | 'b2b' | 'b2g' | undefined,
+          profileCount: data?.sticker?.profileCount || 1,
         },
       });
     } catch (err) {
@@ -266,6 +320,8 @@ export default function ActivateQR() {
   }
 
   if (!check) return null;
+
+  const hasExistingProfile = check.status === 'active' && Boolean(check.sticker?.activatedBy);
 
   if (check.status === 'deactivated') {
     return (
@@ -293,7 +349,7 @@ export default function ActivateQR() {
           <p className="text-lg text-slate-600">Complete your safety information to enable instant emergency assistance</p>
         </div>
 
-        {check.status === 'active' ? (
+        {hasExistingProfile ? (
           <div className="mb-6 rounded-2xl border-l-4 border-l-green-500 bg-gradient-to-r from-green-50 to-emerald-50 p-5 shadow-sm">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
@@ -664,8 +720,30 @@ export default function ActivateQR() {
             className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-bold py-3.5 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:opacity-60 text-lg flex items-center justify-center gap-2"
           >
             <Shield className="h-5 w-5" />
-            {submitting ? (check.status === 'active' ? 'Updating Profile...' : 'Activating Sticker...') : (check.status === 'active' ? 'Update Profile' : 'Activate Sticker')}
-          </button>
+{submitting
+  ? (hasExistingProfile ? 'Updating Profile...' : 'Activating Sticker...')
+  : (searchParams.get('action') === 'add'
+      ? 'Add Profile'
+      : (hasExistingProfile ? 'Update Profile' : 'Activate Sticker...'))}          </button>
+
+          {hasExistingProfile && (check.sticker?.type === 'b2c' || check.sticker?.type === 'b2b') ? (
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=add`)}
+                className="rounded-lg border-2 border-blue-600 bg-white px-3 py-3 text-sm font-bold text-blue-700 shadow-md transition-colors hover:bg-blue-50"
+              >
+                + Add Profile
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=switch`)}
+                className="rounded-lg border-2 border-indigo-600 bg-indigo-600 px-3 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-indigo-700"
+              >
+                Switch Profile
+              </button>
+            </div>
+          ) : null}
 
           <div className="text-center space-y-3">
             <p className="text-sm text-slate-600">

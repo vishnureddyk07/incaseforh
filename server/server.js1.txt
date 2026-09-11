@@ -3211,7 +3211,9 @@ router.get('/sos/stream/subscribe', requireAuth, requirePoliceOrAmbulance, (req,
   // Set up SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');  
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  
   // Send initial connection confirmation
   res.write(`:Connected - ready for real-time SOS alerts\n\n`);
   

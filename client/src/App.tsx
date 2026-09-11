@@ -29,6 +29,7 @@ import StickerActivationSuccess from './pages/StickerActivationSuccess';
 import AdminQRReassign from './pages/AdminQRReassign';
 import ChatBotPage from './pages/ChatBotPage';
 import ChatBotEditProfile from './pages/ChatBotEditProfile';
+import ProfileSelector from './components/ProfileSelector';
 
 function RouteNormalizer() {
   const { pathname } = useLocation();
@@ -126,6 +127,7 @@ function AppContent() {
       <Route path="/qr/activate/:uuid/*" element={<ActivateQR />} />
       <Route path="/activate/:uuid" element={<ActivateQR />} />
       <Route path="/activate/:uuid/*" element={<ActivateQR />} />
+      <Route path="/qr/profiles/:uuid" element={<ProfileSelector />} />
       <Route path="/activation-success" element={<StickerActivationSuccess />} />
       <Route path="/qrs" element={<QRList />} />
       <Route path="/chatbot/edit" element={<ChatBotEditProfile />} />
