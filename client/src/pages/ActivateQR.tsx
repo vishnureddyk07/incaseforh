@@ -256,6 +256,11 @@ export default function ActivateQR() {
       }
 
       const formData = new FormData();
+      const isAddProfile = searchParams.get('action') === 'add';
+
+if (isAddProfile) {
+  formData.append('mode', 'add-profile');
+}
       formData.append('fullName', fullName);
       formData.append('phoneNumber', phoneNumber);
       formData.append('dateOfBirth', dateOfBirth);
@@ -715,8 +720,11 @@ export default function ActivateQR() {
             className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-bold py-3.5 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:opacity-60 text-lg flex items-center justify-center gap-2"
           >
             <Shield className="h-5 w-5" />
-            {submitting ? (hasExistingProfile ? 'Updating Profile...' : 'Activating Sticker...') : (hasExistingProfile ? 'Update Profile' : 'Activate Sticker')}
-          </button>
+{submitting
+  ? (hasExistingProfile ? 'Updating Profile...' : 'Activating Sticker...')
+  : (searchParams.get('action') === 'add'
+      ? 'Add Profile'
+      : (hasExistingProfile ? 'Update Profile' : 'Activate Sticker...'))}          </button>
 
           {hasExistingProfile && (check.sticker?.type === 'b2c' || check.sticker?.type === 'b2b') ? (
             <div className="grid grid-cols-2 gap-3">
