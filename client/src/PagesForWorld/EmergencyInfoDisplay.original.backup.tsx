@@ -3,8 +3,6 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Phone, AlertCircle, Loader, Droplet, Users, Copy } from 'lucide-react';
 import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../utils/deviceId';
 import { maskPhoneNumber } from '../utils/privacy';
-import QRProfileManager from '../components/QRProfileManager';
-import AddSecondaryUserModal from '../components/AddSecondaryUserModal';
 
 interface Hospital {
   id: string;
@@ -42,14 +40,6 @@ type EmergencyInfo = {
   emergencyContacts?: EmergencyContact[];
   photo?: string;
 };
-type ProfileSlot = {
-  slotNumber: number;
-  type: 'PRIMARY' | 'SECONDARY';
-  isOwner: boolean;
-  occupied: boolean;
-  profile: EmergencyInfo | null;
-  isActive: boolean;
-};
 
 export default function EmergencyInfoDisplay() {
   const { email: identifierParam } = useParams();
@@ -69,9 +59,6 @@ export default function EmergencyInfoDisplay() {
   const [sosErrorMessage, setSosErrorMessage] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>('');
   const [deviceIdCopied, setDeviceIdCopied] = useState(false);
-  const [showProfileManager, setShowProfileManager] = useState(false);
-  const [showAddSecondaryModal, setShowAddSecondaryModal] = useState(false);
-  const [availableSlots, setAvailableSlots] = useState<ProfileSlot[]>([]);
   // The physical sticker's QR code hits the backend directly, which 302-redirects
   // here server-side (no sessionStorage access), so the uuid is carried via ?qr=.
   // Fall back to sessionStorage for the client-side ProfileSelector navigation path.
@@ -83,27 +70,6 @@ export default function EmergencyInfoDisplay() {
       sessionStorage.setItem('activeQrUuid', qrUuidFromQuery);
     }
   }, [qrUuidFromQuery]);
-  const fetchMultiProfileData = async (targetUuid: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/qr/resolve/${targetUuid}`);
-      const data = await res.json();
-      if (res.ok && data.slots) {
-        setAvailableSlots(data.slots);
-        if (data.activeProfile) {
-          setInfo(data.activeProfile);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load multi-profile data", err);
-    }
-  };
-
-  useEffect(() => {
-    const currentUuid = activeQrUuid || identifierParam;
-    if (currentUuid) {
-      fetchMultiProfileData(currentUuid);
-    }
-  }, [activeQrUuid, identifierParam]);
 
   const fallbackPhotoDataUrl =
     'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
@@ -770,48 +736,25 @@ export default function EmergencyInfoDisplay() {
         >
           📞 Call Emergency Services (108)
         </button>
-        {/* Multi-Profile Active Indicator & Switcher */}
-        <div className="mt-6">
-          <div className="p-3.5 bg-white/95 backdrop-blur rounded-2xl border border-blue-100 shadow-sm flex items-center justify-between">
-            <div className="flex items-center space-x-2.5">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-              </span>
-              <span className="text-xs sm:text-sm font-medium text-gray-700">
-                Active Rider Profile: <strong className="text-gray-900 font-bold">{info?.fullName || 'Main Owner'}</strong>
-              </span>
-            </div>
+
+        {activeQrUuid && (
+          <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={() => setShowProfileManager(!showProfileManager)}
-              className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-xl border border-blue-200 transition cursor-pointer"
+              onClick={() => navigate(`/qr/profiles/${encodeURIComponent(activeQrUuid)}?action=add`)}
+              className="rounded-lg border-2 border-blue-600 bg-white px-3 py-3 text-sm font-bold text-blue-700 shadow-md transition-colors hover:bg-blue-50"
             >
-              {showProfileManager ? 'Hide Profiles' : 'Switch / Manage Profiles'}
+              + Add Profile
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/qr/profiles/${encodeURIComponent(activeQrUuid)}?action=switch`)}
+              className="rounded-lg border-2 border-indigo-600 bg-indigo-600 px-3 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-indigo-700"
+            >
+              Switch Profile
             </button>
           </div>
-
-          {/* Expanded 3-Slot Profile Manager */}
-          {showProfileManager && (
-            <div className="mt-3">
-              <QRProfileManager
-                uuid={activeQrUuid || identifierParam || ''}
-                onOpenAddModal={() => setShowAddSecondaryModal(true)}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Add Secondary Profile Modal with Owner OTP 0708 */}
-        <AddSecondaryUserModal
-          uuid={activeQrUuid || identifierParam || ''}
-          isOpen={showAddSecondaryModal}
-          onClose={() => setShowAddSecondaryModal(false)}
-          onSuccess={() => {
-            const currentUuid = activeQrUuid || identifierParam;
-            if (currentUuid) fetchMultiProfileData(currentUuid);
-          }}
-        />
+        )}
 
         <div className="text-center py-6 border-t border-gray-200">
           <p className="font-bold text-gray-900">INcase - Emergency Response System</p>

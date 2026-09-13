@@ -29,6 +29,7 @@ import StickerActivationSuccess from './pages/StickerActivationSuccess';
 import AdminQRReassign from './pages/AdminQRReassign';
 import ChatBotPage from './pages/ChatBotPage';
 import ChatBotEditProfile from './pages/ChatBotEditProfile';
+import ProfileSelector from './components/ProfileSelector';
 
 function RouteNormalizer() {
   const { pathname } = useLocation();
@@ -106,7 +107,7 @@ function AppContent() {
   const urlParams = new URLSearchParams(window.location.search);
   const qrData = urlParams.get('qr');
 
-  if (qrData) {
+  if (qrData && (qrData.startsWith('{') || qrData.startsWith('%7B'))) {
     try {
       const emergencyData = JSON.parse(decodeURIComponent(qrData));
       // Render the new assist experience for QR scans (privacy-first)
@@ -126,6 +127,7 @@ function AppContent() {
       <Route path="/qr/activate/:uuid/*" element={<ActivateQR />} />
       <Route path="/activate/:uuid" element={<ActivateQR />} />
       <Route path="/activate/:uuid/*" element={<ActivateQR />} />
+      <Route path="/qr/profiles/:uuid" element={<ProfileSelector />} />
       <Route path="/activation-success" element={<StickerActivationSuccess />} />
       <Route path="/qrs" element={<QRList />} />
       <Route path="/chatbot/edit" element={<ChatBotEditProfile />} />

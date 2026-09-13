@@ -18,8 +18,6 @@ import SosAlert from './models/SosAlert.js';
 import QRSticker from './models/QRSticker.js';
 import QRBatch from './models/QRBatch.js';
 import { v4 as uuidv4 } from 'uuid';
-const pendingSecondaryRegistrations = new Map();
-const DUMMY_OWNER_OTP = '0708';
 
 // Get directory name in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -2230,29 +2228,44 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
       });
     }
 
-if (sticker.status === 'active' && sticker.activatedBy) {
-      const activeId = sticker.activeProfileId || sticker.primaryProfileId || sticker.activatedBy;
-      const activeEmergency = await EmergencyInfo.findById(activeId)
+    if (sticker.status === 'active' && sticker.activatedBy) {
+      if (sticker.type === 'b2c' || sticker.type === 'b2b') {
+        const profileSelectorUrl = `${frontendUrl}/qr/profiles/${encodeURIComponent(sticker.uuid)}`;
+        if (!wantsJson) {
+          return res.redirect(302, profileSelectorUrl);
+        }
+
+        return res.json({
+          status: 'active',
+          sticker,
+          profileSelectorUrl,
+          redirectTo: profileSelectorUrl,
+        });
+      }
+
+      const activatedBy = await EmergencyInfo.findById(sticker.activatedBy)
         .select('fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
         .lean();
-
       const identifier =
-        activeEmergency?.phoneNumber || activeEmergency?.email || String(activeId);
+        activatedBy?.email || activatedBy?.phoneNumber || String(sticker.activatedBy);
 
-      const emergencyProfileUrl = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}?qrUuid=${encodeURIComponent(sticker.uuid)}`;
-
+      // Carry the sticker uuid through so the client can offer "Add Profile" /
+      // "Switch Account" even though this is a server-side redirect (no
+      // sessionStorage access) straight from the physical sticker's QR code.
+      const emergencyProfileUrl = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}?qr=${encodeURIComponent(sticker.uuid)}`;
+      const redirectTo = emergencyProfileUrl;
       if (!wantsJson) {
-        return res.redirect(302, emergencyProfileUrl);
+        return res.redirect(302, redirectTo);
       }
 
       return res.json({
         status: 'active',
         sticker: {
           ...sticker,
-          activeEmergency,
+          activatedBy,
         },
         emergencyProfileUrl,
-        redirectTo: emergencyProfileUrl,
+        redirectTo,
       });
     }
 
@@ -2499,8 +2512,6 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
     if (!addProfileMode && (sticker.status !== 'active' || String(sticker.activatedBy || '') !== String(emergencyInfo._id))) {
       sticker.status = 'active';
       sticker.activatedBy = emergencyInfo._id;
-      sticker.primaryProfileId = emergencyInfo._id;
-      sticker.activeProfileId = emergencyInfo._id;
       if (!sticker.activatedAt) sticker.activatedAt = new Date();
       if (sticker.deactivatedAt) sticker.deactivatedAt = null;
       if (sticker.deactivatedReason) sticker.deactivatedReason = '';
@@ -4122,267 +4133,7 @@ router.delete('/qr/:uuid/remove-profile/:profileId', requireChatbotAuth, async (
 });
 
 // ── End MULTI-PROFILE QR endpoints ──────────────────────────────────────────
-// 1. Resolve QR State for scanning and profile selection
-router.get('/qr/resolve/:uuid', readLimiter, async (req, res) => {
-  try {
-    const uuid = sanitizeStringParam(req.params.uuid);
-    if (!uuid) return res.status(400).json({ error: 'UUID is required' });
 
-    const sticker = await QRSticker.findOne({ uuid })
-      .populate('primaryProfileId')
-      .populate('secondaryProfiles.profileId')
-      .populate('activeProfileId')
-      .lean();
-
-    if (!sticker) return res.status(404).json({ error: 'QR sticker not found' });
-    if (sticker.status === 'deactivated') {
-      return res.status(410).json({ error: 'This QR sticker has been deactivated' });
-    }
-
-    const ownerProfile = sticker.primaryProfileId || sticker.activatedBy;
-    const activeProfile = sticker.activeProfileId || ownerProfile;
-
-    const ownerPhone = ownerProfile?.phoneNumber || '';
-    const maskedPhone = ownerPhone.length > 4
-      ? `${ownerPhone.slice(0, 2)}******${ownerPhone.slice(-2)}`
-      : 'registered mobile number';
-
-    const slots = [
-      {
-        slotNumber: 1,
-        type: 'PRIMARY',
-        isOwner: true,
-        occupied: !!ownerProfile,
-        profile: ownerProfile,
-        isActive: String(activeProfile?._id) === String(ownerProfile?._id),
-      },
-      {
-        slotNumber: 2,
-        type: 'SECONDARY',
-        isOwner: false,
-        occupied: !!sticker.secondaryProfiles?.[0],
-        profile: sticker.secondaryProfiles?.[0]?.profileId || null,
-        isActive: String(activeProfile?._id) === String(sticker.secondaryProfiles?.[0]?.profileId?._id),
-      },
-      {
-        slotNumber: 3,
-        type: 'SECONDARY',
-        isOwner: false,
-        occupied: !!sticker.secondaryProfiles?.[1],
-        profile: sticker.secondaryProfiles?.[1]?.profileId || null,
-        isActive: String(activeProfile?._id) === String(sticker.secondaryProfiles?.[1]?.profileId?._id),
-      },
-    ];
-
-    return res.json({
-      uuid: sticker.uuid,
-      serialNumber: sticker.serialNumber,
-      status: sticker.status,
-      activeProfile,
-      slots,
-      canAddSecondary: (sticker.secondaryProfiles?.length || 0) < 2,
-      maskedOwnerPhone: maskedPhone,
-    });
-  } catch (error) {
-    console.error('Error resolving QR profile state:', error);
-    return res.status(500).json({ error: 'Failed to resolve QR data' });
-  }
-});
-
-// 2. Request OTP to add a secondary profile
-router.post('/qr/:uuid/secondary/request-otp', createLimiter, async (req, res) => {
-  try {
-    const uuid = sanitizeStringParam(req.params.uuid);
-    const sticker = await QRSticker.findOne({ uuid }).populate('primaryProfileId').lean();
-
-    if (!sticker) return res.status(404).json({ error: 'Sticker not found' });
-    if (!sticker.primaryProfileId) {
-      return res.status(400).json({ error: 'Main Owner must register before secondary profiles can be added' });
-    }
-
-    if ((sticker.secondaryProfiles?.length || 0) >= 2) {
-      return res.status(400).json({
-        error: 'Maximum profiles reached. Please ask the Main Owner to remove an existing profile before adding a new user.',
-      });
-    }
-
-    const { fullName, phoneNumber, bloodType, dateOfBirth, emergencyContacts, allergies, medications, medicalConditions, address } = req.body;
-
-    if (!fullName || !phoneNumber) {
-      return res.status(400).json({ error: 'Full name and phone number are required' });
-    }
-
-    const registrationId = uuidv4();
-    pendingSecondaryRegistrations.set(registrationId, {
-      uuid,
-      profileData: {
-        fullName: stripHtml(fullName),
-        phoneNumber: stripHtml(phoneNumber),
-        bloodType: normalizeOptionalString(bloodType, 20),
-        dateOfBirth: normalizeOptionalString(dateOfBirth, 40),
-        allergies: normalizeOptionalString(allergies, 1000),
-        medications: normalizeOptionalString(medications, 1000),
-        medicalConditions: normalizeOptionalString(medicalConditions, 1000),
-        address: normalizeOptionalString(address, 500),
-        emergencyContacts: Array.isArray(emergencyContacts) ? sanitizeContacts(emergencyContacts) : [],
-      },
-      expiresAt: Date.now() + 10 * 60 * 1000,
-    });
-
-    const ownerPhone = sticker.primaryProfileId.phoneNumber || '';
-    const maskedPhone = ownerPhone.length > 4
-      ? `${ownerPhone.slice(0, 2)}******${ownerPhone.slice(-2)}`
-      : 'the Main Owner mobile number';
-
-    return res.status(200).json({
-      message: 'Authorization OTP sent to Main Owner',
-      registrationId,
-      maskedPhone,
-      hintOtp: DUMMY_OWNER_OTP,
-    });
-  } catch (error) {
-    console.error('Error requesting secondary profile OTP:', error);
-    return res.status(500).json({ error: 'Failed to initiate profile authorization' });
-  }
-});
-
-// 3. Verify OTP and Activate Secondary Profile
-router.post('/qr/:uuid/secondary/verify-otp', createLimiter, async (req, res) => {
-  try {
-    const uuid = sanitizeStringParam(req.params.uuid);
-    const { registrationId, otp } = req.body;
-
-    if (!registrationId || !otp) {
-      return res.status(400).json({ error: 'Registration ID and OTP are required' });
-    }
-
-    const pending = pendingSecondaryRegistrations.get(registrationId);
-    if (!pending || pending.uuid !== uuid) {
-      return res.status(400).json({ error: 'Invalid or expired registration session. Please start over.' });
-    }
-
-    if (Date.now() > pending.expiresAt) {
-      pendingSecondaryRegistrations.delete(registrationId);
-      return res.status(410).json({ error: 'OTP has expired. Please request a new one.' });
-    }
-
-    if (String(otp).trim() !== DUMMY_OWNER_OTP) {
-      return res.status(401).json({ error: 'Incorrect OTP. Authorization denied.' });
-    }
-
-    const sticker = await QRSticker.findOne({ uuid });
-    if (!sticker) return res.status(404).json({ error: 'Sticker not found' });
-
-    if ((sticker.secondaryProfiles?.length || 0) >= 2) {
-      pendingSecondaryRegistrations.delete(registrationId);
-      return res.status(400).json({
-        error: 'Maximum profiles reached. Please ask the Main Owner to remove an existing profile first.',
-      });
-    }
-
-    const newEmergency = new EmergencyInfo({
-      ...pending.profileData,
-      qrCode: sticker.uuid,
-    });
-    const savedEmergency = await newEmergency.save();
-
-    sticker.secondaryProfiles.push({
-      profileId: savedEmergency._id,
-      label: `Secondary User (${savedEmergency.fullName})`,
-    });
-    sticker.activeProfileId = savedEmergency._id;
-    await sticker.save();
-
-    pendingSecondaryRegistrations.delete(registrationId);
-
-    return res.status(201).json({
-      success: true,
-      message: 'Profile successfully authorized and set as active on this vehicle',
-      activeProfile: savedEmergency,
-    });
-  } catch (error) {
-    console.error('Error verifying secondary profile OTP:', error);
-    return res.status(500).json({ error: 'Failed to verify OTP and activate profile' });
-  }
-});
-
-// 4. Switch Active Profile
-router.patch('/qr/:uuid/switch-active', readLimiter, async (req, res) => {
-  try {
-    const uuid = sanitizeStringParam(req.params.uuid);
-    const { profileId } = req.body;
-
-    if (!uuid || !profileId) {
-      return res.status(400).json({ error: 'UUID and profileId are required' });
-    }
-
-    const sticker = await QRSticker.findOne({ uuid });
-    if (!sticker) return res.status(404).json({ error: 'QR sticker not found' });
-
-    const isPrimary = String(sticker.primaryProfileId) === String(profileId) || String(sticker.activatedBy) === String(profileId);
-    const isSecondary = sticker.secondaryProfiles.some(
-      (p) => String(p.profileId) === String(profileId)
-    );
-
-    if (!isPrimary && !isSecondary) {
-      return res.status(400).json({ error: 'Selected profile does not belong to this QR code' });
-    }
-
-    sticker.activeProfileId = profileId;
-    await sticker.save();
-
-    const currentActive = await EmergencyInfo.findById(profileId).lean();
-
-    return res.json({
-      success: true,
-      message: 'Active vehicle profile updated',
-      activeProfile: currentActive,
-    });
-  } catch (error) {
-    console.error('Error switching active profile:', error);
-    return res.status(500).json({ error: 'Failed to switch active profile' });
-  }
-});
-
-// 5. Main Owner Deletes a Secondary Profile
-router.delete('/qr/:uuid/secondary/:profileId', async (req, res) => {
-  try {
-    const uuid = sanitizeStringParam(req.params.uuid);
-    const profileId = sanitizeStringParam(req.params.profileId);
-
-    const sticker = await QRSticker.findOne({ uuid });
-    if (!sticker) return res.status(404).json({ error: 'QR sticker not found' });
-
-    if (String(sticker.primaryProfileId) === String(profileId)) {
-      return res.status(403).json({ error: 'The Main Owner profile cannot be removed' });
-    }
-
-    const initialLength = sticker.secondaryProfiles.length;
-    sticker.secondaryProfiles = sticker.secondaryProfiles.filter(
-      (p) => String(p.profileId) !== String(profileId)
-    );
-
-    if (sticker.secondaryProfiles.length === initialLength) {
-      return res.status(404).json({ error: 'Secondary profile not found under this QR' });
-    }
-
-    if (String(sticker.activeProfileId) === String(profileId)) {
-      sticker.activeProfileId = sticker.primaryProfileId;
-    }
-
-    await sticker.save();
-    await EmergencyInfo.findByIdAndDelete(profileId);
-
-    return res.json({
-      success: true,
-      message: 'Secondary profile removed successfully. Slot is now free.',
-      activeProfileId: sticker.activeProfileId,
-    });
-  } catch (error) {
-    console.error('Error removing secondary profile:', error);
-    return res.status(500).json({ error: 'Failed to remove secondary profile' });
-  }
-});
 // ── Mount versioned router & backward-compat redirect ────────────────
 app.use('/api/v1', (req, res, next) => {
   if (!MONGODB_URI) {
