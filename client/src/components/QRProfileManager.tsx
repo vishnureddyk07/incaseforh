@@ -134,39 +134,37 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
               </div>
 
               <div className="flex items-center space-x-2">
-                {slot.occupied && slot.profile ? (
-                  <>
-                    {!slot.isActive && (
-                      <button
-                        onClick={() => handleSwitchActive(slot.profile!._id)}
-                        className="text-xs bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium px-3 py-1.5 rounded-lg cursor-pointer"
-                      >
-                        Set Active
-                      </button>
-                    )}
-                    {!slot.isOwner && (
-                      <button
-                        onClick={() => handleRemoveSecondary(slot.profile!._id)}
-                        className="text-xs text-rose-600 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg transition cursor-pointer"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <button
-                    onClick={onOpenAddModal}
-                    className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3 py-1.5 rounded-lg shadow-sm cursor-pointer"
-                  >
-                    + Add User
-                  </button>
-                )}
-              </div>
+              {slot.occupied && slot.profile ? (
+                <>
+                  {slot.isActive && (
+                    <button
+                      onClick={() => handleSwitchActive(slot.profile!._id)}
+                      className="text-xs bg-emerald-100 text-emerald-700 text-xs px-2.5 py-0.5 rounded-full"
+                    >
+                      Set Active
+                    </button>
+                  )}
+                  {!slot.isOwner && (
+                    <button
+                      onClick={() => handleRemoveSecondary(slot.profile!._id)}
+                      className="text-xs text-rose-600 hover:bg-rose-50 px-2.5 py-1.5 transition cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button
+                  onClick={() => onOpenModal(slot.slotNumber)}
+                  className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3 py-1.5 rounded-lg shadow-sm cursor-pointer"
+                >
+                  + Add User
+                </button>
+              )}
             </div>
           </div>
-        ))
+        ))}
       </div>
-    </div>
   );
 };
 
