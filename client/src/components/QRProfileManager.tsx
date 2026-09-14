@@ -20,9 +20,10 @@ interface Slot {
 interface QRProfileManagerProps {
   uuid: string;
   onOpenAddModal: (slotNumber: number) => void;
+  onProfileChanged?: () => void;
 }
 
-export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpenAddModal }) => {
+export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpenAddModal, onProfileChanged }) => {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -81,6 +82,8 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
         body: JSON.stringify({ profileId }),
       });
       if (res.ok) {
+        await res.json();
+        onProfileChanged?.();
         await fetchSlots();
       }
     } catch (err) {
@@ -132,7 +135,7 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
                       Main Owner
                     </span>
                   )}
-                  {!slot.isActive && (
+                  {slot.isActive && (
                     <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full font-semibold">
                       Currently Active
                     </span>
@@ -154,7 +157,7 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
               <div className="flex items-center space-x-2">
               {slot.occupied && slot.profile ? (
                 <>
-                  {slot.isActive && (
+                  {!slot.isActive && (
                     <button
                       onClick={() => handleSwitchActive(slot.profile!._id)}
                       className="text-xs bg-emerald-100 text-emerald-700 text-xs px-2.5 py-0.5 rounded-full"

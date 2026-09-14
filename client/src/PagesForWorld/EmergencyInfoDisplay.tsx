@@ -797,12 +797,16 @@ export default function EmergencyInfoDisplay() {
               <QRProfileManager
                 uuid={activeQrUuid || identifierParam || ''}
                 onOpenAddModal={(_slotNumber) => setShowAddSecondaryModal(true)}
+                onProfileChanged={() => {
+                  const currentUuid = activeQrUuid || identifierParam;
+                  if (currentUuid) void fetchMultiProfileData(currentUuid);
+                }}
               />
             </div>
           )}
         </div>
 
-        {/* Add Secondary Profile Modal with Owner OTP 0708 */}
+        {/* Add Secondary Profile Modal */}
         <AddSecondaryUserModal
           uuid={activeQrUuid || identifierParam || ''}
           isOpen={showAddSecondaryModal}

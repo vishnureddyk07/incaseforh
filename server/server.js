@@ -4038,6 +4038,88 @@ router.get('/qr/:uuid/profile/:profileId', requireChatbotAuth, async (req, res) 
   }
 });
 
+// Public: add a complete secondary profile to an already activated QR.
+router.post('/qr/:uuid/profiles', createLimiter, upload.fields([
+  { name: 'photo', maxCount: 1 },
+  { name: 'bloodTypeReport', maxCount: 1 },
+  { name: 'prescriptionOrDischargeReport', maxCount: 1 },
+  { name: 'surgicalInfoReport', maxCount: 1 },
+]), async (req, res) => {
+  try {
+    const uuid = sanitizeStringParam(req.params.uuid);
+    const sticker = await QRSticker.findOne({ uuid });
+    if (!sticker) return res.status(404).json({ error: 'QR not found' });
+    if (sticker.status !== 'active') return res.status(400).json({ error: 'QR must be activated before adding a profile' });
+    if (sticker.type !== 'b2c' && sticker.type !== 'b2b') return res.status(403).json({ error: 'This QR type does not support multiple profiles' });
+
+    await ensureAuthoritativeProfileEntries(sticker);
+    const linkedProfiles = getStoredProfileEntries(sticker);
+    if (linkedProfiles.length >= MAX_MULTI_PROFILE_COUNT) {
+      return res.status(409).json({ error: 'This QR already has the maximum of 3 profiles' });
+    }
+
+    const fullName = normalizeOptionalString(req.body?.fullName, 200);
+    const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
+    const bloodType = normalizeOptionalString(req.body?.bloodType, 20);
+    if (!fullName || !phoneNumber || !bloodType) {
+      return res.status(400).json({ error: 'Full name, phone number, and blood group are required' });
+    }
+
+    let emergencyContacts = [];
+    if (typeof req.body?.emergencyContacts === 'string') {
+      try { emergencyContacts = sanitizeContacts(JSON.parse(req.body.emergencyContacts)); } catch { emergencyContacts = []; }
+    } else if (Array.isArray(req.body?.emergencyContacts)) {
+      emergencyContacts = sanitizeContacts(req.body.emergencyContacts);
+    }
+    const validContacts = emergencyContacts.filter((contact) => contact?.name && contact?.phone);
+    if (validContacts.length === 0) return res.status(400).json({ error: 'At least one emergency contact is required' });
+
+    const uploadedFiles = req.files || {};
+    const getFile = (field) => Array.isArray(uploadedFiles[field]) ? uploadedFiles[field][0] : null;
+    const photo = uploadedFileToDataUrl(getFile('photo'));
+    const bloodTypeReport = uploadedFileToDataUrl(getFile('bloodTypeReport'));
+    const prescriptionOrDischargeReport = uploadedFileToDataUrl(getFile('prescriptionOrDischargeReport'));
+    const surgicalInfoReport = uploadedFileToDataUrl(getFile('surgicalInfoReport'));
+    const emergencyInfo = await EmergencyInfo.create({
+      fullName,
+      phoneNumber,
+      email: normalizeOptionalString(req.body?.email, 200).toLowerCase() || null,
+      dateOfBirth: normalizeOptionalString(req.body?.dateOfBirth, 40),
+      bloodType,
+      address: normalizeOptionalString(req.body?.address, 500),
+      allergies: normalizeOptionalString(req.body?.allergies, 1000),
+      medications: normalizeOptionalString(req.body?.medications, 1000),
+      medicalConditions: normalizeOptionalString(req.body?.medicalConditions, 1000),
+      emergencyContacts: validContacts,
+      photo,
+      bloodTypeReport,
+      prescriptionOrDischargeReport,
+      surgicalInfoReport,
+      qrCode: `${resolveFrontendUrl(req)}/emergencyinfo/${encodeURIComponent(phoneNumber)}?qrUuid=${encodeURIComponent(uuid)}`,
+    });
+
+    sticker.profiles.push({
+      profileId: emergencyInfo._id,
+      addedBy: null,
+      profileType: 'SECONDARY',
+      profileName: emergencyInfo.fullName,
+      profileEmail: emergencyInfo.email || '',
+      profilePhone: emergencyInfo.phoneNumber || '',
+      canEdit: true,
+      addedAt: new Date(),
+    });
+    sticker.secondaryProfiles.push({ profileId: emergencyInfo._id, label: `Secondary User (${emergencyInfo.fullName})` });
+    sticker.multiProfileMode = true;
+    sticker.profileCount = sticker.profiles.length;
+    await sticker.save();
+
+    return res.status(201).json({ success: true, emergencyInfo, sticker });
+  } catch (error) {
+    console.error('Error adding complete QR profile:', error);
+    return res.status(500).json({ error: 'Failed to add profile' });
+  }
+});
+
 // Administrators: Create a new multi-profile QR batch for customer or business profiles
 router.post('/qr/create-multi', requireAuth, requireAdmin, async (req, res) => {
   try {
