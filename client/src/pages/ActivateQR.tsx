@@ -103,16 +103,21 @@ export default function ActivateQR() {
 
     if (!searchParams.has('edit') && (data.status === 'active' || data.sticker?.status === 'active')) {
       if (active) {
-        const phone = identifier 
-          || data?.sticker?.activatedBy?.phoneNumber 
-          || data?.sticker?.phoneNumber 
-          || data?.phoneNumber 
-          || qrParam;
+        const redirectTarget = data.redirectTo || data.emergencyProfileUrl;
+        if (redirectTarget) {
+          window.location.replace(redirectTarget);
+          return;
+        }
 
-navigate(`/emergencyinfo/${encodeURIComponent(phone)}?qrUuid=${qrParam}`, { replace: true });
-return;
-  }
-}
+        const phone = identifier
+          || data?.sticker?.activatedBy?.phoneNumber
+          || data?.sticker?.phoneNumber
+          || data?.phoneNumber
+          || qrParam;
+        navigate(`/emergencyinfo/${encodeURIComponent(phone)}?qrUuid=${qrParam}`, { replace: true });
+        return;
+      }
+    }
         if (active) setCheck(data);
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Failed to load sticker');

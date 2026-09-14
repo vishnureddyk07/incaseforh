@@ -75,7 +75,7 @@ export default function EmergencyInfoDisplay() {
   // The physical sticker's QR code hits the backend directly, which 302-redirects
   // here server-side (no sessionStorage access), so the uuid is carried via ?qr=.
   // Fall back to sessionStorage for the client-side ProfileSelector navigation path.
-  const qrUuidFromQuery = searchParams.get('qr');
+  const qrUuidFromQuery = searchParams.get('qr') || searchParams.get('qrUuid');
   const activeQrUuid = qrUuidFromQuery || sessionStorage.getItem('activeQrUuid');
 
   useEffect(() => {
@@ -796,7 +796,7 @@ export default function EmergencyInfoDisplay() {
             <div className="mt-3">
               <QRProfileManager
                 uuid={activeQrUuid || identifierParam || ''}
-                onOpenAddModal={() => setShowAddSecondaryModal(true)}
+                onOpenAddModal={(_slotNumber) => setShowAddSecondaryModal(true)}
               />
             </div>
           )}

@@ -29,6 +29,25 @@ const secondaryProfileSchema = new mongoose.Schema(
   { _id: true }
 );
 
+const profileEntrySchema = new mongoose.Schema(
+  {
+    profileId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmergencyInfo', required: true },
+    addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    profileType: {
+      type: String,
+      enum: ['PRIMARY', 'SECONDARY'],
+      default: 'SECONDARY',
+      index: true,
+    },
+    profileName: { type: String, default: '' },
+    profileEmail: { type: String, default: '' },
+    profilePhone: { type: String, default: '' },
+    canEdit: { type: Boolean, default: false },
+    addedAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
 const qrStickerSchema = new mongoose.Schema({
   uuid: { type: String, required: true, unique: true, index: true },
   serialNumber: { type: String, required: true, unique: true, index: true },
@@ -46,6 +65,18 @@ const qrStickerSchema = new mongoose.Schema({
   },
   batchId: { type: String, required: true, index: true },
   assignedTo: { type: assignedToSchema, default: undefined },
+
+  multiProfileMode: { type: Boolean, default: false, index: true },
+  profiles: {
+    type: [profileEntrySchema],
+    validate: [
+      (val) => val.length <= 3,
+      'Maximum 3 profiles allowed per QR code',
+    ],
+    default: [],
+  },
+  profileCount: { type: Number, default: 0 },
+  createdByUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 
   primaryProfileId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -90,5 +121,6 @@ qrStickerSchema.index({ batchId: 1 });
 qrStickerSchema.index({ activatedAt: -1 });
 qrStickerSchema.index({ primaryProfileId: 1 });
 qrStickerSchema.index({ activeProfileId: 1 });
+qrStickerSchema.index({ 'profiles.profileId': 1 });
 
 export default mongoose.models.QRSticker || mongoose.model('QRSticker', qrStickerSchema);

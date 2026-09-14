@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 
 interface Profile {
   _id: string;
-  fullName: string;
-  phoneNumber: string;
-  bloodType?: string;
+  profileId: string;
+  profileName: string;
+  profilePhone?: string;
+  profileType?: 'PRIMARY' | 'SECONDARY';
 }
 
 interface Slot {
@@ -18,7 +19,7 @@ interface Slot {
 
 interface QRProfileManagerProps {
   uuid: string;
-  onOpenAddModal: () => void;
+  onOpenAddModal: (slotNumber: number) => void;
 }
 
 export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpenAddModal }) => {
@@ -28,10 +29,28 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
   const fetchSlots = async () => {
     try {
       if (!uuid) return;
-      const res = await fetch(`/api/v1/qr/resolve/${uuid}`);
+      const res = await fetch(`/api/v1/qr/${encodeURIComponent(uuid)}/profiles`);
       const data = await res.json();
-      if (res.ok && data.slots && data.slots.length > 0) {
-        setSlots(data.slots);
+      if (res.ok && Array.isArray(data.profiles)) {
+        const activeProfileId = data.activeProfileId;
+        setSlots([
+          ...data.profiles.map((profile: Profile, index: number) => ({
+            slotNumber: index + 1,
+            type: profile.profileType || (index === 0 ? 'PRIMARY' : 'SECONDARY'),
+            isOwner: index === 0 || profile.profileType === 'PRIMARY',
+            occupied: true,
+            profile,
+            isActive: profile.profileId === activeProfileId,
+          })),
+          ...Array.from({ length: Math.max(0, 3 - data.profiles.length) }, (_, index) => ({
+            slotNumber: data.profiles.length + index + 1,
+            type: 'SECONDARY' as const,
+            isOwner: false,
+            occupied: false,
+            profile: null,
+            isActive: false,
+          })),
+        ]);
       } else {
         // Fallback: Ensure Slot 2 with "+ Add User" always appears
         setSlots([
@@ -113,7 +132,7 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
                       Main Owner
                     </span>
                   )}
-                  {slot.isActive && (
+                  {!slot.isActive && (
                     <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full font-semibold">
                       Currently Active
                     </span>
@@ -122,12 +141,9 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
 
                 {slot.occupied && slot.profile ? (
                   <div className="mt-1">
-                    <p className="font-semibold text-gray-900">{slot.profile.fullName}</p>
+                    <p className="font-semibold text-gray-900">{slot.profile.profileName}</p>
                     <p className="text-xs text-gray-500">
-                     {slot.profile.phoneNumber}
-{slot.profile.bloodType && (
-  <> {slot.profile.bloodType}</>
-)}
+                     {slot.profile.profilePhone || 'Phone not provided'}
                     </p>
                   </div>
                 ) : (
@@ -157,7 +173,7 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
                 </>
               ) : (
                 <button
-                  onClick={() => onOpenAddModal()}
+                  onClick={() => onOpenAddModal(slot.slotNumber)}
                   className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3 py-1.5 rounded-lg shadow-sm cursor-pointer"
                 >
                   + Add User
