@@ -49,7 +49,6 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
       setLoading(false);
     }
   };
-    }
 
   useEffect(() => {
     fetchSlots();

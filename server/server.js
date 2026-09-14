@@ -1541,6 +1541,20 @@ router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) =>
     const hasLimit = Number.isFinite(limitRaw) && limitRaw > 0;
     const limit = hasLimit ? Math.min(limitRaw, 100) : null;
     const skip = hasLimit ? (page - 1) * limit : 0;
+    const search = String(req.query.search || '').trim();
+    const sortBy = ['newest', 'oldest', 'name'].includes(String(req.query.sortBy))
+      ? String(req.query.sortBy)
+      : 'newest';
+    const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const filter = search
+      ? {
+          $or: [
+            { fullName: { $regex: escapedSearch, $options: 'i' } },
+            { email: { $regex: escapedSearch, $options: 'i' } },
+            { phoneNumber: { $regex: escapedSearch, $options: 'i' } },
+          ],
+        }
+      : {};
 
     const projectStage = {
       _id: 1,
@@ -1571,13 +1585,19 @@ router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) =>
       projectStage.photo = 1;
     }
 
-    const pipeline = [{ $sort: { createdAt: -1 } }];
+    const sort = sortBy === 'name'
+      ? { fullName: 1, createdAt: -1 }
+      : { createdAt: sortBy === 'oldest' ? 1 : -1 };
+    const pipeline = [{ $match: filter }, { $sort: sort }];
     if (hasLimit) {
       pipeline.push({ $skip: skip }, { $limit: limit });
     }
     pipeline.push({ $project: projectStage });
 
-    const allEmergencies = await EmergencyInfo.aggregate(pipeline);
+    const [totalCount, allEmergencies] = await Promise.all([
+      hasLimit ? EmergencyInfo.countDocuments(filter) : Promise.resolve(null),
+      EmergencyInfo.aggregate(pipeline),
+    ]);
 
     const emergencyIds = allEmergencies
       .map((record) => record?._id)
@@ -1602,6 +1622,10 @@ router.get('/emergency', requireAuth, requireManagerOrAdmin, async (req, res) =>
     }));
 
     console.log(`Found ${recordsWithStickerUuid.length} records`);
+    if (hasLimit && totalCount !== null) {
+      res.setHeader('X-Total-Count', String(totalCount));
+      res.setHeader('Access-Control-Expose-Headers', 'X-Total-Count');
+    }
     res.json(recordsWithStickerUuid);
   } catch (error) {
     console.error('Error fetching emergency records:', error);
