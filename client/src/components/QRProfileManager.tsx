@@ -26,11 +26,12 @@ interface QRProfileManagerProps {
 export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpenAddModal, onProfileChanged }) => {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
+  const apiBase = (import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com').replace(/\/+$/, '');
 
   const fetchSlots = async () => {
     try {
       if (!uuid) return;
-      const res = await fetch(`/api/v1/qr/${encodeURIComponent(uuid)}/profiles`);
+      const res = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/profiles`);
       const data = await res.json();
       if (res.ok && Array.isArray(data.profiles)) {
         const activeProfileId = data.activeProfileId;
@@ -76,7 +77,7 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
 
   const handleSwitchActive = async (profileId: string) => {
     try {
-      const res = await fetch(`/api/v1/qr/${uuid}/switch-active`, {
+      const res = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/switch-active`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profileId }),
@@ -94,7 +95,7 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
   const handleRemoveSecondary = async (profileId: string) => {
     if (!window.confirm('Are you sure you want to remove this secondary user?')) return;
     try {
-      const res = await fetch(`/api/v1/qr/${uuid}/secondary/${profileId}`, {
+      const res = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/remove-profile/${encodeURIComponent(profileId)}`, {
         method: 'DELETE',
       });
       if (res.ok) {

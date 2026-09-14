@@ -109,12 +109,11 @@ export default function ActivateQR() {
           return;
         }
 
-        const phone = identifier
-          || data?.sticker?.activatedBy?.phoneNumber
+        const phone = data?.sticker?.activatedBy?.phoneNumber
           || data?.sticker?.phoneNumber
           || data?.phoneNumber
-          || qrParam;
-        navigate(`/emergencyinfo/${encodeURIComponent(phone)}?qrUuid=${qrParam}`, { replace: true });
+          || uuid;
+        navigate(`/emergencyinfo/${encodeURIComponent(phone)}?qrUuid=${encodeURIComponent(uuid)}`, { replace: true });
         return;
       }
     }

@@ -57,6 +57,7 @@ const qrStickerSchema = new mongoose.Schema({
     default: 'generated',
     index: true,
   },
+  activated: { type: Boolean, default: false, index: true },
   type: {
     type: String,
     enum: ['b2c', 'b2b', 'b2g'],

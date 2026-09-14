@@ -458,6 +458,48 @@ const buildBatchId = async (type = 'b2c') => {
   return batchId;
 };
 
+const ensureStickerForEmergency = async (emergencyInfo, frontendUrl = FRONTEND_APP_URL) => {
+  const existingSticker = await QRSticker.findOne({
+    $or: [
+      { activatedBy: emergencyInfo._id },
+      { primaryProfileId: emergencyInfo._id },
+      { 'profiles.profileId': emergencyInfo._id },
+    ],
+  });
+  if (existingSticker) return existingSticker;
+
+  const uuid = uuidv4();
+  const serialNumber = formatSerialNumber(await getNextSerialSequence());
+  const batchId = await buildBatchId('b2c');
+  const sticker = await QRSticker.create({
+    uuid,
+    serialNumber,
+    status: 'active',
+    activated: true,
+    type: 'b2c',
+    batchId,
+    multiProfileMode: false,
+    profileCount: 1,
+    primaryProfileId: emergencyInfo._id,
+    activeProfileId: emergencyInfo._id,
+    activatedBy: emergencyInfo._id,
+    activatedAt: new Date(),
+  });
+
+  await QRBatch.create({
+    batchId,
+    quantity: 1,
+    type: 'b2c',
+    createdBy: 'website-registration',
+    notes: 'QR assigned during website emergency profile registration',
+  });
+
+  await EmergencyInfo.findByIdAndUpdate(emergencyInfo._id, {
+    $set: { qrCode: `${frontendUrl}/activate/${uuid}` },
+  });
+  return sticker;
+};
+
 // ── End sanitization helpers ─────────────────────────────────────────
 
 // Helper: record manager/admin actions for audit
@@ -1160,11 +1202,15 @@ router.post('/emergency', createLimiter, upload.fields([
         { new: true, runValidators: true }
       );
 
+      const sticker = await ensureStickerForEmergency(updatedDoc, resolveFrontendUrl(req));
+
       console.log('✅ UPDATED EXISTING RECORD:', updatedDoc?._id);
       return res.status(200).json({
         message: 'Emergency info updated successfully',
         id: updatedDoc?._id,
         phoneNumber: updatedDoc?.phoneNumber,
+        qrUuid: sticker.uuid,
+        qrUrl: `${resolveFrontendUrl(req)}/activate/${sticker.uuid}`,
         updated: true,
         timestamp: new Date(),
       });
@@ -1180,12 +1226,15 @@ router.post('/emergency', createLimiter, upload.fields([
     
     // Always create a new record - don't use email as unique identifier
     const savedDoc = await newEmergency.save();
+    const sticker = await ensureStickerForEmergency(savedDoc, resolveFrontendUrl(req));
     
     console.log('✅ SAVED SUCCESSFULLY:', savedDoc._id);
     res.status(201).json({ 
       message: 'Emergency info saved successfully', 
       id: savedDoc._id,
       phoneNumber: savedDoc.phoneNumber,
+      qrUuid: sticker.uuid,
+      qrUrl: `${resolveFrontendUrl(req)}/activate/${sticker.uuid}`,
       timestamp: new Date()
     });
     
@@ -2254,13 +2303,19 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
       });
     }
 
-    if (sticker.status === 'active') {
+    const hasPersistedProfile = Boolean(
+      sticker.activated || sticker.activeProfileId || sticker.primaryProfileId || sticker.activatedBy
+        || (Array.isArray(sticker.profiles) && sticker.profiles.length > 0)
+        || (Array.isArray(sticker.secondaryProfiles) && sticker.secondaryProfiles.length > 0)
+    );
+
+    if (sticker.status === 'active' || hasPersistedProfile) {
       const activeEmergency = await findActiveEmergencyProfile(sticker);
 
       if (!activeEmergency) {
         const activateUrl = `${frontendUrl}/activate/${sticker.uuid}`;
         if (!wantsJson) return res.redirect(302, activateUrl);
-        return res.json({ status: sticker.status, sticker, activateUrl });
+        return res.json({ status: 'unactivated', activated: false, sticker, activateUrl });
       }
 
       const identifier =
@@ -2278,6 +2333,7 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
 
       return res.json({
         status: 'active',
+        activated: true,
         sticker: {
           ...sticker,
           activeEmergency,
@@ -2472,7 +2528,13 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       emergencyInfo = await EmergencyInfo.create(payload);
     }
 
-    if ((sticker.multiProfileMode || addProfileMode) && (sticker.type === 'b2c' || sticker.type === 'b2b')) {
+    const supportsMultiProfile = sticker.type === 'b2c' || sticker.type === 'b2b';
+    const hasLegacyMultipleProfiles = (sticker.secondaryProfiles?.length || 0) > 0;
+    const shouldPersistMultiProfile = supportsMultiProfile && (
+      sticker.multiProfileMode || addProfileMode || hasLegacyMultipleProfiles || (sticker.profiles?.length || 0) > 1
+    );
+
+    if (shouldPersistMultiProfile) {
       if (addProfileMode && !sticker.multiProfileMode) {
         // First time this sticker is being shared: upgrade it and backfill the
         // already-active profile as PRIMARY so it shows up alongside the new one.
@@ -2535,6 +2597,7 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
 
     if (!addProfileMode && (sticker.status !== 'active' || String(sticker.activatedBy || '') !== String(emergencyInfo._id))) {
       sticker.status = 'active';
+      sticker.activated = true;
       sticker.activatedBy = emergencyInfo._id;
       sticker.primaryProfileId = emergencyInfo._id;
       sticker.activeProfileId = emergencyInfo._id;
@@ -2543,7 +2606,7 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       if (sticker.deactivatedReason) sticker.deactivatedReason = '';
     }
 
-    if (sticker.type === 'b2c' || sticker.type === 'b2b') {
+    if (shouldPersistMultiProfile) {
       if (!Array.isArray(sticker.profiles) || sticker.profiles.length === 0) {
         const legacyIds = getLegacyProfileIds(sticker);
         const legacyProfiles = legacyIds.length > 0
@@ -2590,6 +2653,21 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       sticker.profileCount = sticker.profiles.length;
     }
     await sticker.save();
+
+    const persistedSticker = await QRSticker.findOneAndUpdate(
+      { uuid: sticker.uuid },
+      {
+        $set: {
+          status: 'active',
+          activated: true,
+          activatedBy: emergencyInfo._id,
+          primaryProfileId: sticker.primaryProfileId || emergencyInfo._id,
+          activeProfileId: sticker.activeProfileId || emergencyInfo._id,
+          activatedAt: sticker.activatedAt || new Date(),
+        },
+      },
+      { new: true }
+    ).lean();
 
     let packSync = { enabled: false, syncedCount: 0, skippedCount: 0 };
     const batchMeta = await QRBatch.findOne({ batchId: sticker.batchId }).select('batchId quantity').lean();
@@ -2640,7 +2718,7 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       success: true,
       mode: addProfileMode ? 'profile-added' : (isExistingActiveProfile ? 'updated' : 'activated'),
       emergencyInfo,
-      sticker,
+      sticker: persistedSticker || sticker,
       packSync,
       profileUrl: `${frontendUrl}/emergencyinfo/${encodeURIComponent(profileIdentifier)}?qr=${encodeURIComponent(uuid)}`,
     });
@@ -2664,6 +2742,7 @@ router.post('/admin/qr/deactivate/:uuid', requireAuth, requireAdmin, async (req,
       {
         $set: {
           status: 'deactivated',
+          activated: false,
           deactivatedAt: new Date(),
           deactivatedReason: reason || 'Deactivated by admin',
         },
@@ -2697,6 +2776,7 @@ router.post('/admin/qr/reactivate/:uuid', requireAuth, requireAdmin, async (req,
 
     // If profile exists, restore active; otherwise keep it usable as unactivated.
     sticker.status = sticker.activatedBy ? 'active' : 'unactivated';
+    sticker.activated = Boolean(sticker.activatedBy);
     sticker.deactivatedAt = null;
     sticker.deactivatedReason = '';
     await sticker.save();
@@ -2728,6 +2808,7 @@ router.post('/admin/qr/reassign/:uuid', requireAuth, requireAdmin, async (req, r
       {
         $set: {
           status: 'unactivated',
+          activated: false,
           assignedTo,
           activatedBy: null,
           activatedAt: null,
@@ -3934,7 +4015,12 @@ router.get('/qr/:uuid/profiles', readLimiter, async (req, res) => {
       return res.status(403).json({ error: 'Multi-profile QR access is only available for B2C and B2B QR codes' });
     }
 
-    if (sticker.status !== 'active') {
+    const hasLinkedProfile = Boolean(
+      sticker.activated || sticker.activeProfileId || sticker.primaryProfileId || sticker.activatedBy
+        || (Array.isArray(sticker.profiles) && sticker.profiles.length > 0)
+        || (Array.isArray(sticker.secondaryProfiles) && sticker.secondaryProfiles.length > 0)
+    );
+    if (sticker.status !== 'active' && !hasLinkedProfile) {
       return res.status(400).json({ error: 'This QR does not have an active profile' });
     }
 
@@ -4168,7 +4254,8 @@ router.post('/qr/create-multi', requireAuth, requireAdmin, async (req, res) => {
     const sticker = await QRSticker.create({
       uuid,
       serialNumber,
-      status: 'active',
+      status: profileEntries.length > 0 ? 'active' : 'unactivated',
+      activated: profileEntries.length > 0,
       type,
       batchId,
       multiProfileMode: true,
@@ -4325,8 +4412,8 @@ router.post('/qr/:uuid/add-profile', requireChatbotAuth, async (req, res) => {
   }
 });
 
-// Authenticated User: Remove profile from multi-profile QR (owner only, B2B only)
-router.delete('/qr/:uuid/remove-profile/:profileId', requireChatbotAuth, async (req, res) => {
+// Public profile management: remove a secondary profile without OTP.
+router.delete('/qr/:uuid/remove-profile/:profileId', readLimiter, async (req, res) => {
   try {
     const uuid = sanitizeStringParam(req.params.uuid);
     const profileId = sanitizeStringParam(req.params.profileId);
@@ -4341,22 +4428,19 @@ router.delete('/qr/:uuid/remove-profile/:profileId', requireChatbotAuth, async (
       return res.status(404).json({ error: 'QR not found' });
     }
 
-    // Verify user is the owner
     const linkedProfiles = getStoredProfileEntries(sticker);
-    const ownerProfileId = getProfileIdValue(linkedProfiles.find((profile) => profile.profileType === 'PRIMARY'));
-    const ownerAuthorized = sticker.createdByUser
-      ? sticker.createdByUser.toString() === req.user.sub
-      : String(ownerProfileId) === String(req.user.sub);
-    if (!ownerAuthorized) {
-      return res.status(403).json({ error: 'Only QR owner can remove profiles' });
+    const primaryProfileId = getProfileIdValue(
+      linkedProfiles.find((profile) => profile.profileType === 'PRIMARY')
+    ) || getProfileIdValue(sticker.primaryProfileId || sticker.activatedBy);
+    if (String(primaryProfileId) === profileId) {
+      return res.status(403).json({ error: 'The primary profile cannot be removed' });
     }
 
-    // Verify this is a valid multi-profile QR for customer or business use
     if (sticker.type !== 'b2c' && sticker.type !== 'b2b') {
       return res.status(403).json({ error: 'This operation is only available for B2C and B2B multi-profile QRs' });
     }
 
-    // Remove the profile
+    await ensureAuthoritativeProfileEntries(sticker);
     sticker.profiles = (sticker.profiles || []).filter(
       (p) => String(getProfileIdValue(p)) !== profileId
     );
@@ -4365,6 +4449,9 @@ router.delete('/qr/:uuid/remove-profile/:profileId', requireChatbotAuth, async (
       (p) => String(p.profileId) !== profileId
     );
 
+    if (String(sticker.activeProfileId) === profileId) {
+      sticker.activeProfileId = primaryProfileId || null;
+    }
     sticker.profileCount = sticker.profiles.length;
     await sticker.save();
 
@@ -4456,6 +4543,12 @@ router.get('/qr/resolve/:uuid', readLimiter, async (req, res) => {
       uuid: sticker.uuid,
       serialNumber: sticker.serialNumber,
       status: sticker.status,
+      activated: Boolean(sticker.activated || activeProfile),
+      multiProfileMode: Boolean(sticker.multiProfileMode || normalizedEntries.length > 1),
+      profileCount: normalizedEntries.length,
+      profiles: normalizedEntries,
+      activeProfileId: activeProfile?._id || null,
+      primaryProfile: ownerProfile,
       activeProfile,
       slots,
       canAddSecondary: normalizedEntries.length < MAX_MULTI_PROFILE_COUNT,
@@ -4625,6 +4718,8 @@ router.patch('/qr/:uuid/switch-active', readLimiter, async (req, res) => {
     }
 
     sticker.activeProfileId = profileId;
+    sticker.status = 'active';
+    sticker.activated = true;
     sticker.multiProfileMode = sticker.multiProfileMode || getStoredProfileEntries(sticker).length > 1;
     sticker.profileCount = Math.max(sticker.profileCount || 0, getStoredProfileEntries(sticker).length);
     await sticker.save();

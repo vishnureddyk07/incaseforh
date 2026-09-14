@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Shield, CheckCircle, Upload, Loader, Plus, Trash2 } from "lucide-react";
+import * as QRCodeLib from 'qrcode';
 import type { EmergencyInfo, EmergencyContact } from "../../types/emergency";
 import EmergencyForm from "./EmergencyForm";
 
@@ -22,6 +23,9 @@ export default function EmergencyQRCode() {
     phoneNumber: "",
   });
   const [showSuccess, setShowSuccess] = useState(false);
+  const [assignedQrUrl, setAssignedQrUrl] = useState('');
+  const [assignedQrImage, setAssignedQrImage] = useState('');
+  const [assignedQrUuid, setAssignedQrUuid] = useState('');
   const [isSubmittingQRData, setIsSubmittingQRData] = useState(false);
   const [isExtractingMedicalInfo, setIsExtractingMedicalInfo] = useState(false);
   const [medicalReportDate, setMedicalReportDate] = useState("");
@@ -277,6 +281,12 @@ export default function EmergencyQRCode() {
       const responseData = await res.json();
       console.log('✅ Backend response:', responseData);
 
+      if (responseData.qrUrl) {
+        setAssignedQrUrl(responseData.qrUrl);
+        setAssignedQrUuid(responseData.qrUuid || '');
+        setAssignedQrImage(await QRCodeLib.toDataURL(responseData.qrUrl, { width: 280, margin: 1 }));
+      }
+
       setShowSuccess(true);
       
       // Clear the form after successful submission
@@ -408,6 +418,12 @@ export default function EmergencyQRCode() {
             <p className="text-gray-600 text-sm">
               Your QR code sticker will be handed over to you shortly.
             </p>
+            {assignedQrImage && assignedQrUrl ? (
+              <div className="mt-4">
+                <img src={assignedQrImage} alt="Your permanent emergency QR" className="mx-auto h-56 w-56" />
+                <p className="mt-2 break-all text-xs text-gray-500">QR UUID: {assignedQrUuid}</p>
+              </div>
+            ) : null}
             <button
               onClick={() => setShowSuccess(false)}
               className="mt-6 bg-orange-500 text-white px-6 py-2 rounded-full hover:bg-orange-600 transition-colors"
