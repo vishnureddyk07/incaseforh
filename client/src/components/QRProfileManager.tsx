@@ -125,7 +125,10 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
                   <div className="mt-1">
                     <p className="font-semibold text-gray-900">{slot.profile.fullName}</p>
                     <p className="text-xs text-gray-500">
-                      {slot.profile.phoneNumber} {slot.profile.bloodType && `• ${slot.profile.bloodType}`}
+                     {slot.profile.phoneNumber}
+{slot.profile.bloodType && (
+  <> {slot.profile.bloodType}</>
+)}
                     </p>
                   </div>
                 ) : (
