@@ -157,15 +157,19 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
                 </>
               ) : (
                 <button
-                  onClick={() => onOpenModal(slot.slotNumber)}
+                  onClick={() => onOpenAddModal()}
                   className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3 py-1.5 rounded-lg shadow-sm cursor-pointer"
                 >
                   + Add User
                 </button>
+              )}
              </div>
           </div>
+             </div>
         ))}
       </div>
     </div>
   );
 };
+
+export default QRProfileManager;
