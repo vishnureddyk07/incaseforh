@@ -93,33 +93,38 @@ export default function ActivateQR() {
     const load = async () => {
       setLoading(true);
       setError(null);
-      try {
-        const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
-        const data = await readJsonResponse<ActivationCheckResponse>(res);
-        if (!res.ok) {
-          throw new Error((data as { error?: string; reason?: string }).error || (data as { error?: string; reason?: string }).reason || 'Failed to load sticker');
-        }
-        
-        // Check if this is a multi-profile QR for customer or business profiles
-        if (
-          !searchParams.has('edit') &&
-          data.status === 'active' &&
-          (data.sticker?.activatedBy || (data.sticker?.multiProfileMode && data.sticker?.profileCount)) &&
-          (data.sticker?.type === 'b2c' || data.sticker?.type === 'b2b')
-        ) {
-          if (active) {
-            navigate(`/qr/profiles/${encodeURIComponent(uuid)}`, { replace: true });
-          }
+     try {
+    const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
+    const data = await res.json() as ActivationCheckResponse;
+
+    if (!res.ok) {
+      throw new Error((data as { error?: string; reason?: string }).error || (data as { error?: string; reason?: string }).reason || 'Failed to load sticker');
+    }
+
+    if (!searchParams.has('edit') && (data.status === 'active' || data.sticker?.status === 'active')) {
+      if (active) {
+        const redirectTarget = data.redirectTo || data.emergencyProfileUrl;
+        if (redirectTarget) {
+          window.location.replace(redirectTarget);
           return;
         }
-        
+
+        const phone = data?.sticker?.activatedBy?.phoneNumber
+          || data?.sticker?.phoneNumber
+          || data?.phoneNumber
+          || uuid;
+        navigate(`/emergencyinfo/${encodeURIComponent(phone)}?qrUuid=${encodeURIComponent(uuid)}`, { replace: true });
+        return;
+      }
+    }
         if (active) setCheck(data);
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Failed to load sticker');
       } finally {
         if (active) setLoading(false);
       }
-    };
+    }
+    
     void load();
     return () => {
       active = false;
@@ -149,26 +154,41 @@ export default function ActivateQR() {
     }
   }, [check]);
 
-  useEffect(() => {
+ useEffect(() => {
+    // Only redirect if the sticker is active and not explicitly in edit mode
     if (check?.status !== 'active' || searchParams.has('edit')) return;
-    const activeIdentifier = (
-      check.sticker?.activatedBy?.email?.trim()
-      || check.sticker?.activatedBy?.phoneNumber?.trim()
-    );
-    const localEmergencyProfileUrl = activeIdentifier
-      ? `${window.location.origin}/emergencyinfo/${encodeURIComponent(activeIdentifier)}`
-      : null;
-    const safeRedirectTo = check.redirectTo && !/\/activate\//i.test(check.redirectTo)
-      ? check.redirectTo
-      : null;
-    const destination = check.emergencyProfileUrl || localEmergencyProfileUrl || safeRedirectTo;
-    if (!destination) return;
-    // Remember which sticker this profile came from so the emergency info page
-    // can offer "Add Profile" / "Switch Account" even for a not-yet-multi sticker.
-    sessionStorage.setItem('activeQrUuid', uuid);
-    window.location.replace(destination);
-  }, [check, searchParams]);
 
+    const sticker = check.sticker;
+    const qrId = encodeURIComponent(sticker?.uuid || uuid);
+
+    // 1. Check if backend gave a direct emergency profile URL
+    if (check.emergencyProfileUrl) {
+      const url = check.emergencyProfileUrl.includes('?') 
+        ? `${check.emergencyProfileUrl}&qrUuid=${qrId}` 
+        : `${check.emergencyProfileUrl}?qrUuid=${qrId}`;
+      sessionStorage.setItem('activeQrUuid', sticker?.uuid || uuid);
+      window.location.replace(url);
+      return;
+    }
+
+    // 2. Find active phone/identifier across all possible schema formats
+    const activePhone = 
+      (typeof sticker?.activatedBy === 'object' ? sticker?.activatedBy?.phoneNumber : null) ||
+      sticker?.phoneNumber ||
+      (typeof sticker?.activatedBy === 'string' && !sticker.activatedBy.includes('@') && sticker.activatedBy.length <= 15 ? sticker.activatedBy : null) ||
+      sticker?.activeEmergency?.phoneNumber ||
+      sticker?.emergencyContactPhone;
+
+    if (activePhone) {
+      sessionStorage.setItem('activeQrUuid', sticker?.uuid || uuid);
+      window.location.replace(`/emergencyinfo/${encodeURIComponent(activePhone)}?qrUuid=${qrId}`);
+      return;
+    }
+
+    // 3. Fallback: Query Emergency Info directly by QR UUID
+    sessionStorage.setItem('activeQrUuid', sticker?.uuid || uuid);
+    window.location.replace(`/emergencyinfo/${qrId}?qrUuid=${qrId}`);
+  }, [check, searchParams, uuid]);
   const updateContact = (idx: number, key: keyof EmergencyContact, value: string) => {
     setContacts((prev) => prev.map((c, i) => (i === idx ? { ...c, [key]: value } : c)));
   };

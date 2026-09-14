@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import type { EmergencyContact, EmergencyInfo } from '../types/emergency';
+import EmergencyForm from './emergency/EmergencyForm';
 
 interface AddSecondaryUserModalProps {
   uuid: string;
@@ -7,230 +9,157 @@ interface AddSecondaryUserModalProps {
   onSuccess: () => void;
 }
 
-export const AddSecondaryUserModal: React.FC<AddSecondaryUserModalProps> = ({
-  uuid,
-  isOpen,
-  onClose,
-  onSuccess,
-}) => {
-  const [step, setStep] = useState<'form' | 'otp'>('form');
-  const [formData, setFormData] = useState({
-    fullName: '',
-    phoneNumber: '',
-    bloodType: 'O+',
-    dateOfBirth: '',
-    allergies: '',
-    medications: '',
-    emergencyContactName: '',
-    emergencyContactPhone: '',
-  });
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
 
-  const [registrationId, setRegistrationId] = useState('');
-  const [maskedPhone, setMaskedPhone] = useState('');
-  const [otp, setOtp] = useState('');
-  const [error, setError] = useState('');
+const createEmptyProfile = (): EmergencyInfo => ({
+  fullName: '',
+  email: '',
+  bloodType: '',
+  emergencyContacts: [{ name: '', phone: '' }],
+  allergies: '',
+  medications: '',
+  medicalConditions: '',
+  photo: null,
+  bloodTypeReport: null,
+  prescriptionOrDischargeReport: null,
+  surgicalInfoReport: null,
+  dateOfBirth: '',
+  address: '',
+  phoneNumber: '',
+});
+
+export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess }: AddSecondaryUserModalProps) {
+  const [emergencyInfo, setEmergencyInfo] = useState<EmergencyInfo>(createEmptyProfile);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   if (!isOpen) return null;
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      const payload = {
-        fullName: formData.fullName,
-        phoneNumber: formData.phoneNumber,
-        bloodType: formData.bloodType,
-        dateOfBirth: formData.dateOfBirth,
-        allergies: formData.allergies,
-        medications: formData.medications,
-        emergencyContacts: [
-          { name: formData.emergencyContactName, phone: formData.emergencyContactPhone },
-        ],
-      };
-
-      const res = await fetch(`/api/v1/qr/${uuid}/secondary/request-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to request authorization');
-
-      setRegistrationId(data.registrationId);
-      setMaskedPhone(data.maskedPhone);
-      setStep('otp');
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = event.target;
+    setEmergencyInfo((previous) => ({ ...previous, [name]: value }));
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handlePhotoChange = (file: File) => {
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      setError('Profile photo is too large. Maximum size is 10 MB.');
+      return;
+    }
+    setEmergencyInfo((previous) => ({ ...previous, photo: file }));
     setError('');
+  };
+
+  const handleFileChange = (field: 'bloodTypeReport' | 'prescriptionOrDischargeReport' | 'surgicalInfoReport', file: File | null) => {
+    if (file && file.size > MAX_UPLOAD_SIZE_BYTES) {
+      setError('Uploaded files must be 10 MB or smaller.');
+      return;
+    }
+    setEmergencyInfo((previous) => ({ ...previous, [field]: file }));
+    setError('');
+  };
+
+  const handleAddContact = () => {
+    setEmergencyInfo((previous) => ({
+      ...previous,
+      emergencyContacts: previous.emergencyContacts.length < 5
+        ? [...previous.emergencyContacts, { name: '', phone: '' }]
+        : previous.emergencyContacts,
+    }));
+  };
+
+  const handleRemoveContact = (index: number) => {
+    setEmergencyInfo((previous) => ({
+      ...previous,
+      emergencyContacts: previous.emergencyContacts.length > 1
+        ? previous.emergencyContacts.filter((_, contactIndex) => contactIndex !== index)
+        : previous.emergencyContacts,
+    }));
+  };
+
+  const handleContactChange = (index: number, field: 'name' | 'phone', value: string) => {
+    setEmergencyInfo((previous) => ({
+      ...previous,
+      emergencyContacts: previous.emergencyContacts.map((contact, contactIndex) => (
+        contactIndex === index ? { ...contact, [field]: value } : contact
+      )),
+    }));
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+
+    if (!emergencyInfo.fullName.trim() || !emergencyInfo.phoneNumber.trim() || !emergencyInfo.bloodType) {
+      setError('Full name, phone number, and blood group are required.');
+      return;
+    }
+
+    const validContacts = emergencyInfo.emergencyContacts.filter((contact) => contact.name.trim() && contact.phone.trim());
+    if (validContacts.length === 0) {
+      setError('At least one complete emergency contact is required.');
+      return;
+    }
+
     setLoading(true);
-
     try {
-      const res = await fetch(`/api/v1/qr/${uuid}/secondary/verify-otp`, {
+      const formData = new FormData();
+      formData.append('fullName', emergencyInfo.fullName.trim());
+      formData.append('phoneNumber', emergencyInfo.phoneNumber.trim());
+      formData.append('dateOfBirth', emergencyInfo.dateOfBirth || '');
+      formData.append('bloodType', emergencyInfo.bloodType);
+      formData.append('email', emergencyInfo.email || '');
+      formData.append('address', emergencyInfo.address || '');
+      formData.append('allergies', emergencyInfo.allergies || '');
+      formData.append('medications', emergencyInfo.medications || '');
+      formData.append('medicalConditions', emergencyInfo.medicalConditions || '');
+      formData.append('emergencyContacts', JSON.stringify(validContacts));
+      if (emergencyInfo.photo instanceof File) formData.append('photo', emergencyInfo.photo);
+      if (emergencyInfo.bloodTypeReport instanceof File) formData.append('bloodTypeReport', emergencyInfo.bloodTypeReport);
+      if (emergencyInfo.prescriptionOrDischargeReport instanceof File) formData.append('prescriptionOrDischargeReport', emergencyInfo.prescriptionOrDischargeReport);
+      if (emergencyInfo.surgicalInfoReport instanceof File) formData.append('surgicalInfoReport', emergencyInfo.surgicalInfoReport);
+
+      const apiBase = (import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com').replace(/\/+$/, '');
+      const response = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/profiles`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ registrationId, otp }),
+        body: formData,
       });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to add profile');
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Verification failed');
-
-      alert('Profile successfully authorized and set as active!');
+      setEmergencyInfo(createEmptyProfile());
       onSuccess();
       onClose();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Failed to add profile');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
-        {step === 'form' ? (
-          <form onSubmit={handleFormSubmit}>
-            <h3 className="text-lg font-bold text-gray-900 mb-1">Add Temporary Rider Profile</h3>
-            <p className="text-xs text-gray-500 mb-4">
-              Enter emergency details. Authorization from the Main Owner is required.
-            </p>
-
-            {error && <div className="p-3 mb-4 bg-rose-50 text-rose-600 text-xs rounded-lg">{error}</div>}
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-gray-700">Full Name *</label>
-                <input
-                  required
-                  type="text"
-                  className="w-full text-sm border rounded-lg p-2 mt-1"
-                  value={formData.fullName}
-                  onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-semibold text-gray-700">Phone Number *</label>
-                  <input
-                    required
-                    type="tel"
-                    className="w-full text-sm border rounded-lg p-2 mt-1"
-                    value={formData.phoneNumber}
-                    onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-700">Blood Group</label>
-                  <select
-                    className="w-full text-sm border rounded-lg p-2 mt-1"
-                    value={formData.bloodType}
-                    onChange={(e) => setFormData({ ...formData, bloodType: e.target.value })}
-                  >
-                    {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((b) => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-700">Emergency Contact Name *</label>
-                <input
-                  required
-                  type="text"
-                  className="w-full text-sm border rounded-lg p-2 mt-1"
-                  value={formData.emergencyContactName}
-                  onChange={(e) => setFormData({ ...formData, emergencyContactName: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-700">Emergency Contact Phone *</label>
-                <input
-                  required
-                  type="tel"
-                  className="w-full text-sm border rounded-lg p-2 mt-1"
-                  value={formData.emergencyContactPhone}
-                  onChange={(e) => setFormData({ ...formData, emergencyContactPhone: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2 mt-6">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={loading}
-                type="submit"
-                className="px-4 py-2 text-sm bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 cursor-pointer"
-              >
-                {loading ? 'Requesting...' : 'Continue to OTP'}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <form onSubmit={handleVerifyOtp}>
-            <h3 className="text-lg font-bold text-gray-900 mb-1">Owner OTP Authorization</h3>
-            <p className="text-xs text-gray-500 mb-4">
-              A verification OTP has been sent to the Main Owner ({maskedPhone}). Enter the OTP to authorize this profile.
-            </p>
-
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 mb-4">
-              <strong>Testing Prototype Mode:</strong> Enter <strong>0708</strong> as the verification code.
-            </div>
-
-            {error && <div className="p-3 mb-4 bg-rose-50 text-rose-600 text-xs rounded-lg">{error}</div>}
-
-            <div>
-              <label className="text-xs font-semibold text-gray-700">Enter 4-digit OTP</label>
-              <input
-                required
-                maxLength={4}
-                type="text"
-                placeholder="0708"
-                className="w-full text-center text-2xl tracking-widest font-mono border rounded-lg p-2 mt-1"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-              />
-            </div>
-
-            <div className="flex justify-end space-x-2 mt-6">
-              <button
-                type="button"
-                onClick={() => setStep('form')}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer"
-              >
-                Back
-              </button>
-              <button
-                disabled={loading}
-                type="submit"
-                className="px-4 py-2 text-sm bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 cursor-pointer"
-              >
-                {loading ? 'Verifying...' : 'Authorize & Activate'}
-              </button>
-            </div>
-          </form>
-        )}
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4">
+      <div className="mx-auto my-6 max-w-4xl rounded-2xl bg-slate-50 p-6 shadow-2xl">
+        <h3 className="mb-1 text-lg font-bold text-gray-900">Add Complete Profile</h3>
+        <p className="mb-4 text-xs text-gray-500">This profile uses the same emergency information form and remains linked to the same QR code.</p>
+        <form onSubmit={submit}>
+          <EmergencyForm
+            emergencyInfo={emergencyInfo}
+            onChange={handleChange}
+            onPhotoChange={handlePhotoChange}
+            onBloodTypeReportChange={(file) => handleFileChange('bloodTypeReport', file)}
+            onPrescriptionOrDischargeReportChange={(file) => handleFileChange('prescriptionOrDischargeReport', file)}
+            onSurgicalInfoReportChange={(file) => handleFileChange('surgicalInfoReport', file)}
+            onAddEmergencyContact={handleAddContact}
+            onRemoveEmergencyContact={handleRemoveContact}
+            onEmergencyContactChange={handleContactChange}
+          />
+          {error ? <div className="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" onClick={onClose} disabled={loading} className="rounded border px-4 py-2 text-sm">Cancel</button>
+            <button type="submit" disabled={loading} className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white">{loading ? 'Saving...' : 'Save / Add Profile'}</button>
+          </div>
+        </form>
       </div>
     </div>
   );
-};
-
-export default AddSecondaryUserModal;
+}
