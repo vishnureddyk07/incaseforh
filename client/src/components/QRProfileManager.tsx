@@ -50,7 +50,6 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
     }
   };
     }
-  };
 
   useEffect(() => {
     fetchSlots();

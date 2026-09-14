@@ -93,38 +93,21 @@ export default function ActivateQR() {
     const load = async () => {
       setLoading(true);
       setError(null);
-      try {
-        const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
-        const data = await readJsonResponse<ActivationCheckResponse>(res);
-        if (!res.ok) {
-          throw new Error((data as { error?: string; reason?: string }).error || (data as { error?: string; reason?: string }).reason || 'Failed to load sticker');
-        }
-        
-       // If sticker is already activated and not in edit mode, jump straight to emergency info
-if (!searchParams.has('edit') && (data.status === 'active' || data.sticker?.status === 'active')) {
-  if (active) {
-    const activeSticker = data.sticker || (data as any);
-    const identifier = 
-      (typeof activeSticker.activatedBy === 'object' ? (activeSticker.activatedBy?.phoneNumber || activeSticker.activatedBy?.email) : null) ||
-      (typeof activeSticker.activatedBy === 'string' ? activeSticker.activatedBy : null) ||
-      activeSticker.phoneNumber ||
-      activeSticker.serialNumber;
+     try {
+    const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
+    const data = await res.json() as ActivationCheckResponse;
 
-    const qrParam = encodeURIComponent(activeSticker.uuid || uuid);
-
-    if (data.emergencyProfileUrl) {
-      const target = data.emergencyProfileUrl.includes('?') 
-        ? `${data.emergencyProfileUrl}&qrUuid=${qrParam}` 
-        : `${data.emergencyProfileUrl}?qrUuid=${qrParam}`;
-      window.location.replace(target);
-      return;
+    if (!res.ok) {
+      throw new Error((data as { error?: string; reason?: string }).error || (data as { error?: string; reason?: string }).reason || 'Failed to load sticker');
     }
 
-    const phone = identifier 
-  || data?.sticker?.activatedBy?.phoneNumber 
-  || data?.sticker?.phoneNumber 
-  || data?.phoneNumber 
-  || qrParam;
+    if (!searchParams.has('edit') && (data.status === 'active' || data.sticker?.status === 'active')) {
+      if (active) {
+        const phone = identifier 
+          || data?.sticker?.activatedBy?.phoneNumber 
+          || data?.sticker?.phoneNumber 
+          || data?.phoneNumber 
+          || qrParam;
 
 navigate(`/emergencyinfo/${encodeURIComponent(phone)}?qrUuid=${qrParam}`, { replace: true });
 return;
@@ -136,7 +119,8 @@ return;
       } finally {
         if (active) setLoading(false);
       }
-    };
+    }
+    
     void load();
     return () => {
       active = false;
