@@ -31,6 +31,8 @@ import ChatBotPage from './pages/ChatBotPage';
 import ChatBotEditProfile from './pages/ChatBotEditProfile';
 import ProfileSelector from './components/ProfileSelector';
 
+
+
 function RouteNormalizer() {
   const { pathname } = useLocation();
   const parts = pathname.split('/').filter(Boolean);
