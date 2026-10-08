@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, ChevronRight, Loader2, Plus } from 'lucide-react';
+import AddSecondaryUserModal from './AddSecondaryUserModal';
 
 interface Profile {
   _id: string;
@@ -59,6 +60,7 @@ export default function ProfileSelector() {
   const [addProfilePhone, setAddProfilePhone] = useState('');
   const [addProfileLoading, setAddProfileLoading] = useState(false);
   const [addProfileError, setAddProfileError] = useState<string | null>(null);
+  const [showFullAddProfile, setShowFullAddProfile] = useState(false);
 
   // Fetch profile list from QR
   useEffect(() => {
@@ -93,12 +95,25 @@ export default function ProfileSelector() {
 
   // Handle profile selection and OTP flow
   const handleSelectProfile = (profileId: string) => {
+    const profile = qrData?.profiles.find((entry) => entry.profileId === profileId);
+    if (!profile) return;
     setSelectedProfile(profileId);
-    setShowOTPModal(true);
-    setOtpSent(false);
-    setPhoneNumber('');
-    setOtp('');
-    setOtpError(null);
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/switch-active`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profileId }),
+        });
+        const data = await readJsonResponse<{ error?: string; activeProfile?: { email?: string; phoneNumber?: string } }>(response);
+        if (!response.ok) throw new Error(data.error || 'Failed to switch profile');
+        sessionStorage.setItem('activeQrUuid', uuid);
+        const identifier = data.activeProfile?.email || data.activeProfile?.phoneNumber || profile.profileEmail || profile.profileId;
+        navigate(`/emergencyinfo/${encodeURIComponent(identifier)}?qrUuid=${encodeURIComponent(uuid)}`, { replace: true });
+      } catch (selectionError) {
+        setError(selectionError instanceof Error ? selectionError.message : 'Failed to switch profile');
+      }
+    })();
   };
 
   // Request OTP
@@ -361,10 +376,7 @@ export default function ProfileSelector() {
           {/* Add Profile Button */}
           {qrData.profileCount < 3 && !showAddProfileForm && (
             <button
-              onClick={() => {
-                setShowAddProfileForm(true);
-                setAddProfileError(null);
-              }}
+              onClick={() => setShowFullAddProfile(true)}
               className="w-full text-left p-4 border-t border-dashed border-blue-300 hover:bg-blue-50 transition-colors flex items-center gap-3 text-blue-600 font-semibold"
             >
               <Plus className="h-5 w-5" />
@@ -457,6 +469,16 @@ export default function ProfileSelector() {
             </div>
           )}
         </div>
+
+        <AddSecondaryUserModal
+          uuid={uuid}
+          isOpen={showFullAddProfile}
+          onClose={() => setShowFullAddProfile(false)}
+          onSuccess={() => {
+            setShowFullAddProfile(false);
+            void fetchProfiles();
+          }}
+        />
 
         {/* OTP Modal */}
         {showOTPModal && (
