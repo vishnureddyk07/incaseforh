@@ -77,6 +77,14 @@ export default function EmergencyInfoDisplay() {
   // Fall back to sessionStorage for the client-side ProfileSelector navigation path.
   const qrUuidFromQuery = searchParams.get('qr') || searchParams.get('qrUuid');
   const activeQrUuid = qrUuidFromQuery || sessionStorage.getItem('activeQrUuid');
+  const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+  const API_BASES = Array.from(
+    new Set([
+      API_BASE,
+      'https://incaseforh.onrender.com',
+      'https://incaseforh-staging.onrender.com',
+    ])
+  ).map((base) => String(base).replace(/\/+$/, ''));
 
   useEffect(() => {
     if (qrUuidFromQuery) {
@@ -89,9 +97,6 @@ export default function EmergencyInfoDisplay() {
       const data = await res.json();
       if (res.ok && data.slots) {
         setAvailableSlots(data.slots);
-        if (data.activeProfile) {
-          setInfo(data.activeProfile);
-        }
       }
     } catch (err) {
       console.error("Failed to load multi-profile data", err);
@@ -99,23 +104,14 @@ export default function EmergencyInfoDisplay() {
   };
 
   useEffect(() => {
-    const currentUuid = activeQrUuid || identifierParam;
-    if (currentUuid) {
-      fetchMultiProfileData(currentUuid);
+    if (activeQrUuid) {
+      fetchMultiProfileData(activeQrUuid);
     }
   }, [activeQrUuid, identifierParam]);
 
   const fallbackPhotoDataUrl =
     'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
-  const API_BASES = Array.from(
-    new Set([
-      API_BASE,
-      'https://incaseforh.onrender.com',
-      'https://incaseforh-staging.onrender.com',
-    ])
-  ).map((base) => String(base).replace(/\/+$/, ''));
   const reverseGeocode = async (lat: number, lng: number) => {
     try {
       console.log('🔄 Reverse geocoding location...');

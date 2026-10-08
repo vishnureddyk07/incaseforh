@@ -26,46 +26,22 @@ interface QRProfileManagerProps {
 export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpenAddModal, onProfileChanged }) => {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const apiBase = (import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com').replace(/\/+$/, '');
 
   const fetchSlots = async () => {
     try {
       if (!uuid) return;
-      const res = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/profiles`);
+      setError(null);
+      const res = await fetch(`${apiBase}/api/v1/qr/resolve/${encodeURIComponent(uuid)}`);
       const data = await res.json();
-      if (res.ok && Array.isArray(data.profiles)) {
-        const activeProfileId = data.activeProfileId;
-        setSlots([
-          ...data.profiles.map((profile: Profile, index: number) => ({
-            slotNumber: index + 1,
-            type: profile.profileType || (index === 0 ? 'PRIMARY' : 'SECONDARY'),
-            isOwner: index === 0 || profile.profileType === 'PRIMARY',
-            occupied: true,
-            profile,
-            isActive: profile.profileId === activeProfileId,
-          })),
-          ...Array.from({ length: Math.max(0, 3 - data.profiles.length) }, (_, index) => ({
-            slotNumber: data.profiles.length + index + 1,
-            type: 'SECONDARY' as const,
-            isOwner: false,
-            occupied: false,
-            profile: null,
-            isActive: false,
-          })),
-        ]);
-      } else {
-        // Fallback: Ensure Slot 2 with "+ Add User" always appears
-        setSlots([
-          { slotNumber: 1, type: 'PRIMARY', isOwner: true, occupied: true, profile: data?.profile || null, isActive: true },
-          { slotNumber: 2, type: 'SECONDARY', isOwner: false, occupied: false, profile: null, isActive: false }
-        ]);
-      }
+      if (!res.ok) throw new Error(data.error || 'Failed to load QR profiles');
+      if (!Array.isArray(data.slots)) throw new Error('QR profile slots are unavailable');
+      setSlots(data.slots);
     } catch (err) {
       console.error('Failed to load profile slots', err);
-      setSlots([
-        { slotNumber: 1, type: 'PRIMARY', isOwner: true, occupied: true, profile: null, isActive: true },
-        { slotNumber: 2, type: 'SECONDARY', isOwner: false, occupied: false, profile: null, isActive: false }
-      ]);
+      setSlots([]);
+      setError(err instanceof Error ? err.message : 'Failed to load QR profiles');
     } finally {
       setLoading(false);
     }
@@ -86,6 +62,9 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
         await res.json();
         onProfileChanged?.();
         await fetchSlots();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Failed to switch active profile');
       }
     } catch (err) {
       console.error('Error switching active profile', err);
@@ -95,11 +74,14 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
   const handleRemoveSecondary = async (profileId: string) => {
     if (!window.confirm('Are you sure you want to remove this secondary user?')) return;
     try {
-      const res = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/remove-profile/${encodeURIComponent(profileId)}`, {
+      const res = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/secondary/${encodeURIComponent(profileId)}`, {
         method: 'DELETE',
       });
       if (res.ok) {
         await fetchSlots();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Failed to remove profile');
       }
     } catch (err) {
       console.error('Error removing profile', err);
@@ -107,6 +89,7 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
   };
 
   if (loading) return <div className="text-center py-4 text-gray-500">Loading QR profiles...</div>;
+  if (error) return <div className="rounded-lg bg-red-50 p-4 text-sm text-red-700">{error}</div>;
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 max-w-xl mx-auto my-6">
