@@ -107,7 +107,7 @@ function AppContent() {
   const urlParams = new URLSearchParams(window.location.search);
   const qrData = urlParams.get('qr');
 
-  if (qrData) {
+  if (qrData && (qrData.startsWith('{') || qrData.startsWith('%7B'))) {
     try {
       const emergencyData = JSON.parse(decodeURIComponent(qrData));
       // Render the new assist experience for QR scans (privacy-first)

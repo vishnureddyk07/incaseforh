@@ -78,24 +78,6 @@ interface Props {
   backendApiBaseUrl: string;
 }
 
-const readJsonResponse = async <T,>(res: Response): Promise<T> => {
-  const raw = await res.text();
-  if (!raw || !raw.trim()) {
-    return {} as T;
-  }
-
-  const trimmed = raw.trim();
-  if (trimmed.startsWith('<')) {
-    throw new Error(`The server returned HTML instead of JSON. Check the backend URL or deployment. Status: ${res.status}.`);
-  }
-
-  try {
-    return JSON.parse(trimmed) as T;
-  } catch (_error) {
-    throw new Error(`The server returned an invalid JSON response. Status: ${res.status}.`);
-  }
-};
-
 export default function QRStickerManagement({ token, backendApiBaseUrl }: Props) {
   const navigate = useNavigate();
   const fallbackPublicAppUrl = 'https://incaseforh.vercel.app';
@@ -138,7 +120,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     setLoadingStats(true);
     try {
       const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/stats`, { headers: authHeaders });
-      const data = await readJsonResponse<{ error?: string } & QrStats>(res);
+      const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch stats');
       setStats(data);
     } catch (err) {
@@ -153,8 +135,8 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     setLoadingBatches(true);
     try {
       const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/batches`, { headers: authHeaders });
-      const data = await readJsonResponse<{ error?: string } | BatchRow[]>(res);
-      if (!res.ok) throw new Error((Array.isArray(data) ? 'Failed to fetch batches' : data.error) || 'Failed to fetch batches');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to fetch batches');
       setBatches(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch batches');
@@ -168,7 +150,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
     setLoadingBatchDetail(true);
     try {
       const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/batch/${encodeURIComponent(batchId)}`, { headers: authHeaders });
-      const data = await readJsonResponse<BatchDetailResponse | { error?: string }>(res);
+      const data = (await res.json()) as BatchDetailResponse | { error?: string };
       if (!res.ok) throw new Error((data as { error?: string }).error || 'Failed to fetch batch details');
       const detail = data as BatchDetailResponse;
       setSelectedBatchDetail(detail);
@@ -194,7 +176,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
       const res = await fetch(`${backendApiBaseUrl}/api/v1/admin/qr/stickers?${params.toString()}`, {
         headers: authHeaders,
       });
-      const data = await readJsonResponse<{ error?: string; items?: StickerRow[]; totalPages?: number; total?: number }>(res);
+      const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch stickers');
       setStickers(Array.isArray(data.items) ? data.items : []);
       setTotalPages(data.totalPages || 1);
@@ -268,9 +250,8 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
           headers: { ...authHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({ profileIds: [], type }),
         });
-        const data = await readJsonResponse<{ error?: string; sticker?: { batchId?: string; uuid?: string } }>(res);
-        if (!res.ok) throw new Error(data.error || 'Failed to create multi-profile batch');
-
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create multi-profile QR');
         setGenerateResult({
           batchId: data.sticker?.batchId || data.sticker?.uuid || 'multi-profile',
           quantity: 1,
@@ -281,11 +262,10 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
           headers: { ...authHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({ quantity, type, organizationName, notes }),
         });
-        const data = await readJsonResponse<{ error?: string; batchId?: string; quantity?: number }>(res);
+        const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to generate');
         setGenerateResult({ batchId: data.batchId, quantity: data.quantity });
       }
-
       await fetchStats();
       await fetchBatches();
     } catch (err) {
@@ -700,7 +680,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
               Create as multi-profile QR
             </label>
             <p className="mt-2 text-xs text-gray-600">
-              Works for B2C and B2B only. This creates one shared QR; you can add profiles afterward without entering raw IDs here.
+              Works for B2C and B2B only. This creates one shared QR; you can add profiles afterward.
             </p>
           </div>
 

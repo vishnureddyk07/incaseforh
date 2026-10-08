@@ -23,6 +23,9 @@ export default function EmergencyQRCode() {
     phoneNumber: "",
   });
   const [showSuccess, setShowSuccess] = useState(false);
+  const [assignedQrUrl, setAssignedQrUrl] = useState('');
+  const [assignedQrImage, setAssignedQrImage] = useState('');
+  const [assignedQrUuid, setAssignedQrUuid] = useState('');
   const [isSubmittingQRData, setIsSubmittingQRData] = useState(false);
   const [isExtractingMedicalInfo, setIsExtractingMedicalInfo] = useState(false);
   const [medicalReportDate, setMedicalReportDate] = useState("");
@@ -189,9 +192,6 @@ export default function EmergencyQRCode() {
     try {
       const formData = new FormData();
 
-      // Generate QR code as PNG data URL
-      const qrDataUrl = await generateQRPNG();
-      
       formData.append('fullName', emergencyInfo.fullName);
       formData.append('email', emergencyInfo.email || '');
       formData.append('bloodType', emergencyInfo.bloodType || '');
@@ -202,7 +202,6 @@ export default function EmergencyQRCode() {
       formData.append('dateOfBirth', emergencyInfo.dateOfBirth);
       formData.append('address', emergencyInfo.address || '');
       formData.append('phoneNumber', emergencyInfo.phoneNumber);
-      formData.append('qrCode', qrDataUrl);
       if (emergencyInfo.photo instanceof File) {
         formData.append('photo', emergencyInfo.photo);
       }
@@ -282,6 +281,12 @@ export default function EmergencyQRCode() {
       const responseData = await res.json();
       console.log('✅ Backend response:', responseData);
 
+      if (responseData.qrUrl) {
+        setAssignedQrUrl(responseData.qrUrl);
+        setAssignedQrUuid(responseData.qrUuid || '');
+        setAssignedQrImage(await QRCodeLib.toDataURL(responseData.qrUrl, { width: 280, margin: 1 }));
+      }
+
       setShowSuccess(true);
       
       // Clear the form after successful submission
@@ -310,43 +315,6 @@ export default function EmergencyQRCode() {
       alert(`Error: ${errorMessage}\n\nPlease check the console for more details.`);
     } finally {
       setIsSubmittingQRData(false);
-    }
-  };
-
-  const resolveBaseUrl = () => {
-    const configuredPublicBase = import.meta.env.VITE_PUBLIC_APP_URL?.trim();
-    if (configuredPublicBase && /^https?:\/\//i.test(configuredPublicBase)) {
-      return configuredPublicBase.replace(/\/+$/, '');
-    }
-    // Always fall back to the public production site, not preview/staging origin.
-    return 'https://incaseforh.vercel.app';
-  };
-
-  const generateQRData = () => {
-    const { photo, ...dataWithoutPhoto } = emergencyInfo;
-    const baseUrl = resolveBaseUrl();
-    const identifier = (dataWithoutPhoto.email?.trim().toLowerCase() || dataWithoutPhoto.phoneNumber);
-    return `${baseUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
-  };
-
-  const generateQRPNG = async (): Promise<string> => {
-    const qrValue = generateQRData();
-    
-    try {
-      // Use qrcode library to generate PNG data URL
-      const dataUrl = await QRCodeLib.toDataURL(qrValue, { 
-        width: 300, 
-        margin: 1,
-        color: {
-          dark: '#000000',
-          light: '#FFFFFF'
-        }
-      });
-      console.log('QR Code generated successfully:', dataUrl.substring(0, 50) + '...');
-      return dataUrl;
-    } catch (err) {
-      console.error('QR generation failed:', err);
-      throw new Error('Failed to generate QR code: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -450,6 +418,12 @@ export default function EmergencyQRCode() {
             <p className="text-gray-600 text-sm">
               Your QR code sticker will be handed over to you shortly.
             </p>
+            {assignedQrImage && assignedQrUrl ? (
+              <div className="mt-4">
+                <img src={assignedQrImage} alt="Your permanent emergency QR" className="mx-auto h-56 w-56" />
+                <p className="mt-2 break-all text-xs text-gray-500">QR UUID: {assignedQrUuid}</p>
+              </div>
+            ) : null}
             <button
               onClick={() => setShowSuccess(false)}
               className="mt-6 bg-orange-500 text-white px-6 py-2 rounded-full hover:bg-orange-600 transition-colors"

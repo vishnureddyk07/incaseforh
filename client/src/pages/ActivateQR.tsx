@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertCircle, FileText, Heart, Phone, User, Shield, Upload, Users, Trash2 } from 'lucide-react';
 
 type EmergencyContact = { name: string; phone: string };
@@ -19,6 +19,8 @@ type ActivationCheckResponse = {
     serialNumber: string;
     type: 'b2c' | 'b2b' | 'b2g';
     status: string;
+    multiProfileMode?: boolean;
+    profileCount?: number;
     activatedBy?: {
       fullName?: string;
       email?: string;
@@ -58,6 +60,7 @@ export default function ActivateQR() {
   const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
   const { uuid = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const apiBase = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
   const bloodTypeReportInputRef = useRef<HTMLInputElement | null>(null);
@@ -90,36 +93,43 @@ export default function ActivateQR() {
     const load = async () => {
       setLoading(true);
       setError(null);
-      try {
-        const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
-        const data = await readJsonResponse<ActivationCheckResponse>(res);
-        if (!res.ok) {
-          throw new Error((data as { error?: string; reason?: string }).error || (data as { error?: string; reason?: string }).reason || 'Failed to load sticker');
-        }
-        
-        // Check if this is a multi-profile QR for customer or business profiles
-        if (
-          data.sticker?.multiProfileMode &&
-          (data.sticker?.type === 'b2c' || data.sticker?.type === 'b2b')
-        ) {
-          if (active) {
-            navigate(`/qr/profiles/${encodeURIComponent(uuid)}`, { replace: true });
-          }
+     try {
+    const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
+    const data = await res.json() as ActivationCheckResponse;
+
+    if (!res.ok) {
+      throw new Error((data as { error?: string; reason?: string }).error || (data as { error?: string; reason?: string }).reason || 'Failed to load sticker');
+    }
+
+    if (!searchParams.has('edit') && (data.status === 'active' || data.sticker?.status === 'active')) {
+      if (active) {
+        const redirectTarget = data.redirectTo || data.emergencyProfileUrl;
+        if (redirectTarget) {
+          window.location.replace(redirectTarget);
           return;
         }
-        
+
+        const phone = data?.sticker?.activatedBy?.phoneNumber
+          || data?.sticker?.phoneNumber
+          || data?.phoneNumber
+          || uuid;
+        navigate(`/emergencyinfo/${encodeURIComponent(phone)}?qrUuid=${encodeURIComponent(uuid)}`, { replace: true });
+        return;
+      }
+    }
         if (active) setCheck(data);
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Failed to load sticker');
       } finally {
         if (active) setLoading(false);
       }
-    };
+    }
+    
     void load();
     return () => {
       active = false;
     };
-  }, [apiBase, uuid, navigate]);
+  }, [apiBase, uuid, navigate, searchParams]);
 
   useEffect(() => {
     if (check?.status === 'active' && check.sticker?.activatedBy) {
@@ -144,23 +154,41 @@ export default function ActivateQR() {
     }
   }, [check]);
 
-  useEffect(() => {
-    if (check?.status !== 'active') return;
-    const activeIdentifier = (
-      check.sticker?.activatedBy?.email?.trim()
-      || check.sticker?.activatedBy?.phoneNumber?.trim()
-    );
-    const localEmergencyProfileUrl = activeIdentifier
-      ? `${window.location.origin}/emergencyinfo/${encodeURIComponent(activeIdentifier)}`
-      : null;
-    const safeRedirectTo = check.redirectTo && !/\/activate\//i.test(check.redirectTo)
-      ? check.redirectTo
-      : null;
-    const destination = check.emergencyProfileUrl || localEmergencyProfileUrl || safeRedirectTo;
-    if (!destination) return;
-    window.location.replace(destination);
-  }, [check]);
+ useEffect(() => {
+    // Only redirect if the sticker is active and not explicitly in edit mode
+    if (check?.status !== 'active' || searchParams.has('edit')) return;
 
+    const sticker = check.sticker;
+    const qrId = encodeURIComponent(sticker?.uuid || uuid);
+
+    // 1. Check if backend gave a direct emergency profile URL
+    if (check.emergencyProfileUrl) {
+      const url = check.emergencyProfileUrl.includes('?') 
+        ? `${check.emergencyProfileUrl}&qrUuid=${qrId}` 
+        : `${check.emergencyProfileUrl}?qrUuid=${qrId}`;
+      sessionStorage.setItem('activeQrUuid', sticker?.uuid || uuid);
+      window.location.replace(url);
+      return;
+    }
+
+    // 2. Find active phone/identifier across all possible schema formats
+    const activePhone = 
+      (typeof sticker?.activatedBy === 'object' ? sticker?.activatedBy?.phoneNumber : null) ||
+      sticker?.phoneNumber ||
+      (typeof sticker?.activatedBy === 'string' && !sticker.activatedBy.includes('@') && sticker.activatedBy.length <= 15 ? sticker.activatedBy : null) ||
+      sticker?.activeEmergency?.phoneNumber ||
+      sticker?.emergencyContactPhone;
+
+    if (activePhone) {
+      sessionStorage.setItem('activeQrUuid', sticker?.uuid || uuid);
+      window.location.replace(`/emergencyinfo/${encodeURIComponent(activePhone)}?qrUuid=${qrId}`);
+      return;
+    }
+
+    // 3. Fallback: Query Emergency Info directly by QR UUID
+    sessionStorage.setItem('activeQrUuid', sticker?.uuid || uuid);
+    window.location.replace(`/emergencyinfo/${qrId}?qrUuid=${qrId}`);
+  }, [check, searchParams, uuid]);
   const updateContact = (idx: number, key: keyof EmergencyContact, value: string) => {
     setContacts((prev) => prev.map((c, i) => (i === idx ? { ...c, [key]: value } : c)));
   };
@@ -265,7 +293,7 @@ export default function ActivateQR() {
         throw new Error(data.error || 'Activation failed');
       }
 
-      if (check?.status === 'active' && data?.profileUrl) {
+      if (check?.status === 'active' && check.sticker?.activatedBy && data?.profileUrl) {
         window.location.assign(data.profileUrl);
         return;
       }
@@ -301,6 +329,8 @@ export default function ActivateQR() {
 
   if (!check) return null;
 
+  const hasExistingProfile = check.status === 'active' && Boolean(check.sticker?.activatedBy);
+
   if (check.status === 'deactivated') {
     return (
       <div className="min-h-screen bg-white px-4 py-10">
@@ -327,7 +357,7 @@ export default function ActivateQR() {
           <p className="text-lg text-slate-600">Complete your safety information to enable instant emergency assistance</p>
         </div>
 
-        {check.status === 'active' ? (
+        {hasExistingProfile ? (
           <div className="mb-6 rounded-2xl border-l-4 border-l-green-500 bg-gradient-to-r from-green-50 to-emerald-50 p-5 shadow-sm">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
@@ -698,8 +728,27 @@ export default function ActivateQR() {
             className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-bold py-3.5 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:opacity-60 text-lg flex items-center justify-center gap-2"
           >
             <Shield className="h-5 w-5" />
-            {submitting ? (check.status === 'active' ? 'Updating Profile...' : 'Activating Sticker...') : (check.status === 'active' ? 'Update Profile' : 'Activate Sticker')}
+            {submitting ? (hasExistingProfile ? 'Updating Profile...' : 'Activating Sticker...') : (hasExistingProfile ? 'Update Profile' : 'Activate Sticker')}
           </button>
+
+          {hasExistingProfile && (check.sticker?.type === 'b2c' || check.sticker?.type === 'b2b') ? (
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=add`)}
+                className="rounded-lg border-2 border-blue-600 bg-white px-3 py-3 text-sm font-bold text-blue-700 shadow-md transition-colors hover:bg-blue-50"
+              >
+                + Add Profile
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/qr/profiles/${encodeURIComponent(uuid)}?action=switch`)}
+                className="rounded-lg border-2 border-indigo-600 bg-indigo-600 px-3 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-indigo-700"
+              >
+                Switch Profile
+              </button>
+            </div>
+          ) : null}
 
           <div className="text-center space-y-3">
             <p className="text-sm text-slate-600">
