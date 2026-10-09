@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, ChevronRight, Loader2, Plus } from 'lucide-react';
 import AddSecondaryUserModal from './AddSecondaryUserModal';
@@ -8,6 +8,7 @@ interface Profile {
   profileId: string;
   profileName: string;
   profileEmail?: string;
+  profileType?: 'PRIMARY' | 'SECONDARY';
   addedAt?: string;
 }
 
@@ -56,6 +57,24 @@ export default function ProfileSelector() {
   const [otpLoading, setOtpLoading] = useState(false);
   const [showFullAddProfile, setShowFullAddProfile] = useState(false);
 
+  const openProfile = useCallback(async (profile: Profile) => {
+    setSelectedProfile(profile.profileId);
+    try {
+      const response = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/switch-active`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId: profile.profileId }),
+      });
+      const data = await readJsonResponse<{ error?: string; activeProfile?: { email?: string; phoneNumber?: string } }>(response);
+      if (!response.ok) throw new Error(data.error || 'Failed to switch profile');
+      sessionStorage.setItem('activeQrUuid', uuid);
+      const identifier = data.activeProfile?.email || data.activeProfile?.phoneNumber || profile.profileEmail || profile.profileId;
+      navigate(`/emergencyinfo/${encodeURIComponent(identifier)}?qrUuid=${encodeURIComponent(uuid)}`, { replace: true });
+    } catch (selectionError) {
+      setError(selectionError instanceof Error ? selectionError.message : 'Failed to switch profile');
+    }
+  }, [apiBase, navigate, uuid]);
+
   // Fetch profile list from QR
   useEffect(() => {
     const fetchProfiles = async () => {
@@ -71,9 +90,11 @@ export default function ProfileSelector() {
         const data: QRData = await readJsonResponse<QRData>(res);
         setQrData(data);
 
-        // If only one profile, auto-select it
-        if (data.profiles.length === 1) {
-          setSelectedProfile(data.profiles[0].profileId);
+        // A physical scan always opens the primary profile. Switching remains
+        // available from the emergency page.
+        const primaryProfile = data.profiles.find((profile) => profile.profileType === 'PRIMARY') || data.profiles[0];
+        if (primaryProfile) {
+          void openProfile(primaryProfile);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load profiles');
@@ -85,29 +106,13 @@ export default function ProfileSelector() {
     if (uuid) {
       fetchProfiles();
     }
-  }, [uuid, apiBase]);
+  }, [uuid, apiBase, openProfile]);
 
   // Handle profile selection and OTP flow
   const handleSelectProfile = (profileId: string) => {
     const profile = qrData?.profiles.find((entry) => entry.profileId === profileId);
     if (!profile) return;
-    setSelectedProfile(profileId);
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/switch-active`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ profileId }),
-        });
-        const data = await readJsonResponse<{ error?: string; activeProfile?: { email?: string; phoneNumber?: string } }>(response);
-        if (!response.ok) throw new Error(data.error || 'Failed to switch profile');
-        sessionStorage.setItem('activeQrUuid', uuid);
-        const identifier = data.activeProfile?.email || data.activeProfile?.phoneNumber || profile.profileEmail || profile.profileId;
-        navigate(`/emergencyinfo/${encodeURIComponent(identifier)}?qrUuid=${encodeURIComponent(uuid)}`, { replace: true });
-      } catch (selectionError) {
-        setError(selectionError instanceof Error ? selectionError.message : 'Failed to switch profile');
-      }
-    })();
+    void openProfile(profile);
   };
 
   // Request OTP
