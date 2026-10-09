@@ -71,12 +71,21 @@ export default function EmergencyInfoDisplay() {
   const [deviceIdCopied, setDeviceIdCopied] = useState(false);
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [showAddSecondaryModal, setShowAddSecondaryModal] = useState(false);
+  const [profileRefreshToken, setProfileRefreshToken] = useState(0);
   const [availableSlots, setAvailableSlots] = useState<ProfileSlot[]>([]);
   // The physical sticker's QR code hits the backend directly, which 302-redirects
   // here server-side (no sessionStorage access), so the uuid is carried via ?qr=.
   // Fall back to sessionStorage for the client-side ProfileSelector navigation path.
-  const qrUuidFromQuery = searchParams.get('qr');
+  const qrUuidFromQuery = searchParams.get('qr') || searchParams.get('qrUuid');
   const activeQrUuid = qrUuidFromQuery || sessionStorage.getItem('activeQrUuid');
+  const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+  const API_BASES = Array.from(
+    new Set([
+      API_BASE,
+      'https://incaseforh.onrender.com',
+      'https://incaseforh-staging.onrender.com',
+    ])
+  ).map((base) => String(base).replace(/\/+$/, ''));
 
   useEffect(() => {
     if (qrUuidFromQuery) {
@@ -89,33 +98,32 @@ export default function EmergencyInfoDisplay() {
       const data = await res.json();
       if (res.ok && data.slots) {
         setAvailableSlots(data.slots);
-        if (data.activeProfile) {
-          setInfo(data.activeProfile);
-        }
       }
     } catch (err) {
       console.error("Failed to load multi-profile data", err);
     }
   };
 
+  const handleProfileChanged = (profile: { email?: string; phoneNumber?: string; _id?: string }) => {
+    if (!activeQrUuid) return;
+    const identifier = profile.phoneNumber || profile.email || profile._id;
+    if (!identifier) return;
+
+    sessionStorage.setItem('activeQrUuid', activeQrUuid);
+    navigate(`/emergencyinfo/${encodeURIComponent(identifier)}?qrUuid=${encodeURIComponent(activeQrUuid)}`, {
+      replace: true,
+    });
+  };
+
   useEffect(() => {
-    const currentUuid = activeQrUuid || identifierParam;
-    if (currentUuid) {
-      fetchMultiProfileData(currentUuid);
+    if (activeQrUuid) {
+      fetchMultiProfileData(activeQrUuid);
     }
   }, [activeQrUuid, identifierParam]);
 
   const fallbackPhotoDataUrl =
     'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
-  const API_BASES = Array.from(
-    new Set([
-      API_BASE,
-      'https://incaseforh.onrender.com',
-      'https://incaseforh-staging.onrender.com',
-    ])
-  ).map((base) => String(base).replace(/\/+$/, ''));
   const reverseGeocode = async (lat: number, lng: number) => {
     try {
       console.log('🔄 Reverse geocoding location...');
@@ -792,24 +800,26 @@ export default function EmergencyInfoDisplay() {
           </div>
 
           {/* Expanded 3-Slot Profile Manager */}
-          {showProfileManager && (
+          {showProfileManager && activeQrUuid && (
             <div className="mt-3">
               <QRProfileManager
-                uuid={activeQrUuid || identifierParam || ''}
-                onOpenAddModal={() => setShowAddSecondaryModal(true)}
+                uuid={activeQrUuid}
+                refreshToken={profileRefreshToken}
+                onOpenAddModal={(_slotNumber) => setShowAddSecondaryModal(true)}
+                onProfileChanged={handleProfileChanged}
               />
             </div>
           )}
         </div>
 
-        {/* Add Secondary Profile Modal with Owner OTP 0708 */}
+        {/* Add Secondary Profile Modal */}
         <AddSecondaryUserModal
-          uuid={activeQrUuid || identifierParam || ''}
+          uuid={activeQrUuid || ''}
           isOpen={showAddSecondaryModal}
           onClose={() => setShowAddSecondaryModal(false)}
           onSuccess={() => {
-            const currentUuid = activeQrUuid || identifierParam;
-            if (currentUuid) fetchMultiProfileData(currentUuid);
+            if (activeQrUuid) fetchMultiProfileData(activeQrUuid);
+            setProfileRefreshToken((currentToken) => currentToken + 1);
           }}
         />
 

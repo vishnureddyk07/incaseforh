@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Send, MessageCircle, Phone, Lock, Edit, AlertCircle, CheckCircle, RefreshCw, HelpCircle, Shield } from 'lucide-react';
+import { validateEmergencyProfile } from '../utils/profileValidation';
 
 type EmergencyContact = { name: string; phone: string };
 
@@ -114,10 +115,9 @@ export default function ChatBot() {
       }
 
       setChatState('otp-sent');
-      const otpHint = data?.otp ? `\n\nTest OTP: ${data.otp}` : '';
       addMessage(
         'bot',
-        `✅ OTP sent to ${maskForChat(phoneNumber)}! 📱 Please check your phone for the 6-digit code and enter it below.${otpHint}`
+        `✅ OTP sent to ${maskForChat(phoneNumber)}! 📱 Please check your phone for the 6-digit code and enter it below.`
       );
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to send OTP';
@@ -196,8 +196,7 @@ export default function ChatBot() {
         throw new Error(data.error || 'Failed to resend OTP');
       }
 
-      const otpHint = data?.otp ? `\n\nTest OTP: ${data.otp}` : '';
-      addMessage('bot', `🔁 New OTP sent to ${maskForChat(phoneNumber)}.${otpHint}`);
+      addMessage('bot', `🔁 New OTP sent to ${maskForChat(phoneNumber)}.`);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to resend OTP';
       setError(errorMsg);
@@ -236,6 +235,18 @@ export default function ChatBot() {
     setError(null);
 
     try {
+      const validationError = validateEmergencyProfile({
+        fullName: editedProfile.fullName || '',
+        phoneNumber: editedProfile.phoneNumber || '',
+        dateOfBirth: editedProfile.dateOfBirth || '',
+        bloodType: editedProfile.bloodType || '',
+        email: editedProfile.email || '',
+        emergencyContacts: editedProfile.emergencyContacts || [],
+      });
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
       const formData = new FormData();
       formData.append('fullName', editedProfile.fullName || '');
       formData.append('phoneNumber', editedProfile.phoneNumber || '');
@@ -505,6 +516,9 @@ export default function ChatBot() {
                 placeholder="Phone Number"
                 value={editedProfile.phoneNumber || ''}
                 onChange={(e) => setEditedProfile({ ...editedProfile, phoneNumber: e.target.value })}
+                inputMode="numeric"
+                pattern="[0-9]{10}"
+                maxLength={10}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               />
 
@@ -513,6 +527,7 @@ export default function ChatBot() {
                 placeholder="Email"
                 value={editedProfile.email || ''}
                 onChange={(e) => setEditedProfile({ ...editedProfile, email: e.target.value })}
+                pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               />
 

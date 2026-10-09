@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, ChevronRight, Loader2, Plus } from 'lucide-react';
+import AddSecondaryUserModal from './AddSecondaryUserModal';
 
 interface Profile {
   _id: string;
   profileId: string;
-  profileType?: 'PRIMARY' | 'SECONDARY';
   profileName: string;
   profileEmail?: string;
+  profileType?: 'PRIMARY' | 'SECONDARY';
   addedAt?: string;
 }
 
@@ -40,7 +41,6 @@ const readJsonResponse = async <T,>(res: Response): Promise<T> => {
 
 export default function ProfileSelector() {
   const { uuid = '' } = useParams();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const apiBase = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
 
@@ -51,21 +51,12 @@ export default function ProfileSelector() {
   const [verifyingOTP, setVerifyingOTP] = useState(false);
   const [showOTPModal, setShowOTPModal] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
-  const [otpContact, setOtpContact] = useState('');
-  const [otpRequestId, setOtpRequestId] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
+  const [otpRequestId, setOtpRequestId] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpLoading, setOtpLoading] = useState(false);
-  const [showAddProfileForm, setShowAddProfileForm] = useState(false);
-  const [addProfileName, setAddProfileName] = useState('');
-  const [addProfileEmail, setAddProfileEmail] = useState('');
-  const [addProfilePhone, setAddProfilePhone] = useState('');
-  const [addProfileContactName, setAddProfileContactName] = useState('');
-  const [addProfileContactPhone, setAddProfileContactPhone] = useState('');
-  const [addProfileLoading, setAddProfileLoading] = useState(false);
-  const [addProfileError, setAddProfileError] = useState<string | null>(null);
-  const [otpPurpose, setOtpPurpose] = useState<'switch' | 'add'>('switch');
-  const [addProfileOtpVerified, setAddProfileOtpVerified] = useState(false);
+  const [showFullAddProfile, setShowFullAddProfile] = useState(false);
 
   // Fetch profile list from QR
   useEffect(() => {
@@ -82,18 +73,10 @@ export default function ProfileSelector() {
         const data: QRData = await readJsonResponse<QRData>(res);
         setQrData(data);
 
-        // If only one profile, auto-select it
-        if (data.profiles.length === 1) {
-          setSelectedProfile(data.profiles[0].profileId);
-        }
-
-        if (searchParams.get('action') === 'add' && data.profileCount < 3) {
-          const activeProfileId = sessionStorage.getItem('activeProfileId') || data.profiles[0]?.profileId;
-          if (activeProfileId) {
-            setAddProfileOtpVerified(false);
-            handleSelectProfile(activeProfileId, 'add');
-          }
-        }
+        // A physical scan always opens the primary profile. Switching remains
+        // available from the emergency page.
+        const primaryProfile = data.profiles.find((profile) => profile.profileType === 'PRIMARY') || data.profiles[0];
+        if (primaryProfile) setSelectedProfile(primaryProfile.profileId);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load profiles');
       } finally {
@@ -107,32 +90,22 @@ export default function ProfileSelector() {
   }, [uuid, apiBase]);
 
   // Handle profile selection and OTP flow
-  const handleSelectProfile = (profileId: string, purpose: 'switch' | 'add' = 'switch') => {
-    setSelectedProfile(profileId);
-    setOtpPurpose(purpose);
-    setShowOTPModal(true);
-    setOtpSent(false);
-    setOtpContact('');
-    setOtpRequestId('');
+  const handleSelectProfile = (profileId: string) => {
+    const profile = qrData?.profiles.find((entry) => entry.profileId === profileId);
+    if (!profile) return;
+    setSelectedProfile(profile.profileId);
+    setPhoneNumber('');
     setOtp('');
+    setOtpRequestId('');
+    setOtpSent(false);
     setOtpError(null);
-  };
-
-  const handleAddProfileClick = () => {
-    const activeProfileId = sessionStorage.getItem('activeProfileId') || qrData?.profiles[0]?.profileId;
-    if (!activeProfileId) {
-      setAddProfileError('Select an existing profile before adding another profile.');
-      return;
-    }
-
-    setAddProfileOtpVerified(false);
-    handleSelectProfile(activeProfileId, 'add');
+    setShowOTPModal(true);
   };
 
   // Request OTP
   const handleRequestOTP = async () => {
-    if (!selectedProfile) {
-      setOtpError('No profile selected');
+    if (!phoneNumber.trim()) {
+      setOtpError('Phone number is required');
       return;
     }
 
@@ -143,7 +116,11 @@ export default function ProfileSelector() {
       const res = await fetch(`${apiBase}/api/v1/chatbot/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qrUuid: uuid, profileId: selectedProfile }),
+        body: JSON.stringify({
+          phoneNumber: phoneNumber.trim(),
+          qrUuid: uuid,
+          profileId: selectedProfile,
+        }),
       });
 
       if (!res.ok) {
@@ -151,19 +128,13 @@ export default function ProfileSelector() {
         throw new Error(error.error || 'Failed to send OTP');
       }
 
-      const data = await readJsonResponse<{ otp?: string; requestId?: string; phoneNumber?: string }>(res);
-      if (!data.requestId) {
-        throw new Error('The OTP request was not created. Please try again.');
-      }
-      setOtpSent(true);
+      const data = await readJsonResponse<{ message?: string; requestId?: string }>(res);
+      if (!data.requestId) throw new Error('OTP request reference was not returned');
       setOtpRequestId(data.requestId);
-      setOtpContact(data.phoneNumber || 'the registered contact');
+      setOtpSent(true);
       setOtp('');
       setOtpError(null);
-      console.log('OTP sent to the registered profile contact');
-      if (data.otp) {
-        console.log('Development mode - OTP:', data.otp);
-      }
+      console.log('OTP sent to:', phoneNumber);
     } catch (err) {
       setOtpSent(false);
       setOtpError(err instanceof Error ? err.message : 'Failed to send OTP');
@@ -179,8 +150,8 @@ export default function ProfileSelector() {
       return;
     }
 
-    if (!selectedProfile || !otpRequestId) {
-      setOtpError('Request a new OTP for this profile');
+    if (!selectedProfile) {
+      setOtpError('No profile selected');
       return;
     }
 
@@ -202,20 +173,16 @@ export default function ProfileSelector() {
 
       const { accessToken } = await readJsonResponse<{ accessToken: string }>(verifyRes);
 
-      sessionStorage.setItem('chatbotEditToken', accessToken);
-      sessionStorage.setItem('activeProfileId', selectedProfile);
-      sessionStorage.setItem('activeQrUuid', uuid);
-
-      if (otpPurpose === 'add') {
-        setAddProfileOtpVerified(true);
-        setShowOTPModal(false);
-        setOtpSent(false);
-        setOtpRequestId('');
-        setOtp('');
-        setOtpError(null);
-        setShowAddProfileForm(true);
-        return;
-      }
+      const switchRes = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/switch-active`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ profileId: selectedProfile }),
+      });
+      const switchData = await readJsonResponse<{ error?: string; activeProfile?: { email?: string; phoneNumber?: string } }>(switchRes);
+      if (!switchRes.ok) throw new Error(switchData.error || 'Failed to switch profile');
 
       // OTP verified! Now fetch the profile data with the token
       const profileRes = await fetch(
@@ -237,6 +204,8 @@ export default function ProfileSelector() {
       // Profile loaded! Redirect to emergency info page
       // Store profile data temporarily in session storage for the emergency info page
       sessionStorage.setItem('multiProfileData', JSON.stringify(profileData.profile));
+      sessionStorage.setItem('activeQrUuid', uuid);
+      sessionStorage.setItem('activeProfileId', selectedProfile);
       
       // Navigate to emergency info page
       const identifier = profileData.profile.email || profileData.profile.phoneNumber;
@@ -245,83 +214,6 @@ export default function ProfileSelector() {
       setOtpError(err instanceof Error ? err.message : 'Failed to verify OTP');
     } finally {
       setOtpLoading(false);
-    }
-  };
-
-  // Add a new profile to this multi-profile QR
-  const handleAddProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddProfileError(null);
-
-    if (!addProfileName.trim()) {
-      setAddProfileError('Profile name is required');
-      return;
-    }
-
-    if (!addProfilePhone.trim()) {
-      setAddProfileError('Phone number is required');
-      return;
-    }
-
-    if (!addProfileContactName.trim() || !addProfileContactPhone.trim()) {
-      setAddProfileError('Emergency contact name and phone number are required');
-      return;
-    }
-
-    try {
-      setAddProfileLoading(true);
-
-      // Activate a new profile on this QR (create emergency info)
-      const formData = new FormData();
-      formData.append('fullName', addProfileName.trim());
-      formData.append('phoneNumber', addProfilePhone.trim());
-      if (addProfileEmail.trim()) {
-        formData.append('email', addProfileEmail.trim());
-      }
-      formData.append('emergencyContacts', JSON.stringify([
-        { name: addProfileContactName.trim(), phone: addProfileContactPhone.trim() }
-      ]));
-      formData.append('bloodType', 'O+'); // Default
-      formData.append('allergies', 'None');
-      formData.append('medications', 'None');
-      formData.append('medicalConditions', 'None');
-      formData.append('mode', 'add-profile');
-
-      const chatbotEditToken = sessionStorage.getItem('chatbotEditToken') || '';
-      const activateRes = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}`, {
-        method: 'POST',
-        headers: chatbotEditToken ? { Authorization: `Bearer ${chatbotEditToken}` } : undefined,
-        body: formData,
-      });
-
-      if (!activateRes.ok) {
-        const error = await readJsonResponse<{ error?: string }>(activateRes).catch(() => ({ error: 'Failed to add profile' }));
-        if (error.error?.includes('maximum of 3 profiles')) {
-          throw new Error('This shared QR already has the maximum of 3 profiles.');
-        }
-        throw new Error(error.error || 'Failed to add profile');
-      }
-
-      const response = await readJsonResponse<{ emergencyInfo?: { _id: string }; sticker?: { profileCount: number } }>(activateRes);
-      
-      // Success! Refresh the profile list
-      setShowAddProfileForm(false);
-      setAddProfileName('');
-      setAddProfileEmail('');
-      setAddProfilePhone('');
-      setAddProfileContactName('');
-      setAddProfileContactPhone('');
-      
-      // Reload profiles
-      const reloadRes = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/profiles`);
-      if (reloadRes.ok) {
-        const updatedData: QRData = await readJsonResponse<QRData>(reloadRes);
-        setQrData(updatedData);
-      }
-    } catch (err) {
-      setAddProfileError(err instanceof Error ? err.message : 'Failed to add profile');
-    } finally {
-      setAddProfileLoading(false);
     }
   };
 
@@ -358,7 +250,7 @@ export default function ProfileSelector() {
 
   if (
     !qrData ||
-    qrData.status !== 'active' ||
+    !qrData.multiProfileMode ||
     (qrData.type !== 'b2c' && qrData.type !== 'b2b')
   ) {
     return (
@@ -395,58 +287,28 @@ export default function ProfileSelector() {
 
         {/* Profile List and Add Option */}
         <div className="bg-white shadow-lg px-4 py-2">
-          {qrData.profiles.length === 0 && (
-            <div className="p-4 text-center">
-              <p className="text-sm text-gray-600 mb-3">This QR does not have an active profile yet.</p>
-              <button
-                type="button"
-                onClick={() => navigate(`/activate/${encodeURIComponent(uuid)}`)}
-                className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700"
-              >
-                Activate First Profile
-              </button>
-            </div>
-          )}
-
           {qrData.profiles.map((profile, index) => (
-            <div
+            <button
               key={profile.profileId}
-              className={`w-full border-b p-4 transition-colors ${
+              onClick={() => handleSelectProfile(profile.profileId)}
+              className={`w-full text-left p-4 border-b flex items-center justify-between hover:bg-blue-50 transition-colors ${
                 selectedProfile === profile.profileId ? 'bg-blue-50' : ''
               }`}
             >
-              <div className="flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleSelectProfile(profile.profileId)}
-                  className="min-w-0 flex-1 text-left hover:text-blue-700"
-                >
-                  <p className="font-semibold text-gray-800">{profile.profileName || `Profile ${index + 1}`}</p>
-                  <p className="text-xs font-medium text-slate-500">
-                    {profile.profileType === 'PRIMARY' || index === 0 ? 'Primary Profile' : 'Profile'}
-                  </p>
-                  {profile.profileEmail && (
-                    <p className="text-sm text-gray-500">{profile.profileEmail}</p>
-                  )}
-                </button>
-                {(profile.profileType === 'PRIMARY' || index === 0) && (
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/activate/${encodeURIComponent(uuid)}?edit=1`)}
-                    className="shrink-0 rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-white"
-                  >
-                    Update Profile
-                  </button>
+              <div className="flex-1">
+                <p className="font-semibold text-gray-800">{profile.profileName || `Profile ${index + 1}`}</p>
+                {profile.profileEmail && (
+                  <p className="text-sm text-gray-500">{profile.profileEmail}</p>
                 )}
-                <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" />
               </div>
-            </div>
+              <ChevronRight className="h-5 w-5 text-gray-400" />
+            </button>
           ))}
 
           {/* Add Profile Button */}
-          {qrData.profiles.length > 0 && qrData.profileCount < 3 && !showAddProfileForm && (
+          {qrData.profileCount < 3 && (
             <button
-              onClick={handleAddProfileClick}
+              onClick={() => setShowFullAddProfile(true)}
               className="w-full text-left p-4 border-t border-dashed border-blue-300 hover:bg-blue-50 transition-colors flex items-center gap-3 text-blue-600 font-semibold"
             >
               <Plus className="h-5 w-5" />
@@ -454,120 +316,22 @@ export default function ProfileSelector() {
             </button>
           )}
 
-          {/* Add Profile Form */}
-          {showAddProfileForm && addProfileOtpVerified && (
-            <div className="p-4 border-t border-dashed border-blue-300 bg-blue-50">
-              <h3 className="font-semibold text-gray-800 mb-4">Add New Profile</h3>
-              <form onSubmit={handleAddProfile} className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={addProfileName}
-                    onChange={(e) => setAddProfileName(e.target.value)}
-                    placeholder="e.g., John Doe"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    disabled={addProfileLoading}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Phone Number *
-                  </label>
-                  <input
-                    type="tel"
-                    value={addProfilePhone}
-                    onChange={(e) => setAddProfilePhone(e.target.value)}
-                    placeholder="+91 9876543210"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    disabled={addProfileLoading}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Email (Optional)
-                  </label>
-                  <input
-                    type="email"
-                    value={addProfileEmail}
-                    onChange={(e) => setAddProfileEmail(e.target.value)}
-                    placeholder="john@example.com"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    disabled={addProfileLoading}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Emergency Contact Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={addProfileContactName}
-                    onChange={(e) => setAddProfileContactName(e.target.value)}
-                    placeholder="e.g., Parent or Spouse"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    disabled={addProfileLoading}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Emergency Contact Phone *
-                  </label>
-                  <input
-                    type="tel"
-                    value={addProfileContactPhone}
-                    onChange={(e) => setAddProfileContactPhone(e.target.value)}
-                    placeholder="e.g., +91 9876543211"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    disabled={addProfileLoading}
-                  />
-                </div>
-
-                {addProfileError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                    {addProfileError}
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddProfileForm(false);
-                      setAddProfileName('');
-                      setAddProfileEmail('');
-                      setAddProfilePhone('');
-                      setAddProfileContactName('');
-                      setAddProfileContactPhone('');
-                      setAddProfileError(null);
-                    }}
-                    className="flex-1 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
-                    disabled={addProfileLoading}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                    disabled={addProfileLoading || !addProfileName.trim() || !addProfilePhone.trim() || !addProfileContactName.trim() || !addProfileContactPhone.trim()}
-                  >
-                    {addProfileLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Add Profile
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
           {qrData.profileCount >= 3 && (
             <div className="p-4 border-t border-dashed border-amber-300 bg-amber-50 text-amber-700 text-sm">
               Maximum 3 profiles reached
             </div>
           )}
-
         </div>
+
+        <AddSecondaryUserModal
+          uuid={uuid}
+          isOpen={showFullAddProfile}
+          onClose={() => setShowFullAddProfile(false)}
+          onSuccess={() => {
+            setShowFullAddProfile(false);
+            void fetchProfiles();
+          }}
+        />
 
         {/* OTP Modal */}
         {showOTPModal && (
@@ -576,9 +340,23 @@ export default function ProfileSelector() {
               <h2 className="text-xl font-bold text-gray-800 mb-2">Secure access</h2>
               <p className="text-gray-600 mb-5 text-sm">
                 {otpSent
-                  ? `We sent a 6-digit code to ${otpContact || 'the registered contact'}. Enter it below to continue.`
-                  : 'A verification code will be sent to the registered contact for this profile.'}
+                  ? 'We sent a 6-digit code to this number. Enter it below to continue.'
+                  : 'Choose a profile and verify your phone number to view the saved details.'}
               </p>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="+91 9876543210"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={otpLoading}
+                />
+              </div>
 
               {otpSent && (
                 <div className="mb-4">
@@ -609,9 +387,9 @@ export default function ProfileSelector() {
                     setShowOTPModal(false);
                     setSelectedProfile(null);
                     setOtpSent(false);
-                    setOtpContact('');
-                    setOtpRequestId('');
+                    setPhoneNumber('');
                     setOtp('');
+                    setOtpRequestId('');
                     setOtpError(null);
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
@@ -633,7 +411,7 @@ export default function ProfileSelector() {
                   <button
                     onClick={handleRequestOTP}
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                    disabled={otpLoading || !selectedProfile}
+                    disabled={otpLoading || !phoneNumber.trim()}
                   >
                     {otpLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                     Send code
