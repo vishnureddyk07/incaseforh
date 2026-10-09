@@ -71,6 +71,7 @@ export default function EmergencyInfoDisplay() {
   const [deviceIdCopied, setDeviceIdCopied] = useState(false);
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [showAddSecondaryModal, setShowAddSecondaryModal] = useState(false);
+  const [profileRefreshToken, setProfileRefreshToken] = useState(0);
   const [availableSlots, setAvailableSlots] = useState<ProfileSlot[]>([]);
   // The physical sticker's QR code hits the backend directly, which 302-redirects
   // here server-side (no sessionStorage access), so the uuid is carried via ?qr=.
@@ -792,6 +793,7 @@ export default function EmergencyInfoDisplay() {
             <div className="mt-3">
               <QRProfileManager
                 uuid={activeQrUuid || identifierParam || ''}
+                refreshToken={profileRefreshToken}
                 onOpenAddModal={(_slotNumber) => setShowAddSecondaryModal(true)}
                 onProfileChanged={() => {
                   const currentUuid = activeQrUuid || identifierParam;
@@ -810,6 +812,7 @@ export default function EmergencyInfoDisplay() {
           onSuccess={() => {
             const currentUuid = activeQrUuid || identifierParam;
             if (currentUuid) fetchMultiProfileData(currentUuid);
+            setProfileRefreshToken((currentToken) => currentToken + 1);
           }}
         />
 

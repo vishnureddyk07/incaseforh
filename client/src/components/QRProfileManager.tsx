@@ -4,7 +4,9 @@ interface Profile {
   _id: string;
   profileId: string;
   profileName: string;
+  fullName?: string;
   profilePhone?: string;
+  phoneNumber?: string;
   profileType?: 'PRIMARY' | 'SECONDARY';
 }
 
@@ -21,9 +23,10 @@ interface QRProfileManagerProps {
   uuid: string;
   onOpenAddModal: (slotNumber: number) => void;
   onProfileChanged?: () => void;
+  refreshToken?: number;
 }
 
-export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpenAddModal, onProfileChanged }) => {
+export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpenAddModal, onProfileChanged, refreshToken }) => {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +52,7 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
 
   useEffect(() => {
     fetchSlots();
-  }, [uuid]);
+  }, [uuid, refreshToken]);
 
   const handleSwitchActive = async (profileId: string) => {
     try {
@@ -128,9 +131,9 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
 
                 {slot.occupied && slot.profile ? (
                   <div className="mt-1">
-                    <p className="font-semibold text-gray-900">{slot.profile.profileName}</p>
+                    <p className="font-semibold text-gray-900">{slot.profile.profileName || slot.profile.fullName || 'Unnamed profile'}</p>
                     <p className="text-xs text-gray-500">
-                     {slot.profile.profilePhone || 'Phone not provided'}
+                     {slot.profile.profilePhone || slot.profile.phoneNumber || 'Phone not provided'}
                     </p>
                   </div>
                 ) : (
