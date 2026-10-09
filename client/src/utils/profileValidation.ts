@@ -26,7 +26,7 @@ export const validateEmergencyProfile = (profile: {
     return 'Emergency contact phone numbers must be unique.';
   }
   if (contactPhones.includes(normalizePhoneForComparison(profile.phoneNumber))) {
-    return 'Your phone number and emergency contact number cannot be the same.';
+    return 'Your phone number and emergency contact number must be different.';
   }
 
   return null;

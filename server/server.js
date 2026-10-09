@@ -4524,7 +4524,7 @@ router.get('/qr/resolve/:uuid', readLimiter, async (req, res) => {
     const normalizedIds = normalizedEntries.map((profile) => getProfileIdValue(profile)).filter(Boolean);
     const normalizedProfiles = normalizedIds.length > 0
       ? await EmergencyInfo.find({ _id: { $in: normalizedIds } })
-          .select('fullName email phoneNumber bloodType')
+          .select('fullName email phoneNumber')
           .lean()
       : [];
     const profilesById = new Map(normalizedProfiles.map((profile) => [String(profile._id), profile]));
@@ -4623,8 +4623,15 @@ router.post('/qr/:uuid/secondary/request-otp', createLimiter, upload.fields([
       allergies, medications, medicalConditions, address,
     } = req.body;
 
-    if (!fullName || !phoneNumber) {
-      return res.status(400).json({ error: 'Full name and phone number are required' });
+    const normalizedFullName = normalizeOptionalString(fullName, 200);
+    const normalizedPhoneNumber = normalizeOptionalString(phoneNumber, 40);
+    const normalizedBloodType = normalizeOptionalString(bloodType, 20);
+    const normalizedDateOfBirth = normalizeOptionalString(dateOfBirth, 40);
+
+    if (!normalizedFullName || !normalizedPhoneNumber || !normalizedDateOfBirth || !normalizedBloodType) {
+      return res.status(400).json({
+        error: 'Name, phone, date of birth, and blood group are required.',
+      });
     }
 
     let parsedContacts = emergencyContacts;
@@ -4635,6 +4642,19 @@ router.post('/qr/:uuid/secondary/request-otp', createLimiter, upload.fields([
     if (validContacts.length === 0) {
       return res.status(400).json({ error: 'At least one emergency contact is required' });
     }
+    if (validContacts.length > 5) {
+      return res.status(400).json({ error: 'You can add up to 5 emergency contacts.' });
+    }
+
+    const normalizedContactPhones = validContacts
+      .map((contact) => normalizePhoneForComparison(contact.phone))
+      .filter(Boolean);
+    if (new Set(normalizedContactPhones).size !== normalizedContactPhones.length) {
+      return res.status(400).json({ error: 'Emergency contact phone numbers must be unique.' });
+    }
+    if (normalizedContactPhones.includes(normalizePhoneForComparison(normalizedPhoneNumber))) {
+      return res.status(400).json({ error: 'Your phone number and emergency contact number must be different.' });
+    }
     const uploadedFiles = req.files || {};
     const getFile = (field) => Array.isArray(uploadedFiles[field]) ? uploadedFiles[field][0] : null;
     const otp = generateOTP();
@@ -4643,11 +4663,11 @@ router.post('/qr/:uuid/secondary/request-otp', createLimiter, upload.fields([
       uuid,
       otp,
       profileData: {
-        fullName: stripHtml(fullName),
-        phoneNumber: stripHtml(phoneNumber),
+        fullName: stripHtml(normalizedFullName),
+        phoneNumber: stripHtml(normalizedPhoneNumber),
         email: normalizeOptionalString(email, 200).toLowerCase() || null,
-        bloodType: normalizeOptionalString(bloodType, 20),
-        dateOfBirth: normalizeOptionalString(dateOfBirth, 40),
+        bloodType: normalizedBloodType,
+        dateOfBirth: normalizedDateOfBirth,
         allergies: normalizeOptionalString(allergies, 1000),
         medications: normalizeOptionalString(medications, 1000),
         medicalConditions: normalizeOptionalString(medicalConditions, 1000),
