@@ -148,7 +148,6 @@ export default function EmergencyForm({
                 required
                 inputMode="numeric"
                 autoComplete="tel"
-                pattern="^\\+?\d{10,13}$"
                 className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 placeholder="+91 98765 43210"
               />
@@ -230,7 +229,6 @@ export default function EmergencyForm({
                         onEmergencyContactChange?.(index, "phone", e.target.value)
                       }
                       inputMode="numeric"
-                      pattern="^\\+?\d{10,13}$"
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
                       placeholder="+91 98765 43210"
                       required

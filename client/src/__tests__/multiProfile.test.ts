@@ -110,5 +110,13 @@ describe('multi profile rules', () => {
       ...validProfile,
       emergencyContacts: [{ name: 'Emergency Contact', phone: '98765 43210' }],
     })).toContain('different');
+    expect(validateEmergencyProfile({
+      ...validProfile,
+      phoneNumber: '+91 98765 43210',
+    })).toBeNull();
+    expect(validateEmergencyProfile({
+      ...validProfile,
+      phoneNumber: 'not-a-phone',
+    })).toContain('valid phone number');
   });
 });

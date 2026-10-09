@@ -1,3 +1,5 @@
+import { validatePhone } from './validation';
+
 export type ProfileContact = { name: string; phone: string };
 
 export const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, '');
@@ -12,6 +14,9 @@ export const validateEmergencyProfile = (profile: {
   if (!profile.fullName.trim() || !profile.phoneNumber.trim() || !profile.dateOfBirth || !profile.bloodType) {
     return 'Name, phone, date of birth, blood group, and one emergency contact are required.';
   }
+  if (!validatePhone(profile.phoneNumber)) {
+    return 'Enter a valid phone number, for example +91 98765 43210.';
+  }
 
   const contacts = profile.emergencyContacts.filter((contact) => contact.name.trim() && contact.phone.trim());
   if (contacts.length === 0) {
@@ -19,6 +24,9 @@ export const validateEmergencyProfile = (profile: {
   }
   if (contacts.length > 5) {
     return 'You can add up to 5 emergency contacts.';
+  }
+  if (contacts.some((contact) => !validatePhone(contact.phone))) {
+    return 'Enter a valid emergency contact phone number, for example +91 98765 43210.';
   }
 
   const contactPhones = contacts.map((contact) => normalizePhoneForComparison(contact.phone)).filter(Boolean);
