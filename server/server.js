@@ -4792,7 +4792,7 @@ router.post('/qr/:uuid/secondary/verify-otp', createLimiter, async (req, res) =>
 });
 
 // 4. Switch Active Profile
-router.patch('/qr/:uuid/switch-active', readLimiter, async (req, res) => {
+router.patch('/qr/:uuid/switch-active', readLimiter, requireChatbotAuth, async (req, res) => {
   try {
     const uuid = sanitizeStringParam(req.params.uuid);
     const { profileId } = req.body;
@@ -4810,6 +4810,10 @@ router.patch('/qr/:uuid/switch-active', readLimiter, async (req, res) => {
 
     if (!isLinked) {
       return res.status(400).json({ error: 'Selected profile does not belong to this QR code' });
+    }
+
+    if (String(req.user.sub) !== String(profileId)) {
+      return res.status(403).json({ error: 'OTP verification does not authorize this profile switch' });
     }
 
     sticker.activeProfileId = profileId;

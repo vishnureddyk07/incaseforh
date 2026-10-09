@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, ChevronRight, Loader2, Plus } from 'lucide-react';
 import AddSecondaryUserModal from './AddSecondaryUserModal';
@@ -53,27 +53,10 @@ export default function ProfileSelector() {
   const [otpSent, setOtpSent] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
+  const [otpRequestId, setOtpRequestId] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpLoading, setOtpLoading] = useState(false);
   const [showFullAddProfile, setShowFullAddProfile] = useState(false);
-
-  const openProfile = useCallback(async (profile: Profile) => {
-    setSelectedProfile(profile.profileId);
-    try {
-      const response = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/switch-active`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profileId: profile.profileId }),
-      });
-      const data = await readJsonResponse<{ error?: string; activeProfile?: { email?: string; phoneNumber?: string } }>(response);
-      if (!response.ok) throw new Error(data.error || 'Failed to switch profile');
-      sessionStorage.setItem('activeQrUuid', uuid);
-      const identifier = data.activeProfile?.email || data.activeProfile?.phoneNumber || profile.profileEmail || profile.profileId;
-      navigate(`/emergencyinfo/${encodeURIComponent(identifier)}?qrUuid=${encodeURIComponent(uuid)}`, { replace: true });
-    } catch (selectionError) {
-      setError(selectionError instanceof Error ? selectionError.message : 'Failed to switch profile');
-    }
-  }, [apiBase, navigate, uuid]);
 
   // Fetch profile list from QR
   useEffect(() => {
@@ -93,9 +76,7 @@ export default function ProfileSelector() {
         // A physical scan always opens the primary profile. Switching remains
         // available from the emergency page.
         const primaryProfile = data.profiles.find((profile) => profile.profileType === 'PRIMARY') || data.profiles[0];
-        if (primaryProfile) {
-          void openProfile(primaryProfile);
-        }
+        if (primaryProfile) setSelectedProfile(primaryProfile.profileId);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load profiles');
       } finally {
@@ -106,13 +87,19 @@ export default function ProfileSelector() {
     if (uuid) {
       fetchProfiles();
     }
-  }, [uuid, apiBase, openProfile]);
+  }, [uuid, apiBase]);
 
   // Handle profile selection and OTP flow
   const handleSelectProfile = (profileId: string) => {
     const profile = qrData?.profiles.find((entry) => entry.profileId === profileId);
     if (!profile) return;
-    void openProfile(profile);
+    setSelectedProfile(profile.profileId);
+    setPhoneNumber('');
+    setOtp('');
+    setOtpRequestId('');
+    setOtpSent(false);
+    setOtpError(null);
+    setShowOTPModal(true);
   };
 
   // Request OTP
@@ -129,7 +116,11 @@ export default function ProfileSelector() {
       const res = await fetch(`${apiBase}/api/v1/chatbot/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: phoneNumber.trim() }),
+        body: JSON.stringify({
+          phoneNumber: phoneNumber.trim(),
+          qrUuid: uuid,
+          profileId: selectedProfile,
+        }),
       });
 
       if (!res.ok) {
@@ -137,7 +128,9 @@ export default function ProfileSelector() {
         throw new Error(error.error || 'Failed to send OTP');
       }
 
-      await readJsonResponse<{ message?: string }>(res);
+      const data = await readJsonResponse<{ message?: string; requestId?: string }>(res);
+      if (!data.requestId) throw new Error('OTP request reference was not returned');
+      setOtpRequestId(data.requestId);
       setOtpSent(true);
       setOtp('');
       setOtpError(null);
@@ -170,10 +163,7 @@ export default function ProfileSelector() {
       const verifyRes = await fetch(`${apiBase}/api/v1/chatbot/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          phoneNumber: phoneNumber.trim(), 
-          otp: otp.trim() 
-        }),
+        body: JSON.stringify({ requestId: otpRequestId, otp: otp.trim() }),
       });
 
       if (!verifyRes.ok) {
@@ -182,6 +172,17 @@ export default function ProfileSelector() {
       }
 
       const { accessToken } = await readJsonResponse<{ accessToken: string }>(verifyRes);
+
+      const switchRes = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/switch-active`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ profileId: selectedProfile }),
+      });
+      const switchData = await readJsonResponse<{ error?: string; activeProfile?: { email?: string; phoneNumber?: string } }>(switchRes);
+      if (!switchRes.ok) throw new Error(switchData.error || 'Failed to switch profile');
 
       // OTP verified! Now fetch the profile data with the token
       const profileRes = await fetch(
@@ -203,6 +204,8 @@ export default function ProfileSelector() {
       // Profile loaded! Redirect to emergency info page
       // Store profile data temporarily in session storage for the emergency info page
       sessionStorage.setItem('multiProfileData', JSON.stringify(profileData.profile));
+      sessionStorage.setItem('activeQrUuid', uuid);
+      sessionStorage.setItem('activeProfileId', selectedProfile);
       
       // Navigate to emergency info page
       const identifier = profileData.profile.email || profileData.profile.phoneNumber;
@@ -386,6 +389,7 @@ export default function ProfileSelector() {
                     setOtpSent(false);
                     setPhoneNumber('');
                     setOtp('');
+                    setOtpRequestId('');
                     setOtpError(null);
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
