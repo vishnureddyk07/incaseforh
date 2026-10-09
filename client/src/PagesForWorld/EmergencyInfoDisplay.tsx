@@ -104,6 +104,17 @@ export default function EmergencyInfoDisplay() {
     }
   };
 
+  const handleProfileChanged = (profile: { email?: string; phoneNumber?: string; _id?: string }) => {
+    if (!activeQrUuid) return;
+    const identifier = profile.phoneNumber || profile.email || profile._id;
+    if (!identifier) return;
+
+    sessionStorage.setItem('activeQrUuid', activeQrUuid);
+    navigate(`/emergencyinfo/${encodeURIComponent(identifier)}?qrUuid=${encodeURIComponent(activeQrUuid)}`, {
+      replace: true,
+    });
+  };
+
   useEffect(() => {
     if (activeQrUuid) {
       fetchMultiProfileData(activeQrUuid);
@@ -789,16 +800,13 @@ export default function EmergencyInfoDisplay() {
           </div>
 
           {/* Expanded 3-Slot Profile Manager */}
-          {showProfileManager && (
+          {showProfileManager && activeQrUuid && (
             <div className="mt-3">
               <QRProfileManager
-                uuid={activeQrUuid || identifierParam || ''}
+                uuid={activeQrUuid}
                 refreshToken={profileRefreshToken}
                 onOpenAddModal={(_slotNumber) => setShowAddSecondaryModal(true)}
-                onProfileChanged={() => {
-                  const currentUuid = activeQrUuid || identifierParam;
-                  if (currentUuid) void fetchMultiProfileData(currentUuid);
-                }}
+                onProfileChanged={handleProfileChanged}
               />
             </div>
           )}
@@ -806,12 +814,11 @@ export default function EmergencyInfoDisplay() {
 
         {/* Add Secondary Profile Modal */}
         <AddSecondaryUserModal
-          uuid={activeQrUuid || identifierParam || ''}
+          uuid={activeQrUuid || ''}
           isOpen={showAddSecondaryModal}
           onClose={() => setShowAddSecondaryModal(false)}
           onSuccess={() => {
-            const currentUuid = activeQrUuid || identifierParam;
-            if (currentUuid) fetchMultiProfileData(currentUuid);
+            if (activeQrUuid) fetchMultiProfileData(activeQrUuid);
             setProfileRefreshToken((currentToken) => currentToken + 1);
           }}
         />

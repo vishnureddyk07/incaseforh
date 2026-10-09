@@ -22,7 +22,7 @@ interface Slot {
 interface QRProfileManagerProps {
   uuid: string;
   onOpenAddModal: (slotNumber: number) => void;
-  onProfileChanged?: () => void;
+  onProfileChanged?: (profile: Profile) => void;
   refreshToken?: number;
 }
 
@@ -62,8 +62,10 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
         body: JSON.stringify({ profileId }),
       });
       if (res.ok) {
-        await res.json();
-        onProfileChanged?.();
+        const data = await res.json();
+        if (data.activeProfile) {
+          onProfileChanged?.(data.activeProfile);
+        }
         await fetchSlots();
       } else {
         const data = await res.json().catch(() => ({}));
