@@ -114,9 +114,16 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
     }
   };
 
-  return <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4">
-    <div className="mx-auto my-6 max-w-4xl rounded-2xl bg-slate-50 p-6 shadow-2xl">
-      <h2 className="mb-1 text-lg font-bold">{registrationId ? 'Confirm Main Owner Authorization' : 'Add Complete Profile'}</h2>
+  return <div className="fixed inset-0 z-50 overflow-y-auto bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 px-4 py-8">
+    <div className="mx-auto max-w-7xl">
+      <div className="mb-8 text-center">
+        <h1 className="text-4xl font-bold text-slate-900 mb-2">Add New Profile</h1>
+        <p className="text-lg text-slate-600">
+          {registrationId
+            ? 'Confirm Main Owner Authorization'
+            : 'Complete the emergency information profile for this shared QR code.'}
+        </p>
+      </div>
       <p className="mb-4 text-sm text-slate-600">
         {registrationId
           ? 'Enter the one-time code provided by the Main Owner to authorize this profile.'
@@ -128,7 +135,7 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
         {otpHint ? <p className="mt-2 text-xs text-slate-500">Development code: {otpHint}</p> : null}
         {error ? <p className="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={close} disabled={loading} className="rounded border px-4 py-2">Cancel</button>
+          <button type="button" onClick={close} disabled={loading} className="rounded border px-4 py-2">Back</button>
           <button type="submit" disabled={loading} className="rounded bg-indigo-600 px-4 py-2 font-medium text-white">{loading ? 'Confirming...' : 'Confirm and Add Profile'}</button>
         </div>
       </form> : <form onSubmit={submit}>
@@ -145,10 +152,11 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
         />
         {error ? <p className="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={close} disabled={loading} className="rounded border px-4 py-2">Cancel</button>
+          <button type="button" onClick={close} disabled={loading} className="rounded border px-4 py-2">Back</button>
           <button type="submit" disabled={loading} className="rounded bg-indigo-600 px-4 py-2 font-medium text-white">{loading ? 'Requesting code...' : 'Request Owner Authorization'}</button>
         </div>
       </form>}
+      <p className="mt-6 text-center text-sm text-slate-500">Your information is secure and encrypted.</p>
     </div>
   </div>;
 }
