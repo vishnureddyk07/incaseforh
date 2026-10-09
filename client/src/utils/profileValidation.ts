@@ -1,4 +1,4 @@
-import { validatePhone } from './validation';
+import { validateEmail, validatePhone } from './validation';
 
 export type ProfileContact = { name: string; phone: string };
 
@@ -9,13 +9,17 @@ export const validateEmergencyProfile = (profile: {
   phoneNumber: string;
   dateOfBirth: string;
   bloodType: string;
+  email?: string;
   emergencyContacts: ProfileContact[];
 }): string | null => {
   if (!profile.fullName.trim() || !profile.phoneNumber.trim() || !profile.dateOfBirth || !profile.bloodType) {
     return 'Name, phone, date of birth, blood group, and one emergency contact are required.';
   }
   if (!validatePhone(profile.phoneNumber)) {
-    return 'Enter a valid phone number, for example +91 98765 43210.';
+    return 'Mobile number must contain exactly 10 digits.';
+  }
+  if (profile.email?.trim() && !validateEmail(profile.email)) {
+    return 'Enter a valid email address.';
   }
 
   const contacts = profile.emergencyContacts.filter((contact) => contact.name.trim() && contact.phone.trim());
@@ -26,7 +30,7 @@ export const validateEmergencyProfile = (profile: {
     return 'You can add up to 5 emergency contacts.';
   }
   if (contacts.some((contact) => !validatePhone(contact.phone))) {
-    return 'Enter a valid emergency contact phone number, for example +91 98765 43210.';
+    return 'Emergency contact mobile numbers must contain exactly 10 digits.';
   }
 
   const contactPhones = contacts.map((contact) => normalizePhoneForComparison(contact.phone)).filter(Boolean);

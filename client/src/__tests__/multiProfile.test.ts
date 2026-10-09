@@ -109,14 +109,14 @@ describe('multi profile rules', () => {
     expect(validateEmergencyProfile({
       ...validProfile,
       emergencyContacts: [{ name: 'Emergency Contact', phone: '98765 43210' }],
-    })).toContain('different');
+    })).toContain('10 digits');
     expect(validateEmergencyProfile({
       ...validProfile,
-      phoneNumber: '+91 98765 43210',
+      phoneNumber: '98765432101',
     })).toBeNull();
     expect(validateEmergencyProfile({
       ...validProfile,
       phoneNumber: 'not-a-phone',
-    })).toContain('valid phone number');
+    })).toContain('10 digits');
   });
 });

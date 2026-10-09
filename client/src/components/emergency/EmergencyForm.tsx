@@ -147,9 +147,11 @@ export default function EmergencyForm({
                 onChange={onChange}
                 required
                 inputMode="numeric"
+                pattern="[0-9]{10}"
+                maxLength={10}
                 autoComplete="tel"
                 className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                placeholder="+91 98765 43210"
+                placeholder="10-digit mobile number"
               />
             </div>
           </div>
@@ -229,8 +231,10 @@ export default function EmergencyForm({
                         onEmergencyContactChange?.(index, "phone", e.target.value)
                       }
                       inputMode="numeric"
+                      pattern="[0-9]{10}"
+                      maxLength={10}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                      placeholder="+91 98765 43210"
+                      placeholder="10-digit mobile number"
                       required
                       aria-required="true"
                     />
@@ -327,6 +331,8 @@ export default function EmergencyForm({
                 name="email"
                 value={emergencyInfo.email}
                 onChange={onChange}
+                pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$"
+                title="Enter a valid email address"
                 autoComplete="email"
                 className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition"
                 placeholder="your@email.com"

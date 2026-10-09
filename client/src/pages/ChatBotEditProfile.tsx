@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, CheckCircle, FileText, Image, Plus, Trash2, Upload } from 'lucide-react';
+import { validateEmergencyProfile } from '../utils/profileValidation';
 
 type EmergencyContact = {
   name: string;
@@ -123,6 +124,18 @@ export default function ChatBotEditProfile() {
     setSuccess(null);
 
     try {
+      const validationError = validateEmergencyProfile({
+        fullName: profile.fullName || '',
+        phoneNumber: profile.phoneNumber || '',
+        dateOfBirth: profile.dateOfBirth || '',
+        bloodType: profile.bloodType || '',
+        email: profile.email || '',
+        emergencyContacts: contacts,
+      });
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
       const formData = new FormData();
       formData.append('fullName', profile.fullName || '');
       formData.append('phoneNumber', profile.phoneNumber || '');
@@ -203,7 +216,7 @@ export default function ChatBotEditProfile() {
         <form onSubmit={onSave} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <input className="input" value={profile.fullName || ''} onChange={(e) => setProfile({ ...profile, fullName: e.target.value })} placeholder="Full Name" />
-            <input className="input" value={profile.phoneNumber || ''} onChange={(e) => setProfile({ ...profile, phoneNumber: e.target.value })} placeholder="Phone Number" />
+            <input className="input" type="tel" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} value={profile.phoneNumber || ''} onChange={(e) => setProfile({ ...profile, phoneNumber: e.target.value })} placeholder="10-digit mobile number" />
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

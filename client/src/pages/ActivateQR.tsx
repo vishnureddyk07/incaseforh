@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertCircle, FileText, Heart, Phone, User, Shield, Upload, Users, Trash2 } from 'lucide-react';
+import { validateEmergencyProfile } from '../utils/profileValidation';
 
 type EmergencyContact = { name: string; phone: string };
 
@@ -35,8 +36,6 @@ type ActivationCheckResponse = {
     };
   };
 };
-
-const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, '');
 
 const readJsonResponse = async <T,>(res: Response): Promise<T> => {
   const raw = await res.text();
@@ -235,37 +234,17 @@ export default function ActivateQR() {
     setError(null);
 
     try {
-      if (!fullName.trim()) {
-        throw new Error('Full Name is required.');
-      }
-      if (!phoneNumber.trim()) {
-        throw new Error('Phone Number is required.');
-      }
-      if (!bloodType) {
-        throw new Error('Blood Group is required.');
-      }
-
       const validContacts = contacts.filter((c) => c.name.trim() && c.phone.trim());
-      if (validContacts.length === 0) {
-        throw new Error('Please add at least one emergency contact with name and phone number.');
-      }
-
-      const normalizedContactPhones = validContacts
-        .map((contact) => normalizePhoneForComparison(contact.phone))
-        .filter(Boolean);
-      const hasDuplicateEmergencyContactNumber = new Set(normalizedContactPhones).size !== normalizedContactPhones.length;
-      if (hasDuplicateEmergencyContactNumber) {
-        throw new Error('Emergency contact numbers must be unique.');
-      }
-
-      const normalizedPrimaryPhone = normalizePhoneForComparison(phoneNumber);
-      if (normalizedPrimaryPhone) {
-        const hasSameAsPrimaryPhone = validContacts.some(
-          (contact) => normalizePhoneForComparison(contact.phone) === normalizedPrimaryPhone
-        );
-        if (hasSameAsPrimaryPhone) {
-          throw new Error('Your phone number and emergency contact number cannot be the same.');
-        }
+      const validationError = validateEmergencyProfile({
+        fullName,
+        phoneNumber,
+        dateOfBirth,
+        bloodType,
+        email,
+        emergencyContacts: validContacts,
+      });
+      if (validationError) {
+        throw new Error(validationError);
       }
 
       const formData = new FormData();
@@ -419,8 +398,12 @@ export default function ActivateQR() {
                     Phone Number <span className="text-red-500">*</span>
                   </label>
                   <input 
+                    type="tel"
                     value={phoneNumber} 
                     onChange={(e) => setPhoneNumber(e.target.value)} 
+                    inputMode="numeric"
+                    pattern="[0-9]{10}"
+                    maxLength={10}
                     placeholder="Enter your phone number" 
                     className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
                     required 
@@ -432,6 +415,7 @@ export default function ActivateQR() {
                     type="date" 
                     value={dateOfBirth} 
                     onChange={(e) => setDateOfBirth(e.target.value)} 
+                    required
                     className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
                     title="Date of birth" 
                     aria-label="Date of birth" 
@@ -485,8 +469,11 @@ export default function ActivateQR() {
                 <div>
                   <label className="block text-sm font-bold text-slate-900 mb-2">Email</label>
                   <input 
+                    type="email"
                     value={email} 
                     onChange={(e) => setEmail(e.target.value)} 
+                    pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$"
+                    title="Enter a valid email address"
                     placeholder="your@email.com" 
                     className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
                   />
@@ -540,8 +527,12 @@ export default function ActivateQR() {
                     <div>
                       <label className="block text-xs font-bold text-slate-900 mb-2">Phone Number</label>
                       <input 
+                        type="tel"
                         value={c.phone} 
                         onChange={(e) => updateContact(idx, 'phone', e.target.value)} 
+                        inputMode="numeric"
+                        pattern="[0-9]{10}"
+                        maxLength={10}
                         placeholder="Phone number" 
                         className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition text-sm" 
                         required 
