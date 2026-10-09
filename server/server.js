@@ -2318,17 +2318,19 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
         return res.json({ status: 'unactivated', activated: false, sticker, activateUrl });
       }
 
+      const storedProfiles = getStoredProfileEntries(sticker);
+      // A physical QR scan should always open the Main Owner profile. Profile
+      // switching remains available from the emergency page via the explicit
+      // "Switch / Manage Profiles" action.
+      const primaryEmergency = await findPrimaryEmergencyProfile(sticker, storedProfiles);
+      const scanEmergency = primaryEmergency || activeEmergency;
       const identifier =
-        activeEmergency.phoneNumber || activeEmergency.email || String(activeEmergency._id);
+        scanEmergency.phoneNumber || scanEmergency.email || String(scanEmergency._id);
 
       const emergencyProfileUrl = `${frontendUrl}/emergencyinfo/${encodeURIComponent(identifier)}?qrUuid=${encodeURIComponent(sticker.uuid)}`;
 
-      const storedProfiles = getStoredProfileEntries(sticker);
-      const shouldSelectProfile = storedProfiles.length > 1;
-      const profileSelectorUrl = `${frontendUrl}/qr/profiles/${encodeURIComponent(sticker.uuid)}`;
-
       if (!wantsJson) {
-        return res.redirect(302, shouldSelectProfile ? profileSelectorUrl : emergencyProfileUrl);
+        return res.redirect(302, emergencyProfileUrl);
       }
 
       return res.json({
@@ -2339,8 +2341,8 @@ router.get('/qr/activate/:uuid', readLimiter, async (req, res) => {
           activeEmergency,
         },
         emergencyProfileUrl,
-        redirectTo: shouldSelectProfile ? profileSelectorUrl : emergencyProfileUrl,
-        profileSelectorUrl: shouldSelectProfile ? profileSelectorUrl : null,
+        redirectTo: emergencyProfileUrl,
+        profileSelectorUrl: null,
       });
     }
 
@@ -3665,6 +3667,16 @@ const findActiveEmergencyProfile = async (sticker) => {
     if (emergency) return emergency;
   }
   return null;
+};
+
+const findPrimaryEmergencyProfile = async (sticker, storedProfiles = getStoredProfileEntries(sticker)) => {
+  const primaryEntry = storedProfiles.find((profile) => profile.profileType === 'PRIMARY') || storedProfiles[0];
+  const primaryProfileId = getProfileIdValue(primaryEntry) || getProfileIdValue(sticker.primaryProfileId) || getProfileIdValue(sticker.activatedBy);
+  if (!primaryProfileId) return null;
+
+  return EmergencyInfo.findById(primaryProfileId)
+    .select('fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
+    .lean();
 };
 
 // Helper: Generate random OTP
