@@ -25,7 +25,6 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
   const [error, setError] = useState('');
   const [registrationId, setRegistrationId] = useState('');
   const [otp, setOtp] = useState('');
-  const [otpHint, setOtpHint] = useState('');
   const apiBase = (import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com').replace(/\/+$/, '');
 
   if (!isOpen) return null;
@@ -47,7 +46,6 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
   const close = () => {
     setRegistrationId('');
     setOtp('');
-    setOtpHint('');
     setError('');
     onClose();
   };
@@ -76,7 +74,6 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to request owner authorization');
       setRegistrationId(data.registrationId || '');
-      setOtpHint(data.hintOtp || '');
       setOtp('');
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Failed to request owner authorization');
@@ -104,7 +101,6 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
       setProfile(createEmptyProfile());
       setRegistrationId('');
       setOtp('');
-      setOtpHint('');
       onSuccess();
       onClose();
     } catch (verifyError) {
@@ -132,7 +128,6 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
       {registrationId ? <form onSubmit={verifyAuthorization}>
         <label className="block text-sm font-medium text-slate-700">Owner authorization code</label>
         <input value={otp} onChange={(event) => setOtp(event.target.value)} inputMode="numeric" maxLength={6} className="mt-1 w-full rounded border px-3 py-2" placeholder="Enter one-time code" disabled={loading} />
-        {otpHint ? <p className="mt-2 text-xs text-slate-500">Development code: {otpHint}</p> : null}
         {error ? <p className="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={close} disabled={loading} className="rounded border px-4 py-2">Back</button>

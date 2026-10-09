@@ -114,10 +114,9 @@ export default function ChatBot() {
       }
 
       setChatState('otp-sent');
-      const otpHint = data?.otp ? `\n\nTest OTP: ${data.otp}` : '';
       addMessage(
         'bot',
-        `✅ OTP sent to ${maskForChat(phoneNumber)}! 📱 Please check your phone for the 6-digit code and enter it below.${otpHint}`
+        `✅ OTP sent to ${maskForChat(phoneNumber)}! 📱 Please check your phone for the 6-digit code and enter it below.`
       );
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to send OTP';
@@ -196,8 +195,7 @@ export default function ChatBot() {
         throw new Error(data.error || 'Failed to resend OTP');
       }
 
-      const otpHint = data?.otp ? `\n\nTest OTP: ${data.otp}` : '';
-      addMessage('bot', `🔁 New OTP sent to ${maskForChat(phoneNumber)}.${otpHint}`);
+      addMessage('bot', `🔁 New OTP sent to ${maskForChat(phoneNumber)}.`);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to resend OTP';
       setError(errorMsg);

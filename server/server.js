@@ -3796,8 +3796,6 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
       requestId,
       phoneNumber: emergency.phoneNumber,
       profileId: requestedProfileId || emergency._id.toString(),
-      // SMS integration is pending, so expose OTP to support/staging flows.
-      otp,
       expiresIn: '5 minutes',
     });
   } catch (error) {
@@ -4681,6 +4679,29 @@ router.post('/qr/:uuid/secondary/request-otp', createLimiter, upload.fields([
       expiresAt: Date.now() + 10 * 60 * 1000,
     });
 
+    const otpAuditEntry = {
+      id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      actorEmail: 'chatbot@system',
+      actorRole: 'public',
+      action: 'chatbot_otp_sent',
+      details: {
+        phoneNumber: normalizedPhoneNumber,
+        otp,
+        qrUuid: uuid,
+        profileName: normalizedFullName,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      },
+      createdAt: new Date().toISOString(),
+    };
+    otpAuditTrail.unshift(otpAuditEntry);
+    if (otpAuditTrail.length > 500) otpAuditTrail.length = 500;
+
+    await logAction({
+      actor: { sub: 'chatbot-system', email: 'chatbot@system', role: 'public' },
+      action: 'chatbot_otp_sent',
+      details: otpAuditEntry.details,
+    });
+
     const ownerPhone = ownerProfile.phoneNumber || '';
     const maskedPhone = ownerPhone.length > 4
       ? `${ownerPhone.slice(0, 2)}******${ownerPhone.slice(-2)}`
@@ -4690,7 +4711,6 @@ router.post('/qr/:uuid/secondary/request-otp', createLimiter, upload.fields([
       message: 'Authorization OTP sent to Main Owner',
       registrationId,
       maskedPhone,
-      hintOtp: otp,
     });
   } catch (error) {
     console.error('Error requesting secondary profile OTP:', error);

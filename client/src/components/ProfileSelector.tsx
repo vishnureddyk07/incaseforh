@@ -137,14 +137,11 @@ export default function ProfileSelector() {
         throw new Error(error.error || 'Failed to send OTP');
       }
 
-      const data = await readJsonResponse<{ otp?: string }>(res);
+      await readJsonResponse<{ message?: string }>(res);
       setOtpSent(true);
       setOtp('');
       setOtpError(null);
       console.log('OTP sent to:', phoneNumber);
-      if (data.otp) {
-        console.log('Development mode - OTP:', data.otp);
-      }
     } catch (err) {
       setOtpSent(false);
       setOtpError(err instanceof Error ? err.message : 'Failed to send OTP');
