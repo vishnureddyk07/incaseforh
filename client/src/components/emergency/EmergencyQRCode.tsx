@@ -3,8 +3,7 @@ import { Shield, CheckCircle, Upload, Loader, Plus, Trash2 } from "lucide-react"
 import * as QRCodeLib from 'qrcode';
 import type { EmergencyInfo, EmergencyContact } from "../../types/emergency";
 import EmergencyForm from "./EmergencyForm";
-
-const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, "");
+import { validateEmergencyProfile } from "../../utils/profileValidation";
 
 export default function EmergencyQRCode() {
   const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
@@ -157,34 +156,9 @@ export default function EmergencyQRCode() {
       alert("Please confirm your consent before submitting.");
       return;
     }
-    if (!emergencyInfo.fullName || !emergencyInfo.phoneNumber || !emergencyInfo.dateOfBirth) {
-      alert("Please enter your full name, phone number, and date of birth before submitting.");
-      return;
-    }
-    if (!emergencyInfo.bloodType) {
-      alert("Please select your blood type before submitting.");
-      return;
-    }
-    if (emergencyInfo.emergencyContacts.length === 0 || emergencyInfo.emergencyContacts.some(c => !c.name || !c.phone)) {
-      alert("Please add at least 1 emergency contact with both name and phone number.");
-      return;
-    }
-
-    const normalizedContactPhones = emergencyInfo.emergencyContacts
-      .map((contact) => normalizePhoneForComparison(contact.phone))
-      .filter(Boolean);
-    const hasDuplicateContactNumbers = new Set(normalizedContactPhones).size !== normalizedContactPhones.length;
-    if (hasDuplicateContactNumbers) {
-      alert("Emergency contact numbers must be unique.");
-      return;
-    }
-
-    const normalizedPrimaryPhone = normalizePhoneForComparison(emergencyInfo.phoneNumber);
-    const hasSameAsPrimaryPhone = normalizedContactPhones.some(
-      (contactPhone) => contactPhone === normalizedPrimaryPhone
-    );
-    if (hasSameAsPrimaryPhone) {
-      alert("Your phone number and emergency contact number cannot be the same.");
+    const validationError = validateEmergencyProfile(emergencyInfo);
+    if (validationError) {
+      alert(validationError);
       return;
     }
 

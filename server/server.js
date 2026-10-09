@@ -4159,8 +4159,9 @@ router.post('/qr/:uuid/profiles', createLimiter, upload.fields([
     const fullName = normalizeOptionalString(req.body?.fullName, 200);
     const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
     const bloodType = normalizeOptionalString(req.body?.bloodType, 20);
-    if (!fullName || !phoneNumber || !bloodType) {
-      return res.status(400).json({ error: 'Full name, phone number, and blood group are required' });
+    const dateOfBirth = normalizeOptionalString(req.body?.dateOfBirth, 40);
+    if (!fullName || !phoneNumber || !dateOfBirth || !bloodType) {
+      return res.status(400).json({ error: 'Full name, phone number, date of birth, and blood group are required' });
     }
 
     let emergencyContacts = [];
@@ -4171,6 +4172,18 @@ router.post('/qr/:uuid/profiles', createLimiter, upload.fields([
     }
     const validContacts = emergencyContacts.filter((contact) => contact?.name && contact?.phone);
     if (validContacts.length === 0) return res.status(400).json({ error: 'At least one emergency contact is required' });
+    if (validContacts.length > 5) return res.status(400).json({ error: 'A maximum of 5 emergency contacts is allowed' });
+
+    const normalizedContactPhones = validContacts
+      .map((contact) => normalizePhoneForComparison(contact.phone))
+      .filter(Boolean);
+    if (new Set(normalizedContactPhones).size !== normalizedContactPhones.length) {
+      return res.status(400).json({ error: 'Emergency contact phone numbers must be unique' });
+    }
+    const normalizedPrimaryPhone = normalizePhoneForComparison(phoneNumber);
+    if (normalizedPrimaryPhone && normalizedContactPhones.includes(normalizedPrimaryPhone)) {
+      return res.status(400).json({ error: 'Primary phone number must be different from emergency contact numbers' });
+    }
 
     const uploadedFiles = req.files || {};
     const getFile = (field) => Array.isArray(uploadedFiles[field]) ? uploadedFiles[field][0] : null;
@@ -4182,7 +4195,7 @@ router.post('/qr/:uuid/profiles', createLimiter, upload.fields([
       fullName,
       phoneNumber,
       email: normalizeOptionalString(req.body?.email, 200).toLowerCase() || null,
-      dateOfBirth: normalizeOptionalString(req.body?.dateOfBirth, 40),
+      dateOfBirth,
       bloodType,
       address: normalizeOptionalString(req.body?.address, 500),
       allergies: normalizeOptionalString(req.body?.allergies, 1000),

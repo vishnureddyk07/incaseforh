@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import EmergencyForm from './emergency/EmergencyForm';
 import type { EmergencyInfo } from '../types/emergency';
+import { validateEmergencyProfile } from '../utils/profileValidation';
 
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -42,11 +43,12 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    const contacts = profile.emergencyContacts.filter((contact) => contact.name.trim() && contact.phone.trim());
-    if (!profile.fullName.trim() || !profile.phoneNumber.trim() || !profile.dateOfBirth || !profile.bloodType || contacts.length === 0) {
-      setError('Name, phone, date of birth, blood group, and one emergency contact are required.');
+    const validationError = validateEmergencyProfile(profile);
+    if (validationError) {
+      setError(validationError);
       return;
     }
+    const contacts = profile.emergencyContacts.filter((contact) => contact.name.trim() && contact.phone.trim());
     setLoading(true);
     setError('');
     try {

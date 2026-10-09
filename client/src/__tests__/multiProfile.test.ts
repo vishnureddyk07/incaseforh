@@ -5,6 +5,7 @@ import {
   getProfileType,
   canAddProfile,
 } from '../utils/multiProfile';
+import { validateEmergencyProfile } from '../utils/profileValidation';
 
 const buildSecondaryProfileForm = (profile: {
   fullName: string;
@@ -85,5 +86,29 @@ describe('multi profile rules', () => {
     expect((formData.get('bloodTypeReport') as File).name).toBe('blood.pdf');
     expect((formData.get('prescriptionOrDischargeReport') as File).name).toBe('prescription.pdf');
     expect((formData.get('surgicalInfoReport') as File).name).toBe('medical-history.pdf');
+  });
+
+  it('matches the complete profile validation rules', () => {
+    const validProfile = {
+      fullName: 'Secondary User',
+      phoneNumber: '9876543210',
+      dateOfBirth: '1990-01-01',
+      bloodType: 'O+',
+      emergencyContacts: [{ name: 'Emergency Contact', phone: '9123456780' }],
+    };
+
+    expect(validateEmergencyProfile(validProfile)).toBeNull();
+    expect(validateEmergencyProfile({ ...validProfile, dateOfBirth: '' })).toContain('date of birth');
+    expect(validateEmergencyProfile({
+      ...validProfile,
+      emergencyContacts: [
+        { name: 'One', phone: '9123456780' },
+        { name: 'Two', phone: '9123456780' },
+      ],
+    })).toContain('unique');
+    expect(validateEmergencyProfile({
+      ...validProfile,
+      emergencyContacts: [{ name: 'Emergency Contact', phone: '98765 43210' }],
+    })).toContain('different');
   });
 });
