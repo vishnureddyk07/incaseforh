@@ -212,7 +212,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
 
     const identifier = (selectedSticker.activatedBy?.email || selectedSticker.activatedBy?.phoneNumber || '').trim();
     const scanUrl = selectedSticker.status === 'active' && identifier
-      ? `${publicAppUrl}/emergencyinfo/${encodeURIComponent(identifier)}`
+      ? `${publicAppUrl}/emergencyinfo/${encodeURIComponent(identifier)}?qrUuid=${encodeURIComponent(selectedSticker.uuid)}`
       : `${publicAppUrl}/activate/${selectedSticker.uuid}`;
 
     void QRCodeLib.toDataURL(scanUrl, {
@@ -542,7 +542,7 @@ export default function QRStickerManagement({ token, backendApiBaseUrl }: Props)
   const getStickerScanUrl = (sticker: StickerRow) => {
     const identifier = (sticker.activatedBy?.email || sticker.activatedBy?.phoneNumber || '').trim();
     if (sticker.status === 'active' && identifier) {
-      return `${publicAppUrl}/emergencyinfo/${encodeURIComponent(identifier)}`;
+      return `${publicAppUrl}/emergencyinfo/${encodeURIComponent(identifier)}?qrUuid=${encodeURIComponent(sticker.uuid)}`;
     }
     return `${publicAppUrl}/activate/${sticker.uuid}`;
   };

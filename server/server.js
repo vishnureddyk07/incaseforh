@@ -2534,6 +2534,7 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
     const hasLegacyMultipleProfiles = (sticker.secondaryProfiles?.length || 0) > 0;
     const shouldPersistMultiProfile = supportsMultiProfile && (
       sticker.multiProfileMode || addProfileMode || hasLegacyMultipleProfiles || (sticker.profiles?.length || 0) > 1
+      || !isExistingActiveProfile
     );
 
     if (shouldPersistMultiProfile) {
@@ -4586,7 +4587,12 @@ router.get('/qr/resolve/:uuid', readLimiter, async (req, res) => {
 });
 
 // 2. Request OTP to add a secondary profile
-router.post('/qr/:uuid/secondary/request-otp', createLimiter, async (req, res) => {
+router.post('/qr/:uuid/secondary/request-otp', createLimiter, upload.fields([
+  { name: 'photo', maxCount: 1 },
+  { name: 'bloodTypeReport', maxCount: 1 },
+  { name: 'prescriptionOrDischargeReport', maxCount: 1 },
+  { name: 'surgicalInfoReport', maxCount: 1 },
+]), async (req, res) => {
   try {
     const uuid = sanitizeStringParam(req.params.uuid);
     const sticker = await QRSticker.findOne({ uuid })
@@ -4595,6 +4601,10 @@ router.post('/qr/:uuid/secondary/request-otp', createLimiter, async (req, res) =
       .lean();
 
     if (!sticker) return res.status(404).json({ error: 'Sticker not found' });
+    if (sticker.status !== 'active') return res.status(400).json({ error: 'QR must be activated by the Main Owner first' });
+    if (sticker.type !== 'b2c' && sticker.type !== 'b2b') {
+      return res.status(403).json({ error: 'This QR type does not support multiple profiles' });
+    }
     const storedEntries = getStoredProfileEntries(sticker);
     const ownerId = getProfileIdValue(storedEntries.find((profile) => profile.profileType === 'PRIMARY'));
     const ownerProfile = sticker.primaryProfileId || sticker.activatedBy || (ownerId ? await EmergencyInfo.findById(ownerId).lean() : null);
@@ -4608,25 +4618,45 @@ router.post('/qr/:uuid/secondary/request-otp', createLimiter, async (req, res) =
       });
     }
 
-    const { fullName, phoneNumber, bloodType, dateOfBirth, emergencyContacts, allergies, medications, medicalConditions, address } = req.body;
+    const {
+      fullName, phoneNumber, email, bloodType, dateOfBirth, emergencyContacts,
+      allergies, medications, medicalConditions, address,
+    } = req.body;
 
     if (!fullName || !phoneNumber) {
       return res.status(400).json({ error: 'Full name and phone number are required' });
     }
 
+    let parsedContacts = emergencyContacts;
+    if (typeof emergencyContacts === 'string') {
+      try { parsedContacts = JSON.parse(emergencyContacts); } catch { parsedContacts = []; }
+    }
+    const validContacts = sanitizeContacts(parsedContacts).filter((contact) => contact?.name && contact?.phone);
+    if (validContacts.length === 0) {
+      return res.status(400).json({ error: 'At least one emergency contact is required' });
+    }
+    const uploadedFiles = req.files || {};
+    const getFile = (field) => Array.isArray(uploadedFiles[field]) ? uploadedFiles[field][0] : null;
+    const otp = generateOTP();
     const registrationId = uuidv4();
     pendingSecondaryRegistrations.set(registrationId, {
       uuid,
+      otp,
       profileData: {
         fullName: stripHtml(fullName),
         phoneNumber: stripHtml(phoneNumber),
+        email: normalizeOptionalString(email, 200).toLowerCase() || null,
         bloodType: normalizeOptionalString(bloodType, 20),
         dateOfBirth: normalizeOptionalString(dateOfBirth, 40),
         allergies: normalizeOptionalString(allergies, 1000),
         medications: normalizeOptionalString(medications, 1000),
         medicalConditions: normalizeOptionalString(medicalConditions, 1000),
         address: normalizeOptionalString(address, 500),
-        emergencyContacts: Array.isArray(emergencyContacts) ? sanitizeContacts(emergencyContacts) : [],
+        emergencyContacts: validContacts,
+        photo: uploadedFileToDataUrl(getFile('photo')),
+        bloodTypeReport: uploadedFileToDataUrl(getFile('bloodTypeReport')),
+        prescriptionOrDischargeReport: uploadedFileToDataUrl(getFile('prescriptionOrDischargeReport')),
+        surgicalInfoReport: uploadedFileToDataUrl(getFile('surgicalInfoReport')),
       },
       expiresAt: Date.now() + 10 * 60 * 1000,
     });
@@ -4640,7 +4670,7 @@ router.post('/qr/:uuid/secondary/request-otp', createLimiter, async (req, res) =
       message: 'Authorization OTP sent to Main Owner',
       registrationId,
       maskedPhone,
-      hintOtp: DUMMY_OWNER_OTP,
+      hintOtp: otp,
     });
   } catch (error) {
     console.error('Error requesting secondary profile OTP:', error);
@@ -4668,7 +4698,7 @@ router.post('/qr/:uuid/secondary/verify-otp', createLimiter, async (req, res) =>
       return res.status(410).json({ error: 'OTP has expired. Please request a new one.' });
     }
 
-    if (String(otp).trim() !== DUMMY_OWNER_OTP) {
+    if (String(otp).trim() !== String(pending.otp)) {
       return res.status(401).json({ error: 'Incorrect OTP. Authorization denied.' });
     }
 
