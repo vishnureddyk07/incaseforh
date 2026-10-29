@@ -113,7 +113,7 @@ describe('multi profile rules', () => {
     expect(validateEmergencyProfile({
       ...validProfile,
       phoneNumber: '98765432101',
-    })).toBeNull();
+    })).toContain('10 digits');
     expect(validateEmergencyProfile({
       ...validProfile,
       phoneNumber: 'not-a-phone',
