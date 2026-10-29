@@ -24,6 +24,7 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [registrationId, setRegistrationId] = useState('');
+  const [maskedOwnerPhone, setMaskedOwnerPhone] = useState('');
   const [otp, setOtp] = useState('');
   const apiBase = (import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com').replace(/\/+$/, '');
 
@@ -45,6 +46,7 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
 
   const close = () => {
     setRegistrationId('');
+    setMaskedOwnerPhone('');
     setOtp('');
     setError('');
     onClose();
@@ -70,13 +72,24 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
       if (profile.bloodTypeReport instanceof File) formData.append('bloodTypeReport', profile.bloodTypeReport);
       if (profile.prescriptionOrDischargeReport instanceof File) formData.append('prescriptionOrDischargeReport', profile.prescriptionOrDischargeReport);
       if (profile.surgicalInfoReport instanceof File) formData.append('surgicalInfoReport', profile.surgicalInfoReport);
-      const response = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/secondary/request-otp`, { method: 'POST', body: formData });
+      const response = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/secondary/request-otp`, {
+        method: 'POST',
+        body: formData,
+        signal: AbortSignal.timeout(20_000),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to request owner authorization');
       setRegistrationId(data.registrationId || '');
+      setMaskedOwnerPhone(data.maskedPhone || 'the Main Owner mobile number');
       setOtp('');
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Failed to request owner authorization');
+      setError(
+        submitError instanceof DOMException && submitError.name === 'TimeoutError'
+          ? 'The authorization request timed out. Check that the local backend is running, then try again.'
+          : submitError instanceof Error
+            ? submitError.message
+            : 'Failed to request owner authorization'
+      );
     } finally {
       setLoading(false);
     }
@@ -110,6 +123,26 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
     }
   };
 
+  const resendAuthorization = async () => {
+    if (!registrationId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${apiBase}/api/v1/chatbot/resend-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId: registrationId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to resend authorization code');
+      setMaskedOwnerPhone(data.maskedPhone || maskedOwnerPhone);
+    } catch (resendError) {
+      setError(resendError instanceof Error ? resendError.message : 'Failed to resend authorization code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return <div className="fixed inset-0 z-50 overflow-y-auto bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 px-4 py-8">
     <div className="mx-auto max-w-7xl">
       <div className="mb-8 text-center">
@@ -126,14 +159,18 @@ export default function AddSecondaryUserModal({ uuid, isOpen, onClose, onSuccess
           : 'Complete every section, including photo, medical history, reports, and emergency contacts.'}
       </p>
       {registrationId ? <form onSubmit={verifyAuthorization}>
+        <p className="mb-4 text-sm text-slate-600">
+          The authorization code was sent to {maskedOwnerPhone}.
+        </p>
         <label className="block text-sm font-medium text-slate-700">Owner authorization code</label>
         <input value={otp} onChange={(event) => setOtp(event.target.value)} inputMode="numeric" maxLength={6} className="mt-1 w-full rounded border px-3 py-2" placeholder="Enter one-time code" disabled={loading} />
         {error ? <p className="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={close} disabled={loading} className="rounded border px-4 py-2">Back</button>
+          <button type="button" onClick={resendAuthorization} disabled={loading} className="rounded border px-4 py-2">Resend code</button>
           <button type="submit" disabled={loading} className="rounded bg-indigo-600 px-4 py-2 font-medium text-white">{loading ? 'Confirming...' : 'Confirm and Add Profile'}</button>
         </div>
-      </form> : <form onSubmit={submit}>
+      </form> : <form onSubmit={submit} noValidate>
         <EmergencyForm
           emergencyInfo={profile}
           onChange={onChange}

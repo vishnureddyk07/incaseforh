@@ -27,7 +27,7 @@ interface OtpLogEntry {
   action: string;
   details?: {
     phoneNumber?: string;
-    otp?: string;
+    purpose?: string;
     expiresAt?: string;
     emergencyInfoId?: string;
   };
@@ -378,7 +378,7 @@ export default function AdminDashboard() {
     const q = otpSearchQuery.toLowerCase();
     return otpLogs.filter((log) =>
       (log.details?.phoneNumber || '').toLowerCase().includes(q)
-      || (log.details?.otp || '').toLowerCase().includes(q)
+      || (log.details?.purpose || '').toLowerCase().includes(q)
       || (log.actorEmail || '').toLowerCase().includes(q)
     );
   }, [otpLogs, otpSearchQuery]);
@@ -545,7 +545,7 @@ export default function AdminDashboard() {
                 <input
                   value={otpSearchQuery}
                   onChange={(e) => setOtpSearchQuery(e.target.value)}
-                  placeholder="Search by phone or OTP..."
+                  placeholder="Search by masked phone or purpose..."
                   className="input-sm w-56"
                 />
                 <button onClick={fetchOtpLogs} className="btn-secondary-sm">
@@ -569,7 +569,7 @@ export default function AdminDashboard() {
                     <tr className="border-b bg-neutral-50 text-neutral-500">
                       <th className="py-3 px-2 font-medium">When</th>
                       <th className="py-3 px-2 font-medium">Phone</th>
-                      <th className="py-3 px-2 font-medium">OTP</th>
+                      <th className="py-3 px-2 font-medium">Purpose</th>
                       <th className="py-3 px-2 font-medium">Expires</th>
                     </tr>
                   </thead>
@@ -578,7 +578,7 @@ export default function AdminDashboard() {
                       <tr key={otpLog.id} className="border-b border-neutral-100 hover:bg-neutral-50 transition-colors">
                         <td className="py-3 px-2 text-neutral-500 text-xs whitespace-nowrap">{formatDateTime(otpLog.createdAt)}</td>
                         <td className="py-3 px-2 text-neutral-900 text-xs">{otpLog.details?.phoneNumber || '—'}</td>
-                        <td className="py-3 px-2 text-xs font-mono text-primary-700">{otpLog.details?.otp || '—'}</td>
+                        <td className="py-3 px-2 text-xs text-neutral-700">{otpLog.details?.purpose || 'OTP authorization'}</td>
                         <td className="py-3 px-2 text-neutral-600 text-xs">{formatDateTime(otpLog.details?.expiresAt)}</td>
                       </tr>
                     ))}

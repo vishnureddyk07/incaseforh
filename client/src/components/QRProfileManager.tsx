@@ -32,6 +32,7 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
   const [error, setError] = useState<string | null>(null);
   const [switchingProfile, setSwitchingProfile] = useState<Profile | null>(null);
   const [switchRequestId, setSwitchRequestId] = useState('');
+  const [switchMaskedPhone, setSwitchMaskedPhone] = useState('');
   const [switchOtp, setSwitchOtp] = useState('');
   const [switchLoading, setSwitchLoading] = useState(false);
   const apiBase = (import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com').replace(/\/+$/, '');
@@ -60,12 +61,10 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
 
   const handleSwitchActive = async (profileId: string) => {
     const profile = slots.flatMap((slot) => slot.profile ? [slot.profile] : []).find((entry) => entry._id === profileId);
-    if (!profile || !profile.profilePhone && !profile.phoneNumber) {
-      setError('This profile does not have a phone number for OTP verification.');
-      return;
-    }
+    if (!profile) return;
     setSwitchingProfile(profile);
     setSwitchRequestId('');
+    setSwitchMaskedPhone('');
     setSwitchOtp('');
     setError(null);
     try {
@@ -74,7 +73,6 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phoneNumber: profile.profilePhone || profile.phoneNumber,
           qrUuid: uuid,
           profileId,
         }),
@@ -82,9 +80,30 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to send profile OTP');
       setSwitchRequestId(data.requestId || '');
+      setSwitchMaskedPhone(data.maskedPhone || 'the Main Owner mobile number');
     } catch (err) {
       setSwitchingProfile(null);
       setError(err instanceof Error ? err.message : 'Failed to send profile OTP');
+    } finally {
+      setSwitchLoading(false);
+    }
+  };
+
+  const resendProfileSwitchOtp = async () => {
+    if (!switchRequestId) return;
+    try {
+      setSwitchLoading(true);
+      const response = await fetch(`${apiBase}/api/v1/chatbot/resend-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId: switchRequestId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to resend profile OTP');
+      setSwitchMaskedPhone(data.maskedPhone || switchMaskedPhone);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resend profile OTP');
     } finally {
       setSwitchLoading(false);
     }
@@ -119,6 +138,7 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
         await fetchSlots();
         setSwitchingProfile(null);
         setSwitchRequestId('');
+        setSwitchMaskedPhone('');
         setSwitchOtp('');
       } else {
         const data = await res.json().catch(() => ({}));
@@ -236,7 +256,7 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
           <form onSubmit={verifyProfileSwitch} className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
             <h4 className="text-lg font-bold text-gray-900">Verify profile switch</h4>
             <p className="mt-2 text-sm text-gray-600">
-              Enter the OTP for {switchingProfile.profileName || switchingProfile.fullName || 'this profile'}.
+              Enter the OTP sent to {switchMaskedPhone || 'the Main Owner mobile number'} to switch to {switchingProfile.profileName || switchingProfile.fullName || 'this profile'}.
             </p>
             <input
               value={switchOtp}
@@ -248,8 +268,9 @@ export const QRProfileManager: React.FC<QRProfileManagerProps> = ({ uuid, onOpen
               disabled={switchLoading || !switchRequestId}
             />
             <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setSwitchingProfile(null)} disabled={switchLoading} className="rounded border px-4 py-2">Cancel</button>
-              <button type="submit" disabled={switchLoading || !switchRequestId || switchOtp.length !== 6} className="rounded bg-emerald-600 px-4 py-2 font-semibold text-white disabled:opacity-50">
+              <button type="button" onClick={() => { setSwitchingProfile(null); setSwitchRequestId(''); setSwitchMaskedPhone(''); setSwitchOtp(''); }} disabled={switchLoading} className="rounded border px-4 py-2">Cancel</button>
+             <button type="button" onClick={resendProfileSwitchOtp} disabled={switchLoading || !switchRequestId} className="rounded border px-4 py-2">Resend</button>
+             <button type="submit" disabled={switchLoading || !switchRequestId || switchOtp.length !== 6} className="rounded bg-emerald-600 px-4 py-2 font-semibold text-white disabled:opacity-50">
                 {switchLoading ? 'Verifying...' : 'Switch Profile'}
               </button>
             </div>

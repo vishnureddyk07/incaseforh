@@ -49,6 +49,36 @@ Optional end-to-end tests:
 npx playwright test
 ```
 
+## MSG91 OTP configuration
+
+For local development, copy `.env.example` to the repository-root `.env` and
+set `MSG91_AUTH_KEY` and `MSG91_TEMPLATE_ID`. For production, set those same
+variables in the Render service environment; local `.env` files are ignored
+and are not deployed. Keep the Auth Key server-side; never use a `VITE_`
+variable for it. The selected MSG91 OTP template must be approved and contain
+the `##OTP##` placeholder. `MSG91_DEFAULT_COUNTRY_CODE` is used only when a
+stored number has 10 digits; it defaults to India (`91`).
+
+MSG91 generates, sends, and verifies the OTP. The backend stores only a
+purpose-bound request/challenge record and calls MSG91's API; it does not
+generate or store OTP values. Production API requests originate from the
+backend host. If the Auth Key is restricted by source IP, allow the Render
+service's outbound IP ranges (shown in its Dashboard under Connect → Outbound),
+not the developer computer's public IP. Use a Render dedicated outbound IP if
+the MSG91 allowlist cannot support the service's regional IP ranges.
+
+The documented OTP API uses the template's configured sender and DLT settings;
+the current API contract does not require separate sender-ID or Entity-ID
+request parameters. Run the mocked provider contract tests with:
+
+```bash
+node --test server/__tests__/msg91Otp.test.js
+```
+
+Real SMS tests require a local MongoDB connection and valid MSG91 credentials.
+They are not part of automated tests and should only be run using an authorized
+test number.
+
 ## Project Structure
 
 ```text

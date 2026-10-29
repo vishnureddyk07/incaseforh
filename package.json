@@ -10,6 +10,7 @@
     "preview": "cd client && vite preview",
     "server": "node server/server.js",
     "test": "npm --prefix client run test",
+    "test:server": "node --test server/__tests__/msg91Otp.test.js",
     "test:watch": "npm --prefix client exec vitest",
     "e2e": "playwright test",
     "seed:hospitals": "node server/seedHospitals.js"

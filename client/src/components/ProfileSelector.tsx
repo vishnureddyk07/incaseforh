@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, ChevronRight, Loader2, Plus } from 'lucide-react';
 import AddSecondaryUserModal from './AddSecondaryUserModal';
@@ -48,10 +48,9 @@ export default function ProfileSelector() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
-  const [verifyingOTP, setVerifyingOTP] = useState(false);
   const [showOTPModal, setShowOTPModal] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [maskedOwnerPhone, setMaskedOwnerPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [otpRequestId, setOtpRequestId] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
@@ -59,42 +58,38 @@ export default function ProfileSelector() {
   const [showFullAddProfile, setShowFullAddProfile] = useState(false);
 
   // Fetch profile list from QR
-  useEffect(() => {
-    const fetchProfiles = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+  const fetchProfiles = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-        const res = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/profiles`);
-        if (!res.ok) {
-          throw new Error('Failed to load profiles from QR');
-        }
-
-        const data: QRData = await readJsonResponse<QRData>(res);
-        setQrData(data);
-
-        // A physical scan always opens the primary profile. Switching remains
-        // available from the emergency page.
-        const primaryProfile = data.profiles.find((profile) => profile.profileType === 'PRIMARY') || data.profiles[0];
-        if (primaryProfile) setSelectedProfile(primaryProfile.profileId);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load profiles');
-      } finally {
-        setLoading(false);
+      const res = await fetch(`${apiBase}/api/v1/qr/${encodeURIComponent(uuid)}/profiles`);
+      if (!res.ok) {
+        throw new Error('Failed to load profiles from QR');
       }
-    };
 
-    if (uuid) {
-      fetchProfiles();
+      const data: QRData = await readJsonResponse<QRData>(res);
+      setQrData(data);
+
+      const primaryProfile = data.profiles.find((profile) => profile.profileType === 'PRIMARY') || data.profiles[0];
+      if (primaryProfile) setSelectedProfile(primaryProfile.profileId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load profiles');
+    } finally {
+      setLoading(false);
     }
-  }, [uuid, apiBase]);
+  }, [apiBase, uuid]);
+
+  useEffect(() => {
+    if (uuid) void fetchProfiles();
+  }, [uuid, fetchProfiles]);
 
   // Handle profile selection and OTP flow
   const handleSelectProfile = (profileId: string) => {
     const profile = qrData?.profiles.find((entry) => entry.profileId === profileId);
     if (!profile) return;
     setSelectedProfile(profile.profileId);
-    setPhoneNumber('');
+    setMaskedOwnerPhone('');
     setOtp('');
     setOtpRequestId('');
     setOtpSent(false);
@@ -104,11 +99,6 @@ export default function ProfileSelector() {
 
   // Request OTP
   const handleRequestOTP = async () => {
-    if (!phoneNumber.trim()) {
-      setOtpError('Phone number is required');
-      return;
-    }
-
     try {
       setOtpLoading(true);
       setOtpError(null);
@@ -117,7 +107,6 @@ export default function ProfileSelector() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phoneNumber: phoneNumber.trim(),
           qrUuid: uuid,
           profileId: selectedProfile,
         }),
@@ -128,13 +117,13 @@ export default function ProfileSelector() {
         throw new Error(error.error || 'Failed to send OTP');
       }
 
-      const data = await readJsonResponse<{ message?: string; requestId?: string }>(res);
+      const data = await readJsonResponse<{ message?: string; requestId?: string; maskedPhone?: string }>(res);
       if (!data.requestId) throw new Error('OTP request reference was not returned');
       setOtpRequestId(data.requestId);
+      setMaskedOwnerPhone(data.maskedPhone || 'the Main Owner mobile number');
       setOtpSent(true);
       setOtp('');
       setOtpError(null);
-      console.log('OTP sent to:', phoneNumber);
     } catch (err) {
       setOtpSent(false);
       setOtpError(err instanceof Error ? err.message : 'Failed to send OTP');
@@ -209,9 +198,30 @@ export default function ProfileSelector() {
       
       // Navigate to emergency info page
       const identifier = profileData.profile.email || profileData.profile.phoneNumber;
+      if (!identifier) throw new Error('Verified profile has no email or phone identifier');
       navigate(`/emergencyinfo/${encodeURIComponent(identifier)}`);
     } catch (err) {
       setOtpError(err instanceof Error ? err.message : 'Failed to verify OTP');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    if (!otpRequestId) return;
+    try {
+      setOtpLoading(true);
+      setOtpError(null);
+      const response = await fetch(`${apiBase}/api/v1/chatbot/resend-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId: otpRequestId }),
+      });
+      const data = await readJsonResponse<{ error?: string; maskedPhone?: string }>(response);
+      if (!response.ok) throw new Error(data.error || 'Failed to resend OTP');
+      setMaskedOwnerPhone(data.maskedPhone || maskedOwnerPhone);
+    } catch (err) {
+      setOtpError(err instanceof Error ? err.message : 'Failed to resend OTP');
     } finally {
       setOtpLoading(false);
     }
@@ -340,23 +350,9 @@ export default function ProfileSelector() {
               <h2 className="text-xl font-bold text-gray-800 mb-2">Secure access</h2>
               <p className="text-gray-600 mb-5 text-sm">
                 {otpSent
-                  ? 'We sent a 6-digit code to this number. Enter it below to continue.'
-                  : 'Choose a profile and verify your phone number to view the saved details.'}
+                  ? `We sent a 6-digit code to ${maskedOwnerPhone}. Enter it below to continue.`
+                  : 'A verification code will be sent to the Main Owner’s registered phone to authorize this selection.'}
               </p>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Phone Number
-                </label>
-                <input
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="+91 9876543210"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={otpLoading}
-                />
-              </div>
 
               {otpSent && (
                 <div className="mb-4">
@@ -387,7 +383,7 @@ export default function ProfileSelector() {
                     setShowOTPModal(false);
                     setSelectedProfile(null);
                     setOtpSent(false);
-                    setPhoneNumber('');
+                    setMaskedOwnerPhone('');
                     setOtp('');
                     setOtpRequestId('');
                     setOtpError(null);
@@ -399,6 +395,14 @@ export default function ProfileSelector() {
                 </button>
 
                 {otpSent ? (
+                  <>
+                  <button
+                    onClick={handleResendOTP}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                    disabled={otpLoading}
+                  >
+                    Resend
+                  </button>
                   <button
                     onClick={handleVerifyOTP}
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
@@ -407,11 +411,12 @@ export default function ProfileSelector() {
                     {otpLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                     Verify
                   </button>
+                  </>
                 ) : (
                   <button
                     onClick={handleRequestOTP}
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                    disabled={otpLoading || !phoneNumber.trim()}
+                    disabled={otpLoading}
                   >
                     {otpLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                     Send code

@@ -29,7 +29,7 @@ interface OtpLogEntry {
   action: string;
   details?: {
     phoneNumber?: string;
-    otp?: string;
+    purpose?: string;
     expiresAt?: string;
     emergencyInfoId?: string;
   };
@@ -295,7 +295,7 @@ export default function ManagerDashboard() {
                   <tr className="text-neutral-700">
                     <th className="py-3 px-4">When</th>
                     <th className="py-3 px-4">Phone</th>
-                    <th className="py-3 px-4">OTP</th>
+                    <th className="py-3 px-4">Purpose</th>
                     <th className="py-3 px-4">Expires</th>
                   </tr>
                 </thead>
@@ -304,7 +304,7 @@ export default function ManagerDashboard() {
                     <tr key={log.id} className="border-t border-neutral-100">
                       <td className="py-3 px-4 text-neutral-700">{log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}</td>
                       <td className="py-3 px-4 text-neutral-900">{log.details?.phoneNumber || '—'}</td>
-                      <td className="py-3 px-4 font-mono text-primary-700">{log.details?.otp || '—'}</td>
+                      <td className="py-3 px-4 text-neutral-700">{log.details?.purpose || 'OTP authorization'}</td>
                       <td className="py-3 px-4 text-neutral-700">{log.details?.expiresAt ? new Date(log.details.expiresAt).toLocaleString() : '—'}</td>
                     </tr>
                   ))}

@@ -17,9 +17,9 @@ import Hospital from './models/Hospital.js';
 import SosAlert from './models/SosAlert.js';
 import QRSticker from './models/QRSticker.js';
 import QRBatch from './models/QRBatch.js';
+import OtpChallenge from './models/OtpChallenge.js';
+import { Msg91Error, normalizeMsg91Mobile, resendOtp, sendOtp, verifyOtp } from './services/msg91Otp.js';
 import { v4 as uuidv4 } from 'uuid';
-const pendingSecondaryRegistrations = new Map();
-const DUMMY_OWNER_OTP = '0708';
 
 // Get directory name in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -48,7 +48,7 @@ const resolveFrontendUrl = (req) => {
   if (FRONTEND_APP_URL) return FRONTEND_APP_URL;
   const origin = String(req.headers.origin || '').trim();
   if (origin.startsWith('http://') || origin.startsWith('https://')) {
-    return origin.replace(/\/+$/, '');
+    return origin;
   }
   return 'https://incaseforh.vercel.app';
 };
@@ -73,10 +73,6 @@ app.use(redirectLegacyEmergencyInfoRoute);
 app.use((req, res, next) => {
   console.log(`Request: ${req.method} ${req.url}`);
   const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://10.5.12.85:5173',
-    'http://10.5.12.85:5174',
     'https://incaseforh.vercel.app',
     /^https:\/\/incaseforh-.*\.vercel\.app$/
   ];
@@ -404,6 +400,10 @@ const normalizeOptionalString = (val, maxLen = 500) => {
 };
 
 const normalizePhoneForComparison = (value) => String(value || '').replace(/\D/g, '');
+const maskPhoneNumber = (value) => {
+  const digits = normalizePhoneForComparison(value);
+  return digits.length > 4 ? `******${digits.slice(-4)}` : 'the registered mobile number';
+};
 
 const parsePositiveInt = (value, fallback = 0) => {
   const n = Number.parseInt(String(value), 10);
@@ -2420,7 +2420,12 @@ router.post('/qr/activate/:uuid', createLimiter, upload.fields([
       let otpSessionProfileId = null;
       try {
         const payload = jwt.verify(bearerToken, JWT_SECRET);
-        if (payload.type !== 'chatbot-edit-session') {
+        if (
+          payload.type !== 'chatbot-edit-session' ||
+          payload.purpose !== 'profile-add' ||
+          payload.qrUuid !== sticker.uuid ||
+          !payload.challengeId
+        ) {
           throw new Error('wrong token type');
         }
         otpSessionProfileId = payload.sub;
@@ -3491,6 +3496,15 @@ router.delete('/admin/users/:id', requireAuth, requireAdmin, async (req, res) =>
 });
 
 // Admin: view recent manager/admin action logs
+const safeActionLogDetails = (log) => {
+  if (log.action !== 'chatbot_otp_sent') return log.details;
+  return {
+    phoneNumber: log.details?.maskedPhone || maskPhoneNumber(log.details?.phoneNumber),
+    purpose: log.details?.purpose || 'OTP authorization',
+    expiresAt: log.details?.expiresAt,
+  };
+};
+
 router.get('/admin/logs', requireAuth, requireAdmin, async (req, res) => {
   try {
     const pageRequested = req.query.page !== undefined;
@@ -3514,7 +3528,7 @@ router.get('/admin/logs', requireAuth, requireAdmin, async (req, res) => {
           actorEmail: log.actorEmail,
           actorRole: log.actorRole,
           action: log.action,
-          details: log.details,
+          details: safeActionLogDetails(log),
           createdAt: log.createdAt,
         })),
         total,
@@ -3534,7 +3548,7 @@ router.get('/admin/logs', requireAuth, requireAdmin, async (req, res) => {
         actorEmail: log.actorEmail,
         actorRole: log.actorRole,
         action: log.action,
-        details: log.details,
+        details: safeActionLogDetails(log),
         createdAt: log.createdAt,
       }))
     );
@@ -3544,7 +3558,7 @@ router.get('/admin/logs', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// Admin/Manager: view recent chatbot OTP events for support verification
+// Admin/Manager: view safe OTP delivery metadata. Never expose OTP values.
 router.get('/otp/logs', requireAuth, requireManagerOrAdmin, async (req, res) => {
   try {
     const limit = Math.min(Math.max(parsePositiveInt(req.query.limit, 50), 1), 200);
@@ -3554,31 +3568,32 @@ router.get('/otp/logs', requireAuth, requireManagerOrAdmin, async (req, res) => 
       .limit(limit)
       .lean();
 
-    return res.json(
-      logs.map((log) => ({
-        id: log._id.toString(),
-        actorEmail: log.actorEmail,
-        actorRole: log.actorRole,
-        action: log.action,
-        details: log.details,
-        createdAt: log.createdAt,
-      }))
-    );
+    return res.json(logs.map((log) => ({
+      id: log._id.toString(),
+      actorEmail: log.actorEmail,
+      actorRole: log.actorRole,
+      action: log.action,
+      details: {
+        phoneNumber: log.details?.maskedPhone || maskPhoneNumber(log.details?.phoneNumber),
+        purpose: log.details?.purpose || 'OTP authorization',
+        expiresAt: log.details?.expiresAt,
+      },
+      createdAt: log.createdAt,
+    })));
   } catch (error) {
-    console.error('Error listing OTP logs from database. Falling back to in-memory OTP trail.', error);
-    const limit = Math.min(Math.max(parsePositiveInt(req.query.limit, 50), 1), 200);
-    return res.json(otpAuditTrail.slice(0, limit));
+    console.error('Error listing OTP logs from database:', error);
+    return res.status(500).json({ error: 'Failed to list OTP logs' });
   }
 });
 
 // ── CHATBOT: OTP-based QR data modification endpoints ──────────────────
 
-// In-memory OTP storage (keyed by phone number)
-// In production, consider using Redis or a short-lived DB collection
-const otpStorage = new Map();
-const otpAuditTrail = [];
 const OTP_VALIDITY_MS = 5 * 60 * 1000; // 5 minutes
-const OTP_LENGTH = 6;
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_MAX_SENDS_PER_WINDOW = 5;
+const OTP_SEND_WINDOW_MS = 15 * 60 * 1000;
+const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+const OTP_MAX_RESENDS = 2;
 const MAX_MULTI_PROFILE_COUNT = 3;
 
 const normalizeProfileEntryType = (profileType) => {
@@ -3680,11 +3695,76 @@ const findPrimaryEmergencyProfile = async (sticker, storedProfiles = getStoredPr
     .lean();
 };
 
-// Helper: Generate random OTP
-const generateOTP = () => {
-  return Math.floor(Math.random() * Math.pow(10, OTP_LENGTH))
-    .toString()
-    .padStart(OTP_LENGTH, '0');
+const toMsg91Phone = (phoneNumber) => normalizeMsg91Mobile(
+  phoneNumber,
+  process.env.MSG91_DEFAULT_COUNTRY_CODE || '91'
+);
+
+const createMsg91Challenge = async ({
+  purpose,
+  phoneNumber,
+  profileId,
+  qrUuid = null,
+  ownerProfileId = null,
+  pendingProfileData = undefined,
+}) => {
+  const mobile = toMsg91Phone(phoneNumber);
+  const now = new Date();
+  const [sendUsage] = await OtpChallenge.aggregate([
+    {
+      $match: {
+        phoneNumber: mobile,
+        lastSentAt: { $gte: new Date(now.getTime() - OTP_SEND_WINDOW_MS) },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: { $add: [1, { $ifNull: ['$resendCount', 0] }] } },
+      },
+    },
+  ]);
+  const recentSendCount = sendUsage?.total || 0;
+  if (recentSendCount >= OTP_MAX_SENDS_PER_WINDOW) {
+    throw new Msg91Error('Too many OTP requests. Please try again later.', 429);
+  }
+  const latestChallenge = await OtpChallenge.findOne({ phoneNumber: mobile })
+    .sort({ lastSentAt: -1 })
+    .select('lastSentAt')
+    .lean();
+  if (latestChallenge && now.getTime() - latestChallenge.lastSentAt.getTime() < OTP_RESEND_COOLDOWN_MS) {
+    throw new Msg91Error('Please wait before requesting another OTP.', 429);
+  }
+
+  await OtpChallenge.updateMany(
+    { phoneNumber: mobile, status: { $in: ['pending', 'verified'] } },
+    { $set: { status: 'failed' } }
+  );
+  const challenge = await OtpChallenge.create({
+    requestId: uuidv4(),
+    purpose,
+    phoneNumber: mobile,
+    profileId: String(profileId),
+    qrUuid,
+    ownerProfileId: ownerProfileId ? String(ownerProfileId) : null,
+    pendingProfileData,
+    status: 'pending',
+    lastSentAt: now,
+    expiresAt: new Date(now.getTime() + OTP_VALIDITY_MS),
+    purgeAt: new Date(now.getTime() + OTP_VALIDITY_MS + OTP_SEND_WINDOW_MS),
+  });
+
+  try {
+    challenge.providerRequestId = await sendOtp(mobile);
+    await challenge.save();
+    return challenge;
+  } catch (error) {
+    await OtpChallenge.updateOne(
+      { _id: challenge._id },
+      { $set: { status: 'failed' }, $unset: { pendingProfileData: 1 } }
+    );
+    throw error;
+  }
 };
 
 // Chatbot: Send OTP to phone number
@@ -3697,7 +3777,7 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
 
     if (qrUuid && requestedProfileId) {
       const sticker = await QRSticker.findOne({ uuid: sanitizeStringParam(qrUuid) })
-        .select('multiProfileMode type profiles status activatedBy')
+        .select('multiProfileMode type profiles status activatedBy primaryProfileId')
         .lean();
       if (!sticker || sticker.status !== 'active' || !['b2c', 'b2b'].includes(sticker.type)) {
         return res.status(404).json({ error: 'Multi-profile QR not found' });
@@ -3724,6 +3804,36 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
       emergency = await EmergencyInfo.findById(targetProfileId)
         .select('_id fullName phoneNumber email')
         .lean();
+      if (!emergency) return res.status(404).json({ error: 'Profile not found in this QR' });
+      const ownerProfile = await findPrimaryEmergencyProfile(sticker);
+      if (!ownerProfile?.phoneNumber) {
+        return res.status(400).json({ error: 'Main Owner does not have a registered phone number' });
+      }
+      const ownerId = getProfileIdValue(
+        (sticker.profiles || []).find((profile) => profile.profileType === 'PRIMARY')
+      ) || getProfileIdValue(sticker.primaryProfileId || sticker.activatedBy);
+      const challenge = await createMsg91Challenge({
+        purpose: 'switch',
+        phoneNumber: ownerProfile.phoneNumber,
+        profileId: targetProfileId,
+        ownerProfileId: ownerId,
+        qrUuid,
+      });
+      await logAction({
+        actor: { sub: 'chatbot-system', email: 'chatbot@system', role: 'public' },
+        action: 'chatbot_otp_sent',
+        details: {
+          maskedPhone: maskPhoneNumber(ownerProfile.phoneNumber),
+          purpose: 'switch',
+          expiresAt: challenge.expiresAt.toISOString(),
+        },
+      });
+      return res.status(200).json({
+        message: 'OTP sent to the Main Owner',
+        requestId: challenge.requestId,
+        maskedPhone: maskPhoneNumber(ownerProfile.phoneNumber),
+        expiresIn: '5 minutes',
+      });
     } else if (phoneNumber) {
       emergency = await EmergencyInfo.findOne({ phoneNumber })
         .select('_id fullName phoneNumber email')
@@ -3738,144 +3848,185 @@ router.post('/chatbot/send-otp', createLimiter, async (req, res) => {
       return res.status(404).json({ error: 'No profile found with this phone number' });
     }
 
-    // Generate OTP and store it
-    const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + OTP_VALIDITY_MS);
-    
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-    const otpKey = qrUuid && requestedProfileId ? requestId : emergency.phoneNumber;
-    otpStorage.set(otpKey, {
-      otp,
-      expiresAt,
-      emergencyInfoId: emergency._id.toString(),
+    const challenge = await createMsg91Challenge({
+      purpose: 'edit',
       phoneNumber: emergency.phoneNumber,
-      qrUuid: qrUuid || null,
-      profileId: requestedProfileId || emergency._id.toString(),
-      attempts: 0,
+      profileId: emergency._id,
     });
-
-    // Always keep a recent in-memory audit trail so OTP visibility works even if DB audit write fails.
-    otpAuditTrail.unshift({
-      id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      actorEmail: 'chatbot@system',
-      actorRole: 'public',
-      action: 'chatbot_otp_sent',
-      details: {
-        phoneNumber: emergency.phoneNumber,
-        otp,
-        emergencyInfoId: emergency._id.toString(),
-        qrUuid: qrUuid || null,
-        profileId: requestedProfileId || emergency._id.toString(),
-        expiresAt: expiresAt.toISOString(),
-      },
-      createdAt: new Date().toISOString(),
-    });
-    if (otpAuditTrail.length > 500) {
-      otpAuditTrail.length = 500;
-    }
-
     await logAction({
       actor: { sub: 'chatbot-system', email: 'chatbot@system', role: 'public' },
       action: 'chatbot_otp_sent',
       details: {
-        phoneNumber: emergency.phoneNumber,
-        otp,
-        emergencyInfoId: emergency._id.toString(),
-        qrUuid: qrUuid || null,
-        profileId: requestedProfileId || emergency._id.toString(),
-        expiresAt: expiresAt.toISOString(),
+        maskedPhone: maskPhoneNumber(emergency.phoneNumber),
+        purpose: 'edit',
+        expiresAt: challenge.expiresAt.toISOString(),
       },
     });
-
-    // TODO: In production, send OTP via SMS service (Twilio, AWS SNS, etc.)
-    // For now, log it for development
-    console.log(`📱 OTP sent to ${emergency.phoneNumber}: ${otp}`);
-
-    res.status(200).json({
+    return res.status(200).json({
       message: 'OTP sent successfully',
-      requestId,
-      phoneNumber: emergency.phoneNumber,
-      profileId: requestedProfileId || emergency._id.toString(),
+      requestId: challenge.requestId,
+      maskedPhone: maskPhoneNumber(emergency.phoneNumber),
       expiresIn: '5 minutes',
     });
   } catch (error) {
+    if (error instanceof Msg91Error) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     console.error('Error in send-otp:', error);
-    res.status(500).json({ error: 'Failed to send OTP' });
+    return res.status(500).json({ error: 'Failed to send OTP' });
   }
 });
 
 // Chatbot: Verify OTP
 router.post('/chatbot/verify-otp', createLimiter, async (req, res) => {
   try {
-    const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
     const requestId = normalizeOptionalString(req.body?.requestId, 120);
     const otp = normalizeOptionalString(req.body?.otp, 10);
 
-    if ((!phoneNumber && !requestId) || !otp) {
+    if (!requestId || !/^\d{4,9}$/.test(otp)) {
       return res.status(400).json({ error: 'OTP and its request reference are required' });
     }
 
-    const otpKey = requestId || phoneNumber;
-    const otpData = otpStorage.get(otpKey);
-    
-    if (!otpData) {
-      return res.status(404).json({ error: 'OTP not found or expired' });
+    const challenge = await OtpChallenge.findOne({ requestId });
+    if (!challenge || !['pending', 'verified'].includes(challenge.status)) {
+      return res.status(404).json({ error: 'OTP request not found or already used' });
     }
-
-    // Check if OTP has expired
-    if (new Date() > otpData.expiresAt) {
-      otpStorage.delete(otpKey);
+    if (challenge.status === 'verified') {
+      return res.status(409).json({ error: 'This OTP request has already been verified' });
+    }
+    if (challenge.expiresAt <= new Date()) {
+      await OtpChallenge.updateOne({ _id: challenge._id, status: 'pending' }, { $set: { status: 'failed' } });
       return res.status(410).json({ error: 'OTP has expired. Please request a new one.' });
     }
 
-    // Check maximum attempts (3 attempts per OTP)
-    if (otpData.attempts >= 3) {
-      otpStorage.delete(otpKey);
+    const lockedChallenge = await OtpChallenge.findOneAndUpdate(
+      { _id: challenge._id, status: 'pending', attempts: { $lt: OTP_MAX_ATTEMPTS }, expiresAt: { $gt: new Date() } },
+      { $inc: { attempts: 1 }, $set: { status: 'verifying' } },
+      { new: true }
+    );
+    if (!lockedChallenge) {
       return res.status(429).json({ error: 'Too many incorrect attempts. Please request a new OTP.' });
     }
 
-    // Verify OTP
-    if (otp !== otpData.otp) {
-      otpData.attempts += 1;
-      return res.status(401).json({ 
-        error: 'Incorrect OTP',
-        attemptsLeft: 3 - otpData.attempts
+    let isVerified;
+    try {
+      isVerified = await verifyOtp(lockedChallenge.phoneNumber, otp);
+    } catch (error) {
+      await OtpChallenge.updateOne(
+        { _id: lockedChallenge._id, status: 'verifying' },
+        { $inc: { attempts: -1 }, $set: { status: 'pending' } }
+      );
+      throw error;
+    }
+    if (!isVerified) {
+      const status = lockedChallenge.attempts >= OTP_MAX_ATTEMPTS ? 'failed' : 'pending';
+      await OtpChallenge.updateOne({ _id: lockedChallenge._id, status: 'verifying' }, { $set: { status } });
+      return res.status(401).json({
+        error: 'Incorrect or expired OTP',
+        attemptsLeft: Math.max(0, OTP_MAX_ATTEMPTS - lockedChallenge.attempts),
       });
     }
+    if (!['edit', 'switch'].includes(lockedChallenge.purpose)) {
+      await OtpChallenge.updateOne({ _id: lockedChallenge._id }, { $set: { status: 'failed' } });
+      return res.status(403).json({ error: 'OTP request is not valid for this operation' });
+    }
 
-    // OTP verified! Generate a session token
-    const emergencyInfo = await EmergencyInfo.findById(otpData.emergencyInfoId)
+    const verifiedChallenge = await OtpChallenge.findOneAndUpdate(
+      { _id: lockedChallenge._id, status: 'verifying', expiresAt: { $gt: new Date() } },
+      { $set: { status: 'verified' } },
+      { new: true }
+    );
+    if (!verifiedChallenge) {
+      await OtpChallenge.updateOne({ _id: lockedChallenge._id, status: 'verifying' }, { $set: { status: 'failed' } });
+      return res.status(410).json({ error: 'OTP has expired. Please request a new one.' });
+    }
+    const emergencyInfo = await EmergencyInfo.findById(lockedChallenge.ownerProfileId || lockedChallenge.profileId)
       .select('_id phoneNumber email fullName')
       .lean();
+    if (!emergencyInfo) {
+      await OtpChallenge.updateOne({ _id: lockedChallenge._id }, { $set: { status: 'failed' } });
+      return res.status(404).json({ error: 'Authorized profile was not found' });
+    }
 
-    // Create a temporary access token (valid for 1 hour)
-    const accessToken = jwt.sign(
-      {
-        sub: emergencyInfo._id.toString(),
-        phoneNumber: emergencyInfo.phoneNumber,
-        email: emergencyInfo.email,
-        role: 'self',
-        type: 'chatbot-edit-session',
-      },
-      JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+    const tokenPayload = {
+      sub: emergencyInfo._id.toString(),
+      email: emergencyInfo.email,
+      role: 'self',
+      type: 'chatbot-edit-session',
+      purpose: lockedChallenge.purpose,
+      challengeId: lockedChallenge.requestId,
+      qrUuid: lockedChallenge.qrUuid,
+      authorizedProfileId: lockedChallenge.profileId,
+    };
+    if (lockedChallenge.purpose === 'edit') tokenPayload.phoneNumber = lockedChallenge.phoneNumber;
+    const accessToken = jwt.sign(tokenPayload, JWT_SECRET, {
+      expiresIn: lockedChallenge.purpose === 'switch' ? '10m' : '1h',
+    });
 
-    // Clear OTP after successful verification
-    otpStorage.delete(otpKey);
-
-    res.status(200).json({
+    return res.status(200).json({
       message: 'OTP verified successfully',
       accessToken,
       profileId: emergencyInfo._id.toString(),
-      qrUuid: otpData.qrUuid,
+      authorizedProfileId: lockedChallenge.profileId,
+      qrUuid: lockedChallenge.qrUuid,
       fullName: emergencyInfo.fullName,
-      phoneNumber: emergencyInfo.phoneNumber,
       email: emergencyInfo.email,
     });
   } catch (error) {
+    if (error instanceof Msg91Error) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     console.error('Error in verify-otp:', error);
-    res.status(500).json({ error: 'Failed to verify OTP' });
+    return res.status(500).json({ error: 'Failed to verify OTP' });
+  }
+});
+
+router.post('/chatbot/resend-otp', createLimiter, async (req, res) => {
+  try {
+    const requestId = normalizeOptionalString(req.body?.requestId, 120);
+    if (!requestId) return res.status(400).json({ error: 'OTP request reference is required' });
+    const now = new Date();
+    const challenge = await OtpChallenge.findOneAndUpdate(
+      {
+        requestId,
+        status: 'pending',
+        resendCount: { $lt: OTP_MAX_RESENDS },
+        lastSentAt: { $lte: new Date(now.getTime() - OTP_RESEND_COOLDOWN_MS) },
+        expiresAt: { $gt: now },
+      },
+      { $inc: { resendCount: 1 }, $set: { status: 'verifying' } },
+      { new: true }
+    );
+    if (!challenge) {
+      const existing = await OtpChallenge.findOne({ requestId }).select('expiresAt resendCount status').lean();
+      if (!existing || existing.expiresAt <= now || existing.status !== 'pending') {
+        return res.status(410).json({ error: 'OTP request has expired. Please start again.' });
+      }
+      if (existing.resendCount >= OTP_MAX_RESENDS) {
+        return res.status(429).json({ error: 'Resend limit reached. Please request a new OTP later.' });
+      }
+      return res.status(429).json({ error: 'Please wait before requesting another OTP.' });
+    }
+    try {
+      await resendOtp(challenge.phoneNumber);
+    } catch (error) {
+      await OtpChallenge.updateOne(
+        { _id: challenge._id, status: 'verifying' },
+        { $set: { status: 'pending' } }
+      );
+      throw error;
+    }
+    challenge.lastSentAt = new Date();
+    challenge.status = 'pending';
+    await challenge.save();
+    return res.json({
+      message: 'OTP resent successfully',
+      maskedPhone: maskPhoneNumber(challenge.phoneNumber),
+    });
+  } catch (error) {
+    if (error instanceof Msg91Error) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Error resending OTP:', error);
+    return res.status(500).json({ error: 'Failed to resend OTP' });
   }
 });
 
@@ -3907,6 +4058,9 @@ const requireChatbotAuth = (req, res, next) => {
 
 router.get('/chatbot/profile', requireChatbotAuth, async (req, res) => {
   try {
+    if (req.user.purpose !== 'edit') {
+      return res.status(403).json({ error: 'This OTP session is not authorized to edit a profile' });
+    }
     const emergencyInfo = await EmergencyInfo.findById(req.user.sub)
       .select('fullName email phoneNumber dateOfBirth bloodType allergies medications medicalConditions address emergencyContacts photo bloodTypeReport prescriptionOrDischargeReport surgicalInfoReport')
       .lean();
@@ -3930,6 +4084,23 @@ router.patch('/chatbot/profile', requireChatbotAuth, upload.fields([
   { name: 'surgicalInfoReport', maxCount: 1 },
 ]), async (req, res) => {
   try {
+    if (req.user.purpose !== 'edit') {
+      return res.status(403).json({ error: 'This OTP session is not authorized to edit a profile' });
+    }
+    const consumedChallenge = await OtpChallenge.findOneAndUpdate(
+      {
+        requestId: req.user.challengeId,
+        purpose: 'edit',
+        profileId: String(req.user.sub),
+        status: 'verified',
+        expiresAt: { $gt: new Date() },
+      },
+      { $set: { status: 'consumed' } },
+      { new: true }
+    );
+    if (!consumedChallenge) {
+      return res.status(401).json({ error: 'This profile-edit authorization has expired or was already used.' });
+    }
     const uploadedFiles = req.files || {};
     
     const updates = {
@@ -4112,8 +4283,23 @@ router.get('/qr/:uuid/profile/:profileId', requireChatbotAuth, async (req, res) 
       return res.status(404).json({ error: 'Profile not found in this QR' });
     }
 
-    if (req.user.sub !== resolvedProfileId) {
+    const isVerifiedSwitchTarget = req.user.purpose === 'switch'
+      && req.user.qrUuid === uuid
+      && req.user.authorizedProfileId === resolvedProfileId;
+    if (req.user.sub !== resolvedProfileId && !isVerifiedSwitchTarget) {
       return res.status(403).json({ error: 'OTP verification does not authorize this profile' });
+    }
+    if (isVerifiedSwitchTarget) {
+      const completedSwitch = await OtpChallenge.exists({
+        requestId: req.user.challengeId,
+        purpose: 'switch',
+        qrUuid: uuid,
+        profileId: resolvedProfileId,
+        status: 'consumed',
+      });
+      if (!completedSwitch) {
+        return res.status(403).json({ error: 'Complete the authorized profile switch before reading this profile.' });
+      }
     }
 
     // Fetch the full emergency info (user authenticated via OTP)
@@ -4135,100 +4321,10 @@ router.get('/qr/:uuid/profile/:profileId', requireChatbotAuth, async (req, res) 
   }
 });
 
-// Public: add a complete secondary profile to an already activated QR.
-router.post('/qr/:uuid/profiles', createLimiter, upload.fields([
-  { name: 'photo', maxCount: 1 },
-  { name: 'bloodTypeReport', maxCount: 1 },
-  { name: 'prescriptionOrDischargeReport', maxCount: 1 },
-  { name: 'surgicalInfoReport', maxCount: 1 },
-]), async (req, res) => {
-  try {
-    const uuid = sanitizeStringParam(req.params.uuid);
-    const sticker = await QRSticker.findOne({ uuid });
-    if (!sticker) return res.status(404).json({ error: 'QR not found' });
-    if (sticker.status !== 'active') return res.status(400).json({ error: 'QR must be activated before adding a profile' });
-    if (sticker.type !== 'b2c' && sticker.type !== 'b2b') return res.status(403).json({ error: 'This QR type does not support multiple profiles' });
-
-    await ensureAuthoritativeProfileEntries(sticker);
-    const linkedProfiles = getStoredProfileEntries(sticker);
-    if (linkedProfiles.length >= MAX_MULTI_PROFILE_COUNT) {
-      return res.status(409).json({ error: 'This QR already has the maximum of 3 profiles' });
-    }
-
-    const fullName = normalizeOptionalString(req.body?.fullName, 200);
-    const phoneNumber = normalizeOptionalString(req.body?.phoneNumber, 40);
-    const bloodType = normalizeOptionalString(req.body?.bloodType, 20);
-    const dateOfBirth = normalizeOptionalString(req.body?.dateOfBirth, 40);
-    if (!fullName || !phoneNumber || !dateOfBirth || !bloodType) {
-      return res.status(400).json({ error: 'Full name, phone number, date of birth, and blood group are required' });
-    }
-
-    let emergencyContacts = [];
-    if (typeof req.body?.emergencyContacts === 'string') {
-      try { emergencyContacts = sanitizeContacts(JSON.parse(req.body.emergencyContacts)); } catch { emergencyContacts = []; }
-    } else if (Array.isArray(req.body?.emergencyContacts)) {
-      emergencyContacts = sanitizeContacts(req.body.emergencyContacts);
-    }
-    const validContacts = emergencyContacts.filter((contact) => contact?.name && contact?.phone);
-    if (validContacts.length === 0) return res.status(400).json({ error: 'At least one emergency contact is required' });
-    if (validContacts.length > 5) return res.status(400).json({ error: 'A maximum of 5 emergency contacts is allowed' });
-
-    const normalizedContactPhones = validContacts
-      .map((contact) => normalizePhoneForComparison(contact.phone))
-      .filter(Boolean);
-    if (new Set(normalizedContactPhones).size !== normalizedContactPhones.length) {
-      return res.status(400).json({ error: 'Emergency contact phone numbers must be unique' });
-    }
-    const normalizedPrimaryPhone = normalizePhoneForComparison(phoneNumber);
-    if (normalizedPrimaryPhone && normalizedContactPhones.includes(normalizedPrimaryPhone)) {
-      return res.status(400).json({ error: 'Primary phone number must be different from emergency contact numbers' });
-    }
-
-    const uploadedFiles = req.files || {};
-    const getFile = (field) => Array.isArray(uploadedFiles[field]) ? uploadedFiles[field][0] : null;
-    const photo = uploadedFileToDataUrl(getFile('photo'));
-    const bloodTypeReport = uploadedFileToDataUrl(getFile('bloodTypeReport'));
-    const prescriptionOrDischargeReport = uploadedFileToDataUrl(getFile('prescriptionOrDischargeReport'));
-    const surgicalInfoReport = uploadedFileToDataUrl(getFile('surgicalInfoReport'));
-    const emergencyInfo = await EmergencyInfo.create({
-      fullName,
-      phoneNumber,
-      email: normalizeOptionalString(req.body?.email, 200).toLowerCase() || null,
-      dateOfBirth,
-      bloodType,
-      address: normalizeOptionalString(req.body?.address, 500),
-      allergies: normalizeOptionalString(req.body?.allergies, 1000),
-      medications: normalizeOptionalString(req.body?.medications, 1000),
-      medicalConditions: normalizeOptionalString(req.body?.medicalConditions, 1000),
-      emergencyContacts: validContacts,
-      photo,
-      bloodTypeReport,
-      prescriptionOrDischargeReport,
-      surgicalInfoReport,
-      qrCode: `${resolveFrontendUrl(req)}/emergencyinfo/${encodeURIComponent(phoneNumber)}?qrUuid=${encodeURIComponent(uuid)}`,
-    });
-
-    sticker.profiles.push({
-      profileId: emergencyInfo._id,
-      addedBy: null,
-      profileType: 'SECONDARY',
-      profileName: emergencyInfo.fullName,
-      profileEmail: emergencyInfo.email || '',
-      profilePhone: emergencyInfo.phoneNumber || '',
-      canEdit: true,
-      addedAt: new Date(),
-    });
-    sticker.secondaryProfiles.push({ profileId: emergencyInfo._id, label: `Secondary User (${emergencyInfo.fullName})` });
-    sticker.multiProfileMode = true;
-    sticker.profileCount = sticker.profiles.length;
-    await sticker.save();
-
-    return res.status(201).json({ success: true, emergencyInfo, sticker });
-  } catch (error) {
-    console.error('Error adding complete QR profile:', error);
-    return res.status(500).json({ error: 'Failed to add profile' });
-  }
-});
+// Secondary profiles must use the owner-authorized OTP workflow below.
+router.post('/qr/:uuid/profiles', requireChatbotAuth, (_req, res) => (
+  res.status(410).json({ error: 'Use the owner-authorized secondary profile flow.' })
+));
 
 // Administrators: Create a new multi-profile QR batch for customer or business profiles
 router.post('/qr/create-multi', requireAuth, requireAdmin, async (req, res) => {
@@ -4330,6 +4426,10 @@ router.post('/qr/:uuid/add-profile', requireChatbotAuth, async (req, res) => {
   try {
     const uuid = sanitizeStringParam(req.params.uuid);
     const { profileId } = req.body;
+
+    if (req.user.purpose !== 'profile-add' || req.user.qrUuid !== uuid || !req.user.challengeId) {
+      return res.status(403).json({ error: 'A QR-bound profile-add authorization is required.' });
+    }
 
     if (!uuid || !profileId) {
       return res.status(400).json({ error: 'UUID and profileId are required' });
@@ -4609,6 +4709,9 @@ router.post('/qr/:uuid/secondary/request-otp', createLimiter, upload.fields([
     if (!ownerProfile) {
       return res.status(400).json({ error: 'Main Owner must register before secondary profiles can be added' });
     }
+    if (!ownerProfile.phoneNumber) {
+      return res.status(400).json({ error: 'Main Owner does not have a registered phone number' });
+    }
 
     if (storedEntries.length >= MAX_MULTI_PROFILE_COUNT) {
       return res.status(400).json({
@@ -4655,64 +4758,52 @@ router.post('/qr/:uuid/secondary/request-otp', createLimiter, upload.fields([
     }
     const uploadedFiles = req.files || {};
     const getFile = (field) => Array.isArray(uploadedFiles[field]) ? uploadedFiles[field][0] : null;
-    const otp = generateOTP();
-    const registrationId = uuidv4();
-    pendingSecondaryRegistrations.set(registrationId, {
-      uuid,
-      otp,
-      profileData: {
-        fullName: stripHtml(normalizedFullName),
-        phoneNumber: stripHtml(normalizedPhoneNumber),
-        email: normalizeOptionalString(email, 200).toLowerCase() || null,
-        bloodType: normalizedBloodType,
-        dateOfBirth: normalizedDateOfBirth,
-        allergies: normalizeOptionalString(allergies, 1000),
-        medications: normalizeOptionalString(medications, 1000),
-        medicalConditions: normalizeOptionalString(medicalConditions, 1000),
-        address: normalizeOptionalString(address, 500),
-        emergencyContacts: validContacts,
-        photo: uploadedFileToDataUrl(getFile('photo')),
-        bloodTypeReport: uploadedFileToDataUrl(getFile('bloodTypeReport')),
-        prescriptionOrDischargeReport: uploadedFileToDataUrl(getFile('prescriptionOrDischargeReport')),
-        surgicalInfoReport: uploadedFileToDataUrl(getFile('surgicalInfoReport')),
-      },
-      expiresAt: Date.now() + 10 * 60 * 1000,
-    });
-
-    const otpAuditEntry = {
-      id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      actorEmail: 'chatbot@system',
-      actorRole: 'public',
-      action: 'chatbot_otp_sent',
-      details: {
-        phoneNumber: normalizedPhoneNumber,
-        otp,
-        qrUuid: uuid,
-        profileName: normalizedFullName,
-        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-      },
-      createdAt: new Date().toISOString(),
+    const ownerProfileId = getProfileIdValue(
+      storedEntries.find((profile) => profile.profileType === 'PRIMARY')
+    ) || getProfileIdValue(sticker.primaryProfileId || sticker.activatedBy);
+    const profileData = {
+      fullName: stripHtml(normalizedFullName),
+      phoneNumber: stripHtml(normalizedPhoneNumber),
+      email: normalizeOptionalString(email, 200).toLowerCase() || null,
+      bloodType: normalizedBloodType,
+      dateOfBirth: normalizedDateOfBirth,
+      allergies: normalizeOptionalString(allergies, 1000),
+      medications: normalizeOptionalString(medications, 1000),
+      medicalConditions: normalizeOptionalString(medicalConditions, 1000),
+      address: normalizeOptionalString(address, 500),
+      emergencyContacts: validContacts,
+      photo: uploadedFileToDataUrl(getFile('photo')),
+      bloodTypeReport: uploadedFileToDataUrl(getFile('bloodTypeReport')),
+      prescriptionOrDischargeReport: uploadedFileToDataUrl(getFile('prescriptionOrDischargeReport')),
+      surgicalInfoReport: uploadedFileToDataUrl(getFile('surgicalInfoReport')),
     };
-    otpAuditTrail.unshift(otpAuditEntry);
-    if (otpAuditTrail.length > 500) otpAuditTrail.length = 500;
-
+    const challenge = await createMsg91Challenge({
+      purpose: 'secondary',
+      phoneNumber: ownerProfile.phoneNumber,
+      profileId: uuidv4(),
+      ownerProfileId,
+      qrUuid: uuid,
+      pendingProfileData: profileData,
+    });
     await logAction({
       actor: { sub: 'chatbot-system', email: 'chatbot@system', role: 'public' },
       action: 'chatbot_otp_sent',
-      details: otpAuditEntry.details,
+      details: {
+        maskedPhone: maskPhoneNumber(ownerProfile.phoneNumber),
+        purpose: 'secondary',
+        expiresAt: challenge.expiresAt.toISOString(),
+      },
     });
-
     const ownerPhone = ownerProfile.phoneNumber || '';
-    const maskedPhone = ownerPhone.length > 4
-      ? `${ownerPhone.slice(0, 2)}******${ownerPhone.slice(-2)}`
-      : 'the Main Owner mobile number';
-
     return res.status(200).json({
       message: 'Authorization OTP sent to Main Owner',
-      registrationId,
-      maskedPhone,
+      registrationId: challenge.requestId,
+      maskedPhone: maskPhoneNumber(ownerPhone),
     });
   } catch (error) {
+    if (error instanceof Msg91Error) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     console.error('Error requesting secondary profile OTP:', error);
     return res.status(500).json({ error: 'Failed to initiate profile authorization' });
   }
@@ -4722,38 +4813,76 @@ router.post('/qr/:uuid/secondary/request-otp', createLimiter, upload.fields([
 router.post('/qr/:uuid/secondary/verify-otp', createLimiter, async (req, res) => {
   try {
     const uuid = sanitizeStringParam(req.params.uuid);
-    const { registrationId, otp } = req.body;
+    const registrationId = normalizeOptionalString(req.body?.registrationId, 120);
+    const otp = normalizeOptionalString(req.body?.otp, 10);
 
-    if (!registrationId || !otp) {
+    if (!registrationId || !/^\d{4,9}$/.test(otp)) {
       return res.status(400).json({ error: 'Registration ID and OTP are required' });
     }
 
-    const pending = pendingSecondaryRegistrations.get(registrationId);
-    if (!pending || pending.uuid !== uuid) {
+    const pending = await OtpChallenge.findOne({
+      requestId: registrationId,
+      qrUuid: uuid,
+      purpose: 'secondary',
+    });
+    if (!pending || pending.status !== 'pending') {
       return res.status(400).json({ error: 'Invalid or expired registration session. Please start over.' });
     }
-
-    if (Date.now() > pending.expiresAt) {
-      pendingSecondaryRegistrations.delete(registrationId);
+    if (pending.expiresAt <= new Date()) {
+      await OtpChallenge.updateOne({ _id: pending._id, status: 'pending' }, { $set: { status: 'failed' } });
       return res.status(410).json({ error: 'OTP has expired. Please request a new one.' });
     }
-
-    if (String(otp).trim() !== String(pending.otp)) {
-      return res.status(401).json({ error: 'Incorrect OTP. Authorization denied.' });
+    const lockedChallenge = await OtpChallenge.findOneAndUpdate(
+      { _id: pending._id, status: 'pending', attempts: { $lt: OTP_MAX_ATTEMPTS }, expiresAt: { $gt: new Date() } },
+      { $inc: { attempts: 1 }, $set: { status: 'verifying' } },
+      { new: true }
+    );
+    if (!lockedChallenge) {
+      return res.status(429).json({ error: 'Too many incorrect attempts. Please request a new OTP.' });
+    }
+    let isVerified;
+    try {
+      isVerified = await verifyOtp(lockedChallenge.phoneNumber, otp);
+    } catch (error) {
+      await OtpChallenge.updateOne(
+        { _id: lockedChallenge._id, status: 'verifying' },
+        { $inc: { attempts: -1 }, $set: { status: 'pending' } }
+      );
+      throw error;
+    }
+    if (!isVerified) {
+      const status = lockedChallenge.attempts >= OTP_MAX_ATTEMPTS ? 'failed' : 'pending';
+      await OtpChallenge.updateOne({ _id: lockedChallenge._id, status: 'verifying' }, { $set: { status } });
+      return res.status(401).json({
+        error: 'Incorrect or expired OTP. Authorization denied.',
+        attemptsLeft: Math.max(0, OTP_MAX_ATTEMPTS - lockedChallenge.attempts),
+      });
+    }
+    if (lockedChallenge.expiresAt <= new Date()) {
+      await OtpChallenge.updateOne({ _id: lockedChallenge._id, status: 'verifying' }, { $set: { status: 'failed' } });
+      return res.status(410).json({ error: 'OTP has expired. Please request a new one.' });
     }
 
     const sticker = await QRSticker.findOne({ uuid });
     if (!sticker) return res.status(404).json({ error: 'Sticker not found' });
+    const currentEntries = getStoredProfileEntries(sticker);
+    const currentOwnerId = getProfileIdValue(
+      currentEntries.find((profile) => profile.profileType === 'PRIMARY')
+    ) || getProfileIdValue(sticker.primaryProfileId || sticker.activatedBy);
+    if (String(currentOwnerId) !== String(lockedChallenge.ownerProfileId)) {
+      await OtpChallenge.updateOne({ _id: lockedChallenge._id }, { $set: { status: 'failed' } });
+      return res.status(403).json({ error: 'Owner authorization no longer matches this QR.' });
+    }
 
     if (getStoredProfileEntries(sticker).length >= MAX_MULTI_PROFILE_COUNT) {
-      pendingSecondaryRegistrations.delete(registrationId);
+      await OtpChallenge.updateOne({ _id: lockedChallenge._id }, { $set: { status: 'failed' } });
       return res.status(400).json({
         error: 'Maximum profiles reached. Please ask the Main Owner to remove an existing profile first.',
       });
     }
 
     const newEmergency = new EmergencyInfo({
-      ...pending.profileData,
+      ...lockedChallenge.pendingProfileData,
       qrCode: sticker.uuid,
     });
     const savedEmergency = await newEmergency.save();
@@ -4778,7 +4907,10 @@ router.post('/qr/:uuid/secondary/verify-otp', createLimiter, async (req, res) =>
     sticker.activeProfileId = savedEmergency._id;
     await sticker.save();
 
-    pendingSecondaryRegistrations.delete(registrationId);
+    await OtpChallenge.updateOne(
+      { _id: lockedChallenge._id, status: 'verifying' },
+      { $set: { status: 'consumed' }, $unset: { pendingProfileData: 1 } }
+    );
 
     return res.status(201).json({
       success: true,
@@ -4786,6 +4918,9 @@ router.post('/qr/:uuid/secondary/verify-otp', createLimiter, async (req, res) =>
       activeProfile: savedEmergency,
     });
   } catch (error) {
+    if (error instanceof Msg91Error) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     console.error('Error verifying secondary profile OTP:', error);
     return res.status(500).json({ error: 'Failed to verify OTP and activate profile' });
   }
@@ -4795,10 +4930,18 @@ router.post('/qr/:uuid/secondary/verify-otp', createLimiter, async (req, res) =>
 router.patch('/qr/:uuid/switch-active', readLimiter, requireChatbotAuth, async (req, res) => {
   try {
     const uuid = sanitizeStringParam(req.params.uuid);
-    const { profileId } = req.body;
+    const profileId = sanitizeStringParam(req.body?.profileId);
 
     if (!uuid || !profileId) {
       return res.status(400).json({ error: 'UUID and profileId are required' });
+    }
+    if (
+      req.user.purpose !== 'switch' ||
+      req.user.qrUuid !== uuid ||
+      req.user.authorizedProfileId !== profileId ||
+      !req.user.challengeId
+    ) {
+      return res.status(403).json({ error: 'OTP verification does not authorize this profile switch' });
     }
 
     const sticker = await QRSticker.findOne({ uuid });
@@ -4812,8 +4955,28 @@ router.patch('/qr/:uuid/switch-active', readLimiter, requireChatbotAuth, async (
       return res.status(400).json({ error: 'Selected profile does not belong to this QR code' });
     }
 
-    if (String(req.user.sub) !== String(profileId)) {
+    const storedProfiles = getStoredProfileEntries(sticker);
+    const ownerEntry = storedProfiles.find((profile) => profile.profileType === 'PRIMARY') || storedProfiles[0];
+    const ownerProfileId = getProfileIdValue(ownerEntry) || getProfileIdValue(sticker.primaryProfileId || sticker.activatedBy);
+    if (String(req.user.sub) !== String(ownerProfileId)) {
       return res.status(403).json({ error: 'OTP verification does not authorize this profile switch' });
+    }
+
+    const consumedChallenge = await OtpChallenge.findOneAndUpdate(
+      {
+        requestId: req.user.challengeId,
+        purpose: 'switch',
+        qrUuid: uuid,
+        profileId,
+        ownerProfileId: String(ownerProfileId),
+        status: 'verified',
+        expiresAt: { $gt: new Date() },
+      },
+      { $set: { status: 'consumed' } },
+      { new: true }
+    );
+    if (!consumedChallenge) {
+      return res.status(401).json({ error: 'This profile-switch authorization has expired or was already used.' });
     }
 
     sticker.activeProfileId = profileId;
