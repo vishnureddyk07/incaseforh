@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Phone, AlertCircle, Loader, Droplet, Users, Copy } from 'lucide-react';
 import { getOrCreateDeviceId, formatDeviceIdForDisplay } from '../utils/deviceId';
@@ -71,43 +71,17 @@ export default function EmergencyInfoDisplay() {
   const [deviceIdCopied, setDeviceIdCopied] = useState(false);
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [showAddSecondaryModal, setShowAddSecondaryModal] = useState(false);
+  const [profileRefreshToken, setProfileRefreshToken] = useState(0);
   const [availableSlots, setAvailableSlots] = useState<ProfileSlot[]>([]);
+  const [maskedCallDids, setMaskedCallDids] = useState<Record<number, string>>({});
+  const [requestingCallFor, setRequestingCallFor] = useState<number | null>(null);
+  const [callMaskError, setCallMaskError] = useState<string | null>(null);
+  const callRequestGeneration = useRef(0);
   // The physical sticker's QR code hits the backend directly, which 302-redirects
   // here server-side (no sessionStorage access), so the uuid is carried via ?qr=.
   // Fall back to sessionStorage for the client-side ProfileSelector navigation path.
-  const qrUuidFromQuery = searchParams.get('qr');
+  const qrUuidFromQuery = searchParams.get('qr') || searchParams.get('qrUuid');
   const activeQrUuid = qrUuidFromQuery || sessionStorage.getItem('activeQrUuid');
-
-  useEffect(() => {
-    if (qrUuidFromQuery) {
-      sessionStorage.setItem('activeQrUuid', qrUuidFromQuery);
-    }
-  }, [qrUuidFromQuery]);
-  const fetchMultiProfileData = async (targetUuid: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/qr/resolve/${targetUuid}`);
-      const data = await res.json();
-      if (res.ok && data.slots) {
-        setAvailableSlots(data.slots);
-        if (data.activeProfile) {
-          setInfo(data.activeProfile);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load multi-profile data", err);
-    }
-  };
-
-  useEffect(() => {
-    const currentUuid = activeQrUuid || identifierParam;
-    if (currentUuid) {
-      fetchMultiProfileData(currentUuid);
-    }
-  }, [activeQrUuid, identifierParam]);
-
-  const fallbackPhotoDataUrl =
-    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
-
   const API_BASE = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
   const API_BASES = Array.from(
     new Set([
@@ -116,6 +90,51 @@ export default function EmergencyInfoDisplay() {
       'https://incaseforh-staging.onrender.com',
     ])
   ).map((base) => String(base).replace(/\/+$/, ''));
+
+  useEffect(() => {
+    if (qrUuidFromQuery) {
+      sessionStorage.setItem('activeQrUuid', qrUuidFromQuery);
+    }
+  }, [qrUuidFromQuery]);
+
+  useEffect(() => {
+    callRequestGeneration.current += 1;
+    setMaskedCallDids({});
+    setRequestingCallFor(null);
+    setCallMaskError(null);
+  }, [info?._id]);
+  const fetchMultiProfileData = async (targetUuid: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/qr/resolve/${targetUuid}`);
+      const data = await res.json();
+      if (res.ok && data.slots) {
+        setAvailableSlots(data.slots);
+      }
+    } catch (err) {
+      console.error("Failed to load multi-profile data", err);
+    }
+  };
+
+  const handleProfileChanged = (profile: { email?: string; phoneNumber?: string; _id?: string }) => {
+    if (!activeQrUuid) return;
+    const identifier = profile.phoneNumber || profile.email || profile._id;
+    if (!identifier) return;
+
+    sessionStorage.setItem('activeQrUuid', activeQrUuid);
+    navigate(`/emergencyinfo/${encodeURIComponent(identifier)}?qrUuid=${encodeURIComponent(activeQrUuid)}`, {
+      replace: true,
+    });
+  };
+
+  useEffect(() => {
+    if (activeQrUuid) {
+      fetchMultiProfileData(activeQrUuid);
+    }
+  }, [activeQrUuid, identifierParam]);
+
+  const fallbackPhotoDataUrl =
+    'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320"%3E%3Crect width="320" height="320" fill="%23e5e7eb"/%3E%3Ccircle cx="160" cy="120" r="56" fill="%239ca3af"/%3E%3Crect x="62" y="205" width="196" height="86" rx="43" fill="%239ca3af"/%3E%3C/svg%3E';
+
   const reverseGeocode = async (lat: number, lng: number) => {
     try {
       console.log('🔄 Reverse geocoding location...');
@@ -586,6 +605,41 @@ export default function EmergencyInfoDisplay() {
     window.location.href = `tel:${phone}`;
   };
 
+  const requestMaskedCall = async (contactIndex: number) => {
+    if (!info?._id) {
+      setCallMaskError('Unable to identify this emergency profile. Please try again later.');
+      return;
+    }
+
+    const profileId = info._id;
+    const requestGeneration = callRequestGeneration.current;
+    setRequestingCallFor(contactIndex);
+    setCallMaskError(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/call-masking`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId, contactIndex }),
+      });
+      const result: { did?: string; error?: string } = await response.json();
+      const did = result.did;
+      if (!response.ok || typeof did !== 'string' || !did) {
+        throw new Error(result.error || 'Could not prepare a masked call.');
+      }
+      if (requestGeneration === callRequestGeneration.current) {
+        setMaskedCallDids((current) => ({ ...current, [contactIndex]: did }));
+      }
+    } catch (err) {
+      if (requestGeneration === callRequestGeneration.current) {
+        setCallMaskError(err instanceof Error ? err.message : 'Could not prepare a masked call.');
+      }
+    } finally {
+      if (requestGeneration === callRequestGeneration.current) {
+        setRequestingCallFor(null);
+      }
+    }
+  };
+
   const navigateToHospital = (lat: number, lng: number, _name: string) => {
     if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
       window.location.href = `maps://maps.apple.com/?daddr=${lat},${lng}`;
@@ -740,16 +794,38 @@ export default function EmergencyInfoDisplay() {
                     <p className="font-semibold text-gray-900">{contact.name || 'Contact'}</p>
                   </div>
                   {contact.phone && (
-                    <button
-                      onClick={() => window.location.href = `tel:${contact.phone}`}
-                      className="bg-green-600 text-white px-3 py-2 rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center gap-1"
-                    >
-                      <Phone className="h-4 w-4" /> Call
-                    </button>
+                    <div className="flex flex-col items-end gap-2">
+                      {maskedCallDids[idx] ? (
+                        <>
+                          <a
+                            href={`tel:${maskedCallDids[idx]}`}
+                            className="bg-green-600 text-white px-3 py-2 rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center gap-1"
+                          >
+                            <Phone className="h-4 w-4" /> Call masked number
+                          </a>
+                          <p className="text-xs text-gray-600" aria-live="polite">
+                            Dial {maskedCallDids[idx]} to reach {contact.name || 'this contact'}.
+                          </p>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void requestMaskedCall(idx)}
+                          disabled={requestingCallFor !== null}
+                          className="bg-green-600 text-white px-3 py-2 rounded-lg font-semibold text-sm hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1"
+                        >
+                          <Phone className="h-4 w-4" />
+                          {requestingCallFor === idx ? 'Preparing call...' : 'Get masked call number'}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}
             </div>
+            {callMaskError && (
+              <p className="mt-3 text-sm text-red-700" role="alert">{callMaskError}</p>
+            )}
           </div>
         )}
 
@@ -792,24 +868,26 @@ export default function EmergencyInfoDisplay() {
           </div>
 
           {/* Expanded 3-Slot Profile Manager */}
-          {showProfileManager && (
+          {showProfileManager && activeQrUuid && (
             <div className="mt-3">
               <QRProfileManager
-                uuid={activeQrUuid || identifierParam || ''}
-                onOpenAddModal={() => setShowAddSecondaryModal(true)}
+                uuid={activeQrUuid}
+                refreshToken={profileRefreshToken}
+                onOpenAddModal={(_slotNumber) => setShowAddSecondaryModal(true)}
+                onProfileChanged={handleProfileChanged}
               />
             </div>
           )}
         </div>
 
-        {/* Add Secondary Profile Modal with Owner OTP 0708 */}
+        {/* Add Secondary Profile Modal */}
         <AddSecondaryUserModal
-          uuid={activeQrUuid || identifierParam || ''}
+          uuid={activeQrUuid || ''}
           isOpen={showAddSecondaryModal}
           onClose={() => setShowAddSecondaryModal(false)}
           onSuccess={() => {
-            const currentUuid = activeQrUuid || identifierParam;
-            if (currentUuid) fetchMultiProfileData(currentUuid);
+            if (activeQrUuid) fetchMultiProfileData(activeQrUuid);
+            setProfileRefreshToken((currentToken) => currentToken + 1);
           }}
         />
 

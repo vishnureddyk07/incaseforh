@@ -9,3 +9,11 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: MSG91_AUTH_KEY
+        sync: false
+      - key: MSG91_TEMPLATE_ID
+        sync: false
+      - key: MSG91_DEFAULT_COUNTRY_CODE
+        value: "91"
+      - key: CLOUDSHOPE_API_TOKEN
+        sync: false

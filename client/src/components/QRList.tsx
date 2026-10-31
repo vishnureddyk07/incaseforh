@@ -30,6 +30,7 @@ interface EmergencyInfo {
 export default function QRList() {
   const RECORDS_PER_PAGE = 25;
   const [qrs, setQrs] = useState<EmergencyInfo[]>([]);
+  const [totalRecords, setTotalRecords] = useState(0);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +64,14 @@ export default function QRList() {
       }
 
       try {
-        const res = await fetch(`${API_BASE}/api/v1/emergency?limit=1000`, {
+        const params = new URLSearchParams({
+          page: String(currentPage),
+          limit: String(RECORDS_PER_PAGE),
+          sortBy,
+        });
+        if (searchTerm.trim()) params.set('search', searchTerm.trim());
+
+        const res = await fetch(`${API_BASE}/api/v1/emergency?${params.toString()}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -79,6 +87,8 @@ export default function QRList() {
 
         const data = await res.json();
         setQrs(normalizeEmergencyRecords(data));
+        const responseTotal = Number(res.headers.get('X-Total-Count'));
+        setTotalRecords(Number.isFinite(responseTotal) ? responseTotal : normalizeEmergencyRecords(data).length);
         setLoading(false);
       } catch (err) {
         console.error(err);
@@ -88,7 +98,7 @@ export default function QRList() {
     };
 
     fetchQrs();
-  }, [API_BASE, isAuthenticated, token, user?.role]);
+  }, [API_BASE, currentPage, isAuthenticated, searchTerm, sortBy, token, user?.role]);
 
   const handleOpen = (record: EmergencyInfo) => {
     const identifier = (record.email && record.email.trim()) || (record.phoneNumber && record.phoneNumber.trim());
@@ -137,15 +147,12 @@ export default function QRList() {
     return map;
   }, [filteredQrs]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredQrs.length / RECORDS_PER_PAGE));
-  const paginatedQrs = useMemo(() => {
-    const startIndex = (currentPage - 1) * RECORDS_PER_PAGE;
-    return filteredQrs.slice(startIndex, startIndex + RECORDS_PER_PAGE);
-  }, [filteredQrs, currentPage]);
+  const totalPages = Math.max(1, Math.ceil(totalRecords / RECORDS_PER_PAGE));
+  const paginatedQrs = filteredQrs;
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, sortBy, qrs.length]);
+  }, [searchTerm, sortBy]);
 
   const toggleSelectionMode = () => {
     setSelectionMode((prev) => {
@@ -402,11 +409,19 @@ export default function QRList() {
         throw new Error(body.error || 'Failed to update');
       }
       // Refresh list
-      const listRes = await fetch(`${API_BASE}/api/v1/emergency?limit=1000`, {
+      const params = new URLSearchParams({
+        page: String(currentPage),
+        limit: String(RECORDS_PER_PAGE),
+        sortBy,
+      });
+      if (searchTerm.trim()) params.set('search', searchTerm.trim());
+      const listRes = await fetch(`${API_BASE}/api/v1/emergency?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await listRes.json();
       setQrs(normalizeEmergencyRecords(data));
+      const responseTotal = Number(listRes.headers.get('X-Total-Count'));
+      setTotalRecords(Number.isFinite(responseTotal) ? responseTotal : normalizeEmergencyRecords(data).length);
       setCurrentPage(1);
       setEditingRecord(null);
     } catch (err) {
@@ -492,7 +507,7 @@ export default function QRList() {
             <option value="oldest">Oldest First</option>
             <option value="name">Name (A-Z)</option>
           </select>
-          <span className="ml-auto text-sm text-gray-600">{filteredQrs.length} record(s)</span>
+          <span className="ml-auto text-sm text-gray-600">{totalRecords} record(s)</span>
           <div className="flex gap-2">
             <button
               type="button"
@@ -593,7 +608,7 @@ export default function QRList() {
         <div className="mt-6 flex items-center justify-between">
           <p className="text-sm text-gray-600">
             Showing {(currentPage - 1) * RECORDS_PER_PAGE + 1}-
-            {Math.min(currentPage * RECORDS_PER_PAGE, filteredQrs.length)} of {filteredQrs.length}
+            {Math.min(currentPage * RECORDS_PER_PAGE, totalRecords)} of {totalRecords}
           </p>
           <div className="flex items-center gap-2">
             <button

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertCircle, FileText, Heart, Phone, User, Shield, Upload, Users, Trash2 } from 'lucide-react';
+import { validateEmergencyProfile } from '../utils/profileValidation';
 
 type EmergencyContact = { name: string; phone: string };
 
@@ -35,8 +36,6 @@ type ActivationCheckResponse = {
     };
   };
 };
-
-const normalizePhoneForComparison = (value: string) => value.replace(/\D/g, '');
 
 const readJsonResponse = async <T,>(res: Response): Promise<T> => {
   const raw = await res.text();
@@ -93,33 +92,38 @@ export default function ActivateQR() {
     const load = async () => {
       setLoading(true);
       setError(null);
-      try {
-        const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
-        const data = await readJsonResponse<ActivationCheckResponse>(res);
-        if (!res.ok) {
-          throw new Error((data as { error?: string; reason?: string }).error || (data as { error?: string; reason?: string }).reason || 'Failed to load sticker');
-        }
-        
-        // Check if this is a multi-profile QR for customer or business profiles
-        if (
-          !searchParams.has('edit') &&
-          data.status === 'active' &&
-          (data.sticker?.activatedBy || (data.sticker?.multiProfileMode && data.sticker?.profileCount)) &&
-          (data.sticker?.type === 'b2c' || data.sticker?.type === 'b2b')
-        ) {
-          if (active) {
-            navigate(`/qr/profiles/${encodeURIComponent(uuid)}`, { replace: true });
-          }
+     try {
+    const res = await fetch(`${apiBase}/api/v1/qr/activate/${encodeURIComponent(uuid)}?format=json`);
+    const data = await res.json() as ActivationCheckResponse;
+
+    if (!res.ok) {
+      throw new Error((data as { error?: string; reason?: string }).error || (data as { error?: string; reason?: string }).reason || 'Failed to load sticker');
+    }
+
+    if (!searchParams.has('edit') && (data.status === 'active' || data.sticker?.status === 'active')) {
+      if (active) {
+        const redirectTarget = data.redirectTo || data.emergencyProfileUrl;
+        if (redirectTarget) {
+          window.location.replace(redirectTarget);
           return;
         }
-        
+
+        const phone = data?.sticker?.activatedBy?.phoneNumber
+          || data?.sticker?.phoneNumber
+          || data?.phoneNumber
+          || uuid;
+        navigate(`/emergencyinfo/${encodeURIComponent(phone)}?qrUuid=${encodeURIComponent(uuid)}`, { replace: true });
+        return;
+      }
+    }
         if (active) setCheck(data);
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Failed to load sticker');
       } finally {
         if (active) setLoading(false);
       }
-    };
+    }
+    
     void load();
     return () => {
       active = false;
@@ -149,26 +153,41 @@ export default function ActivateQR() {
     }
   }, [check]);
 
-  useEffect(() => {
+ useEffect(() => {
+    // Only redirect if the sticker is active and not explicitly in edit mode
     if (check?.status !== 'active' || searchParams.has('edit')) return;
-    const activeIdentifier = (
-      check.sticker?.activatedBy?.email?.trim()
-      || check.sticker?.activatedBy?.phoneNumber?.trim()
-    );
-    const localEmergencyProfileUrl = activeIdentifier
-      ? `${window.location.origin}/emergencyinfo/${encodeURIComponent(activeIdentifier)}`
-      : null;
-    const safeRedirectTo = check.redirectTo && !/\/activate\//i.test(check.redirectTo)
-      ? check.redirectTo
-      : null;
-    const destination = check.emergencyProfileUrl || localEmergencyProfileUrl || safeRedirectTo;
-    if (!destination) return;
-    // Remember which sticker this profile came from so the emergency info page
-    // can offer "Add Profile" / "Switch Account" even for a not-yet-multi sticker.
-    sessionStorage.setItem('activeQrUuid', uuid);
-    window.location.replace(destination);
-  }, [check, searchParams]);
 
+    const sticker = check.sticker;
+    const qrId = encodeURIComponent(sticker?.uuid || uuid);
+
+    // 1. Check if backend gave a direct emergency profile URL
+    if (check.emergencyProfileUrl) {
+      const url = check.emergencyProfileUrl.includes('?') 
+        ? `${check.emergencyProfileUrl}&qrUuid=${qrId}` 
+        : `${check.emergencyProfileUrl}?qrUuid=${qrId}`;
+      sessionStorage.setItem('activeQrUuid', sticker?.uuid || uuid);
+      window.location.replace(url);
+      return;
+    }
+
+    // 2. Find active phone/identifier across all possible schema formats
+    const activePhone = 
+      (typeof sticker?.activatedBy === 'object' ? sticker?.activatedBy?.phoneNumber : null) ||
+      sticker?.phoneNumber ||
+      (typeof sticker?.activatedBy === 'string' && !sticker.activatedBy.includes('@') && sticker.activatedBy.length <= 15 ? sticker.activatedBy : null) ||
+      sticker?.activeEmergency?.phoneNumber ||
+      sticker?.emergencyContactPhone;
+
+    if (activePhone) {
+      sessionStorage.setItem('activeQrUuid', sticker?.uuid || uuid);
+      window.location.replace(`/emergencyinfo/${encodeURIComponent(activePhone)}?qrUuid=${qrId}`);
+      return;
+    }
+
+    // 3. Fallback: Query Emergency Info directly by QR UUID
+    sessionStorage.setItem('activeQrUuid', sticker?.uuid || uuid);
+    window.location.replace(`/emergencyinfo/${qrId}?qrUuid=${qrId}`);
+  }, [check, searchParams, uuid]);
   const updateContact = (idx: number, key: keyof EmergencyContact, value: string) => {
     setContacts((prev) => prev.map((c, i) => (i === idx ? { ...c, [key]: value } : c)));
   };
@@ -215,37 +234,17 @@ export default function ActivateQR() {
     setError(null);
 
     try {
-      if (!fullName.trim()) {
-        throw new Error('Full Name is required.');
-      }
-      if (!phoneNumber.trim()) {
-        throw new Error('Phone Number is required.');
-      }
-      if (!bloodType) {
-        throw new Error('Blood Group is required.');
-      }
-
       const validContacts = contacts.filter((c) => c.name.trim() && c.phone.trim());
-      if (validContacts.length === 0) {
-        throw new Error('Please add at least one emergency contact with name and phone number.');
-      }
-
-      const normalizedContactPhones = validContacts
-        .map((contact) => normalizePhoneForComparison(contact.phone))
-        .filter(Boolean);
-      const hasDuplicateEmergencyContactNumber = new Set(normalizedContactPhones).size !== normalizedContactPhones.length;
-      if (hasDuplicateEmergencyContactNumber) {
-        throw new Error('Emergency contact numbers must be unique.');
-      }
-
-      const normalizedPrimaryPhone = normalizePhoneForComparison(phoneNumber);
-      if (normalizedPrimaryPhone) {
-        const hasSameAsPrimaryPhone = validContacts.some(
-          (contact) => normalizePhoneForComparison(contact.phone) === normalizedPrimaryPhone
-        );
-        if (hasSameAsPrimaryPhone) {
-          throw new Error('Your phone number and emergency contact number cannot be the same.');
-        }
+      const validationError = validateEmergencyProfile({
+        fullName,
+        phoneNumber,
+        dateOfBirth,
+        bloodType,
+        email,
+        emergencyContacts: validContacts,
+      });
+      if (validationError) {
+        throw new Error(validationError);
       }
 
       const formData = new FormData();
@@ -399,8 +398,12 @@ export default function ActivateQR() {
                     Phone Number <span className="text-red-500">*</span>
                   </label>
                   <input 
+                    type="tel"
                     value={phoneNumber} 
                     onChange={(e) => setPhoneNumber(e.target.value)} 
+                    inputMode="numeric"
+                    pattern="[0-9]{10}"
+                    maxLength={10}
                     placeholder="Enter your phone number" 
                     className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
                     required 
@@ -412,6 +415,7 @@ export default function ActivateQR() {
                     type="date" 
                     value={dateOfBirth} 
                     onChange={(e) => setDateOfBirth(e.target.value)} 
+                    required
                     className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
                     title="Date of birth" 
                     aria-label="Date of birth" 
@@ -465,8 +469,11 @@ export default function ActivateQR() {
                 <div>
                   <label className="block text-sm font-bold text-slate-900 mb-2">Email</label>
                   <input 
+                    type="email"
                     value={email} 
                     onChange={(e) => setEmail(e.target.value)} 
+                    pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$"
+                    title="Enter a valid email address"
                     placeholder="your@email.com" 
                     className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" 
                   />
@@ -520,8 +527,12 @@ export default function ActivateQR() {
                     <div>
                       <label className="block text-xs font-bold text-slate-900 mb-2">Phone Number</label>
                       <input 
+                        type="tel"
                         value={c.phone} 
                         onChange={(e) => updateContact(idx, 'phone', e.target.value)} 
+                        inputMode="numeric"
+                        pattern="[0-9]{10}"
+                        maxLength={10}
                         placeholder="Phone number" 
                         className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition text-sm" 
                         required 

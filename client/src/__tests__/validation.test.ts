@@ -41,19 +41,9 @@ describe('validateEmail', () => {
   });
 });
 
-// Phone validation property tests (supports E.164 or Indian 10-digit with optional +91)
+// Phone validation property tests (exactly 10 numeric digits)
 describe('validatePhone', () => {
-  it('accepts Indian and E.164-like examples', () => {
-    const valids = [
-      '+919876543210',
-      '9876543210',
-      '+1 2025550123',
-      '+442071838750',
-      '+91-9876543210',
-      '0919876543210', // lenient cases may fail depending on regex
-    ];
-    // we accept at least the primary ones
-    expect(validatePhone('+919876543210')).toBe(true);
+  it('accepts exactly 10 numeric digits', () => {
     expect(validatePhone('9876543210')).toBe(true);
   });
 
@@ -68,6 +58,9 @@ describe('validatePhone', () => {
       '9876543210 ',
       '++919876543210',
       '987654321', // too short
+      '+919876543210',
+      '98765 43210',
+      '98765432101',
     ];
     for (const p of invalids) expect(validatePhone(p)).toBe(false);
   });
@@ -76,10 +69,7 @@ describe('validatePhone', () => {
     fc.assert(
       fc.property(fc.string(), (s) => {
         const ok = validatePhone(s);
-        // Allow only digits with optional + and 10-15 length when stripped of spaces/dashes
-        const normalized = s.replace(/[\s-]/g, '');
-        const simple = /^\+?[1-9]\d{9,14}$/;
-        expect(ok).toBe(simple.test(normalized));
+        expect(ok).toBe(/^\d{10}$/.test(s));
       }),
       { numRuns: 8000 }
     );
