@@ -41,6 +41,7 @@ npm run build
 
 ```bash
 npm run test -- --run
+npm run test:server
 ```
 
 Optional end-to-end tests:
@@ -78,6 +79,19 @@ node --test server/__tests__/msg91Otp.test.js
 Real SMS tests require a local MongoDB connection and valid MSG91 credentials.
 They are not part of automated tests and should only be run using an authorized
 test number.
+
+## Cloudshope masked calls
+
+Set `CLOUDSHOPE_API_TOKEN` in the backend environment (or in the root `.env`
+for local development). Never expose this token in frontend code. Add the
+secret to the Render service environment before enabling call masking.
+
+On an emergency profile, selecting **Get masked call number** requests a DID
+from Cloudshope for the selected saved emergency contact. The page then offers
+a separate **Call masked number** link; the user must dial that number to
+connect. Each request can generate a different DID, so the app does not retry
+provider calls automatically. The provider API does not return live call
+status.
 
 ## Project Structure
 

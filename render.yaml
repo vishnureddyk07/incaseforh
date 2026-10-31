@@ -15,3 +15,5 @@ services:
         sync: false
       - key: MSG91_DEFAULT_COUNTRY_CODE
         value: "91"
+      - key: CLOUDSHOPE_API_TOKEN
+        sync: false

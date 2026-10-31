@@ -19,6 +19,7 @@ import QRSticker from './models/QRSticker.js';
 import QRBatch from './models/QRBatch.js';
 import OtpChallenge from './models/OtpChallenge.js';
 import { Msg91Error, normalizeMsg91Mobile, resendOtp, sendOtp, verifyOtp } from './services/msg91Otp.js';
+import { CloudshopeCallError, requestMaskedCallNumber } from './services/cloudshopeCall.js';
 import { v4 as uuidv4 } from 'uuid';
 
 // Get directory name in ES modules
@@ -161,6 +162,16 @@ const externalApiLimiter = rateLimit({
   legacyHeaders: false,
   handler: (_req, res) => {
     res.status(429).json({ error: 'Hospital search rate limit reached — please try again shortly' });
+  },
+});
+
+const callMaskLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    res.status(429).json({ error: 'Too many masked call requests. Please try again later.' });
   },
 });
 
@@ -4175,6 +4186,33 @@ router.patch('/chatbot/profile', requireChatbotAuth, upload.fields([
 // ── End CHATBOT endpoints ────────────────────────────────────────────
 
 // ── MULTI-PROFILE QR ENDPOINTS ──────────────────────────────────────
+
+router.post('/call-masking', callMaskLimiter, async (req, res) => {
+  try {
+    const profileId = normalizeOptionalString(req.body?.profileId, 24);
+    const contactIndex = req.body?.contactIndex;
+    if (!/^[a-f\d]{24}$/i.test(profileId) || !Number.isInteger(contactIndex) || contactIndex < 0) {
+      return res.status(400).json({ error: 'A valid emergency profile and contact are required.' });
+    }
+
+    const emergencyInfo = await EmergencyInfo.findById(profileId)
+      .select('emergencyContacts')
+      .lean();
+    const contact = emergencyInfo?.emergencyContacts?.[contactIndex];
+    if (!contact?.phone) {
+      return res.status(404).json({ error: 'Emergency contact not found.' });
+    }
+
+    const did = await requestMaskedCallNumber(contact.phone);
+    return res.json({ did });
+  } catch (error) {
+    if (error instanceof CloudshopeCallError) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    console.error('Error requesting Cloudshope masked call number:', error);
+    return res.status(500).json({ error: 'Failed to prepare a masked call.' });
+  }
+});
 
 // Public: Get list of profiles in a multi-profile QR (names only, no full data)
 router.get('/qr/:uuid/profiles', readLimiter, async (req, res) => {
