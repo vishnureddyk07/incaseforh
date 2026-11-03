@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { getApiBaseUrl } from '../../utils/apiBase';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const apiBase = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+  const apiBase = getApiBaseUrl();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);

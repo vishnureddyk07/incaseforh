@@ -78,6 +78,8 @@ app.use((req, res, next) => {
     'http://10.5.12.85:5173',
     'http://10.5.12.85:5174',
     'https://incaseforh.vercel.app',
+    'https://incaseqr.in',
+    'https://www.incaseqr.in',
     /^https:\/\/incaseforh-.*\.vercel\.app$/
   ];
   const origin = req.headers.origin;

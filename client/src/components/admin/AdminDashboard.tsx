@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import QRStickerManagement from './QRStickerManagement';
 import { ShieldCheck } from 'lucide-react';
+import { getApiBaseUrl } from '../../utils/apiBase';
 
 interface UserRow {
   id: string;
@@ -37,7 +38,7 @@ interface OtpLogEntry {
 export default function AdminDashboard() {
   const { isAuthenticated, user, token } = useAuth();
   const navigate = useNavigate();
-  const backendApiBaseUrl = import.meta.env.VITE_API_URL || 'https://incaseforh.onrender.com';
+  const backendApiBaseUrl = getApiBaseUrl();
 
   const [systemUsersList, setSystemUsersList] = useState<UserRow[]>([]);
   const [isFetchingUsers, setIsFetchingUsers] = useState(true);
